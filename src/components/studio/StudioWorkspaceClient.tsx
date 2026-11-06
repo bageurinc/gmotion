@@ -1,9 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { StudioProject } from '@/types/studio';
-import { RemotionPreviewPlayer } from './RemotionPreviewPlayer';
+
+const RemotionPreviewPlayer = dynamic(
+  () => import('./RemotionPreviewPlayer').then((mod) => mod.RemotionPreviewPlayer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400 text-xs">
+        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+        <span>Memuat Live Remotion Player...</span>
+      </div>
+    ),
+  }
+);
 import {
   MessageSquare,
   Film,
@@ -415,7 +428,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
 
         {/* Right Panel: Interactive Remotion Canvas & Studio Timeline */}
         <div className="flex-1 bg-slate-950 flex flex-col overflow-hidden">
-          <div className="flex-1 flex items-center justify-center overflow-hidden">
+          <div className="flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden">
             <RemotionPreviewPlayer project={project} />
           </div>
         </div>

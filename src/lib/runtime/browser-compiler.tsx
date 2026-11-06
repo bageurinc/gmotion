@@ -94,10 +94,46 @@ export function compileVirtualProject(
 
   function virtualRequire(path: string): Record<string, unknown> {
     // 1. External dependencies injection
-    if (path === 'react') return React as unknown as Record<string, unknown>;
-    if (path === 'remotion') return Remotion as unknown as Record<string, unknown>;
-    if (path === '@/motion-kit' || path === './motion-kit' || path === '../motion-kit') return MotionKit as unknown as Record<string, unknown>;
-    if (path === 'lucide-react') return LucideIcons as unknown as Record<string, unknown>;
+    if (path === 'react') {
+      return { ...React, default: React } as unknown as Record<string, unknown>;
+    }
+    if (path === 'remotion') {
+      return { ...Remotion, default: Remotion } as unknown as Record<string, unknown>;
+    }
+    if (
+      path === '@/motion-kit' ||
+      path === './motion-kit' ||
+      path === '../motion-kit' ||
+      path === 'motion-kit'
+    ) {
+      return new Proxy(MotionKit, {
+        get(target, prop: string) {
+          if (prop in target) {
+            return (target as Record<string, unknown>)[prop];
+          }
+          console.warn(`[VirtualCompiler] Component '${prop}' not found in @/motion-kit. Providing safe fallback.`);
+          const FallbackComponent: React.FC<{ children?: React.ReactNode; style?: React.CSSProperties }> = ({ children, style }) => (
+            React.createElement('div', { 'data-missing-kit': prop, style: { position: 'relative', ...style } }, children)
+          );
+          FallbackComponent.displayName = `MissingKit(${prop})`;
+          return FallbackComponent;
+        },
+      }) as unknown as Record<string, unknown>;
+    }
+    if (path === 'lucide-react') {
+      return new Proxy(LucideIcons, {
+        get(target, prop: string) {
+          if (prop in target) {
+            return (target as Record<string, unknown>)[prop];
+          }
+          const FallbackIcon: React.FC<{ size?: number; className?: string; style?: React.CSSProperties }> = (props) => (
+            React.createElement('span', { style: { display: 'inline-block', ...props.style } }, '✨')
+          );
+          FallbackIcon.displayName = `FallbackIcon(${prop})`;
+          return FallbackIcon;
+        },
+      }) as unknown as Record<string, unknown>;
+    }
 
     // 2. Relative virtual files
     const cleanPath = path.replace(/^\.\//, '').replace(/\.(tsx|ts|jsx|js)$/, '');
@@ -112,7 +148,8 @@ export function compileVirtualProject(
     const matchedKey = possibleKeys.find((k) => files[k] !== undefined);
     if (!matchedKey) {
       console.warn(`[VirtualCompiler] Module not found: ${path}. Available files:`, Object.keys(files));
-      return {};
+      const EmptyFallback = () => null;
+      return { default: EmptyFallback, __esModule: true };
     }
 
     if (moduleCache[matchedKey]) {
@@ -120,10 +157,17 @@ export function compileVirtualProject(
     }
 
     const code = files[matchedKey];
-    const transformed = transform(code, {
-      transforms: ['jsx', 'typescript', 'imports'],
-      jsxRuntime: 'classic',
-    }).code;
+    let transformed = '';
+    try {
+      transformed = transform(code, {
+        transforms: ['jsx', 'typescript', 'imports'],
+        jsxRuntime: 'classic',
+      }).code;
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[VirtualCompiler] Sucrase transform error in ${matchedKey}:`, err);
+      throw new Error(`Syntax error in ${matchedKey}: ${errorMsg}`);
+    }
 
     const vModule: VirtualModule = { exports: {} };
     moduleCache[matchedKey] = vModule;
@@ -140,7 +184,38 @@ export function compileVirtualProject(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[VirtualCompiler] Error executing virtual module ${matchedKey}:`, err);
-      throw new Error(`Failed to compile ${matchedKey}: ${errorMsg}`);
+      throw new Error(`Failed to execute ${matchedKey}: ${errorMsg}`);
+    }
+
+    // 3. Normalize exports: Ensure both default and named exports exist
+    const nonEsKeys = Object.keys(vModule.exports).filter((k) => k !== '__esModule');
+
+    if (!vModule.exports.default && nonEsKeys.length > 0) {
+      const matchedNamed = nonEsKeys.find(
+        (k) =>
+          cleanPath.toLowerCase().endsWith(k.toLowerCase()) ||
+          k.toLowerCase().endsWith(cleanPath.toLowerCase())
+      );
+
+      if (matchedNamed && typeof vModule.exports[matchedNamed] === 'function') {
+        vModule.exports.default = vModule.exports[matchedNamed];
+      } else {
+        const firstFn = nonEsKeys.map((k) => vModule.exports[k]).find((v) => typeof v === 'function');
+        if (firstFn) {
+          vModule.exports.default = firstFn;
+        } else {
+          vModule.exports.default = vModule.exports[nonEsKeys[0]];
+        }
+      }
+    }
+
+    // Also ensure named export exists matching file/component name if default export is present
+    if (vModule.exports.default && typeof vModule.exports.default === 'function') {
+      const compFn = vModule.exports.default as { name?: string };
+      const compName = compFn.name || cleanPath;
+      if (compName && !vModule.exports[compName]) {
+        vModule.exports[compName] = vModule.exports.default;
+      }
     }
 
     return vModule.exports;
@@ -148,7 +223,9 @@ export function compileVirtualProject(
 
   try {
     const entryModule = virtualRequire(entryFile);
-    const Comp = (entryModule.default || entryModule.MainVideo || Object.values(entryModule)[0]) as React.ComponentType<Record<string, unknown>>;
+    const Comp = (entryModule.default ||
+      entryModule.MainVideo ||
+      Object.values(entryModule).find((v) => typeof v === 'function')) as React.ComponentType<Record<string, unknown>>;
 
     if (!Comp || typeof Comp !== 'function') {
       throw new Error(`Entry file '${entryFile}' did not export a valid React component.`);
@@ -178,10 +255,13 @@ export function compileVirtualProject(
           justifyContent: 'center',
           padding: 24,
           fontFamily: 'monospace',
+          textAlign: 'center',
         }}
       >
-        <h3>Compilation Error</h3>
-        <pre style={{ color: '#F87171', fontSize: 13 }}>{errorMsg}</pre>
+        <h3 style={{ fontSize: 18, marginBottom: 8, fontWeight: 'bold' }}>⚠️ Kompilasi Video Gagal</h3>
+        <pre style={{ color: '#F87171', fontSize: 12, maxWidth: '90%', overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+          {errorMsg}
+        </pre>
       </div>
     );
     ErrorFallback.displayName = 'ErrorFallback';

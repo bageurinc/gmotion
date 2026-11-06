@@ -66,4 +66,49 @@ export default MainVideo;
     expect(typeof MainComponent).toBe('function');
     expect(elapsed).toBeLessThan(50);
   });
+
+  it('automatically normalizes named exports when default export is missing', () => {
+    const files = {
+      'Scene1.tsx': `
+import React from 'react';
+// Intentionally no export default!
+export const Scene1: React.FC = () => <div>Named Export Only</div>;
+`,
+      'MainVideo.tsx': `
+import React from 'react';
+import Scene1 from './Scene1';
+
+export const MainVideo: React.FC = () => {
+  return <Scene1 />;
+};
+export default MainVideo;
+`,
+    };
+
+    const MainComponent = compileVirtualProject(files, 'MainVideo.tsx');
+    expect(typeof MainComponent).toBe('function');
+  });
+
+  it('gracefully handles missing icons from lucide-react without crashing', () => {
+    const files = {
+      'Scene1.tsx': `
+import React from 'react';
+// Non-existent icon in lucide-react
+import { NonExistentCustomIcon123 } from 'lucide-react';
+
+export const Scene1: React.FC = () => {
+  return (
+    <div>
+      <NonExistentCustomIcon123 size={24} />
+      <span>Icon test</span>
+    </div>
+  );
+};
+export default Scene1;
+`,
+    };
+
+    const Component = compileVirtualProject(files, 'Scene1.tsx');
+    expect(typeof Component).toBe('function');
+  });
 });

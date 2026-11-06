@@ -597,6 +597,13 @@ Ensure you import components from '@/motion-kit' and write high-converting clean
         : generateProceduralStorySceneCode(scene, i);
     }
 
+    if (!code.includes('export default')) {
+      const compName = `Scene${i + 1}`;
+      if (code.includes(compName)) {
+        code += `\nexport default ${compName};\n`;
+      }
+    }
+
     files[fileName] = code;
   }
 
@@ -641,7 +648,13 @@ Modify the code according to user request. Maintain all '@/motion-kit' imports a
 
       const val = validateSceneCode(newCode, `${scene.id}.tsx`);
       if (val.valid) {
-        return newCode;
+        let finalRev = newCode;
+        const match = scene.id.match(/\d+/);
+        const compName = `Scene${match ? match[0] : '1'}`;
+        if (!finalRev.includes('export default') && finalRev.includes(compName)) {
+          finalRev += `\nexport default ${compName};\n`;
+        }
+        return finalRev;
       }
     } catch (err) {
       console.warn('[CoderAgent] LLM scene revision failed:', err);

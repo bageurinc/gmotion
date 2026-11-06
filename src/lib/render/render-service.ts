@@ -28,10 +28,42 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
     if (!fs.existsSync(buildSrcDir)) fs.mkdirSync(buildSrcDir, { recursive: true });
     if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
 
+    // Copy any assets (like audio) into publicDir for Remotion bundler
+    const publicDir = path.join(buildSrcDir, 'public');
+    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
+    const assetsDir = path.join(projectDir, 'assets');
+    if (fs.existsSync(assetsDir)) {
+      const assetFiles = fs.readdirSync(assetsDir);
+      for (const assetFile of assetFiles) {
+        fs.copyFileSync(path.join(assetsDir, assetFile), path.join(publicDir, assetFile));
+      }
+    }
+
     // 1. Materialize virtual TSX files to disk
     for (const [filename, code] of Object.entries(project.files)) {
+      let finalCode = code;
+
+      // In MainVideo.tsx, rewrite /api/projects/${projectId}/assets/ to / for local Remotion bundle server
+      if (filename === 'MainVideo.tsx') {
+        finalCode = finalCode.replace(new RegExp(`/api/projects/${projectId}/assets/`, 'g'), '/');
+        if (!finalCode.includes('export default') && finalCode.includes('MainVideo')) {
+          finalCode += '\nexport default MainVideo;\n';
+        }
+      }
+
+      // Ensure Scene files have export default
+      const sceneMatch = filename.match(/^Scene(\d+)\.tsx$/);
+      if (sceneMatch) {
+        const sceneNum = sceneMatch[1];
+        const compName = `Scene${sceneNum}`;
+        if (!finalCode.includes('export default') && finalCode.includes(compName)) {
+          finalCode += `\nexport default ${compName};\n`;
+        }
+      }
+
       const filePath = path.join(buildSrcDir, filename);
-      fs.writeFileSync(filePath, code, 'utf-8');
+      fs.writeFileSync(filePath, finalCode, 'utf-8');
     }
 
     const { width, height } = AspectRatioDimensions[project.storyboard.aspectRatio] || {
@@ -44,9 +76,9 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
       0
     );
 
-    // 2. Write Root entry point for Remotion
+    // 2. Write Root entry point for Remotion with registerRoot
     const rootEntryCode = `import React from 'react';
-import { Composition } from 'remotion';
+import { Composition, registerRoot } from 'remotion';
 import { MainVideo } from './MainVideo';
 
 export const RemotionRoot: React.FC = () => {
@@ -64,6 +96,8 @@ export const RemotionRoot: React.FC = () => {
   );
 };
 
+registerRoot(RemotionRoot);
+
 export default RemotionRoot;
 `;
     const rootPath = path.join(buildSrcDir, 'Root.tsx');
@@ -72,10 +106,13 @@ export default RemotionRoot;
     // 3. Bundle with Remotion Bundler
     const motionKitDir = path.join(process.cwd(), 'src', 'motion-kit');
     const typesDir = path.join(process.cwd(), 'src', 'types');
+    const srcDir = path.join(process.cwd(), 'src');
 
     console.log(`[RenderService] Bundling project ${projectId}...`);
     const bundleLocation = await bundle({
       entryPoint: rootPath,
+      publicDir: publicDir,
+      ignoreRegisterRootWarning: true,
       webpackOverride: (config) => {
         return {
           ...config,
@@ -85,6 +122,7 @@ export default RemotionRoot;
               ...(config.resolve?.alias || {}),
               '@/motion-kit': motionKitDir,
               '@/types': typesDir,
+              '@': srcDir,
             },
           },
         };
