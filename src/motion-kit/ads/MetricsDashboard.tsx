@@ -65,18 +65,19 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         boxShadow: `0 20px 40px rgba(0,0,0,0.5), 0 0 30px ${color}15`,
         transform: `translate3d(0, ${translateY}px, 0)`,
         opacity: entrance,
+        width: '100%', minWidth: 0, boxSizing: 'border-box', fontFamily: 'Arial, sans-serif',
         ...style,
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 180px' }}>
           <span style={{ color: color, fontSize: 18 }}>
             {icon === 'trend-up' && '📈'}
             {icon === 'users' && '👥'}
             {icon === 'cart' && '🛒'}
             {icon === 'clock' && '⏱️'}
           </span>
-          <span style={{ color: '#94A3B8', fontSize: 16, fontWeight: 600 }}>{label}</span>
+          <span style={{ color: '#CBD5E1', fontSize: 22, fontWeight: 600, overflowWrap: 'anywhere' }}>{label}</span>
         </div>
         {changePercent !== 0 && (
           <div
@@ -90,6 +91,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: 4,
+              flexShrink: 0,
             }}
           >
             {changePercent > 0 ? '▲ +' : '▼ '}

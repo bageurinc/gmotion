@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'node:crypto';
 import * as musicMetadata from 'music-metadata';
 import { SceneSpec, WordTiming, Storyboard } from '@/types/studio';
 
@@ -10,8 +11,8 @@ export interface TTSOptions {
 }
 
 /**
- * Creates a clean valid PCM WAV audio buffer of a specified duration in seconds.
- * Used as high-reliability fallback when external TTS network is gated or offline.
+ * Creates a PCM tone for test fixtures. This is not speech and must never be
+ * substituted for narration when a TTS provider fails.
  */
 export function createFallbackAudioBuffer(durationSeconds: number, sampleRate = 24000): Buffer {
   const numChannels = 1;
@@ -86,53 +87,69 @@ export async function generateSceneAudio(
     fs.mkdirSync(projectStorageDir, { recursive: true });
   }
 
+  if (!scene.voiceoverText.trim()) {
+    throw new Error('Narasi kosong. Isi naskah suara sebelum membuat audio.');
+  }
   const voiceName = options.voice || process.env.TTS_VOICE_ID || 'id-ID-ArdiNeural';
   const audioFileName = `${scene.id}.mp3`;
   const audioFilePath = path.join(projectStorageDir, audioFileName);
-  let audioDurationSeconds = 0;
-  let wordTimings: WordTiming[] = [];
+  const provider = process.env.TTS_PROVIDER || 'msedge-tts';
+  let audioBuffer: Buffer;
 
-  let generatedViaMsEdge = false;
-
-  // 1. Attempt MsEdgeTTS if available
-  try {
+  if (provider === '9router' || provider === 'openai-compatible') {
+    const baseUrl = process.env.TTS_BASE_URL || process.env.OPENAI_BASE_URL;
+    const apiKey = process.env.TTS_API_KEY || process.env.OPENAI_API_KEY;
+    if (!baseUrl || !apiKey) {
+      throw new Error('Konfigurasi TTS belum lengkap: isi TTS_BASE_URL dan TTS_API_KEY.');
+    }
+    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/audio/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.TTS_MODEL || `edge-tts/${voiceName}`,
+        input: scene.voiceoverText,
+        response_format: 'mp3',
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) {
+      // Do not include upstream bodies: they may contain credentials or provider internals.
+      throw new Error(`TTS ${provider} gagal (HTTP ${response.status}). Periksa koneksi dan provider suara.`);
+    }
+    audioBuffer = Buffer.from(await response.arrayBuffer());
+  } else if (provider === 'msedge-tts') {
     const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts');
     const tts = new MsEdgeTTS();
-    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    await tts.toFile(audioFilePath, scene.voiceoverText);
-
-    if (fs.existsSync(audioFilePath) && fs.statSync(audioFilePath).size > 1000) {
-      const metadata = await musicMetadata.parseFile(audioFilePath);
-      if (metadata.format.duration && metadata.format.duration > 0.5) {
-        audioDurationSeconds = metadata.format.duration;
-        generatedViaMsEdge = true;
-      }
+    const tempDir = fs.mkdtempSync(path.join(projectStorageDir, '.tts-'));
+    try {
+      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      // msedge-tts takes a directory and returns the generated file path.
+      const result = await tts.toFile(tempDir, scene.voiceoverText);
+      audioBuffer = fs.readFileSync(result.audioFilePath);
+    } finally {
+      tts.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
-  } catch {
-    // Network proxy / offline fallback
-    generatedViaMsEdge = false;
+  } else {
+    throw new Error(`TTS_PROVIDER tidak didukung: ${provider}`);
   }
 
-  // 2. If MsEdgeTTS was blocked or unavailable, generate synthesized audio
-  if (!generatedViaMsEdge) {
-    // Indonesian speech averages ~3.5 to 4.2 words per second
-    const wordCount = scene.voiceoverText.split(/\s+/).filter(Boolean).length;
-    audioDurationSeconds = Math.max(3.0, (wordCount / 3.8) + 0.6);
-
-    const wavBuffer = createFallbackAudioBuffer(audioDurationSeconds);
-    const fallbackPath = path.join(projectStorageDir, `${scene.id}.wav`);
-    fs.writeFileSync(fallbackPath, wavBuffer);
-
-    // Save as audioFileName for uniform URL routing
-    fs.writeFileSync(audioFilePath, wavBuffer);
+  const metadata = await musicMetadata.parseBuffer(audioBuffer, { mimeType: 'audio/mpeg', size: audioBuffer.length }, { duration: true });
+  const audioDurationSeconds = metadata.format.duration;
+  if (!audioDurationSeconds || !Number.isFinite(audioDurationSeconds) || audioDurationSeconds <= 0) {
+    throw new Error('Provider TTS tidak menghasilkan audio yang valid. Coba lagi.');
   }
+  // Only replace existing narration after a real audio response has been validated.
+  fs.writeFileSync(audioFilePath, audioBuffer);
+  let wordTimings: WordTiming[];
 
   wordTimings = estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
 
   // Audio-First Frame Lock Formula:
   // Math.max(90, Math.ceil((audioDurationSeconds + 0.35) * fps))
   const durationInFrames = Math.max(90, Math.ceil((audioDurationSeconds + 0.35) * fps));
-  const audioUrl = `/api/projects/${options.projectId}/assets/${audioFileName}`;
+  const revision = createHash('sha256').update(audioBuffer).digest('hex').slice(0, 12);
+  const audioUrl = `/api/projects/${options.projectId}/assets/${audioFileName}?v=${revision}`;
 
   return {
     audioUrl,

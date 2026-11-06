@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
+import { SafeOverlay } from '../core/SafeOverlay';
 
 export interface PulseCTAButtonProps {
   buttonText: string;
@@ -19,7 +20,7 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
   bgColor = '#22C55E', // High-converting emerald green
   textColor = '#052E16',
   glowColor = '#22C55E',
-  urlPlaceholder = 'wa.link/bisnis-kamu',
+  urlPlaceholder = '',
   style,
 }) => {
   const frame = useCurrentFrame();
@@ -39,6 +40,7 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
   const translateY = interpolate(entrance, [0, 1], [50, 0]);
 
   return (
+    <SafeOverlay slot="cta">
     <div
       style={{
         display: 'flex',
@@ -46,6 +48,11 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
         alignItems: 'center',
         gap: 16,
         width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        textAlign: 'center',
+        overflowWrap: 'anywhere',
         padding: '0 24px',
         transform: `translate3d(0, ${translateY}px, 0)`,
         opacity: entrance,
@@ -59,6 +66,8 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
           display: 'inline-flex',
           justifyContent: 'center',
           alignItems: 'center',
+          maxWidth: '100%',
+          minWidth: 0,
         }}
       >
         {/* Glow Ring */}
@@ -92,6 +101,9 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
             boxShadow: `0 14px 35px ${glowColor}60, inset 0 2px 4px rgba(255,255,255,0.4)`,
             transform: `scale(${pulseScale})`,
             cursor: 'pointer',
+            maxWidth: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
           }}
         >
           <span>{buttonText}</span>
@@ -125,6 +137,9 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
             padding: '8px 20px',
             borderRadius: 9999,
             border: '1px solid rgba(255, 255, 255, 0.1)',
+            maxWidth: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
           }}
         >
           <span style={{ color: glowColor }}>🔗</span>
@@ -132,5 +147,6 @@ export const PulseCTAButton: React.FC<PulseCTAButtonProps> = ({
         </div>
       )}
     </div>
+    </SafeOverlay>
   );
 };

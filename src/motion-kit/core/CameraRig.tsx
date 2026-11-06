@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useCurrentFrame, useVideoConfig, interpolate, spring, Easing } from 'remotion';
+import { SafeOverlayHost, useSceneLayout } from './SafeOverlay';
 
 export interface CameraRigProps {
   children: React.ReactNode;
@@ -27,7 +28,8 @@ export const CameraRig: React.FC<CameraRigProps> = ({
   style,
 }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames, width } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
+  const inSceneLayout = useSceneLayout();
 
   // Baseline zoom progress
   let scale = fromScale;
@@ -96,6 +98,17 @@ export const CameraRig: React.FC<CameraRigProps> = ({
     position: 'relative',
     ...style,
   };
+  if (inSceneLayout) {
+    // Animate towards full size rather than zooming beyond the reserved stage.
+    // Percentage pan limits remain correct when a platform changes stage size.
+    const envelope = Math.max(1, fromScale, toScale, mode === 'pan-parallax' ? 1.05 : 1);
+    const fitScale = Math.min(1, Math.max(0.01, scale / envelope));
+    const margin = (1 - fitScale) / 2;
+    const panX = Math.max(-margin, Math.min(margin, translateX / width)) * 100;
+    const panY = Math.max(-margin, Math.min(margin, translateY / height)) * 100;
+    transformStyle.transform = `translate(${panX}%, ${panY}%) scale(${fitScale})`;
+    transformStyle.transformOrigin = 'center center';
+  }
 
   return (
     <div
@@ -106,7 +119,9 @@ export const CameraRig: React.FC<CameraRigProps> = ({
         position: 'relative',
       }}
     >
-      <div style={transformStyle}>{children}</div>
+      {inSceneLayout ? <div style={transformStyle}>{children}</div> : (
+        <SafeOverlayHost><div style={transformStyle}>{children}</div></SafeOverlayHost>
+      )}
     </div>
   );
 };

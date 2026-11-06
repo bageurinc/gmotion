@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProject, saveProject } from '@/lib/storage/project-store';
 import { renderProvider } from '@/lib/render/render-service';
+import { SocialPlatformSchema } from '@/types/studio';
 
 export async function POST(
   req: NextRequest,
@@ -14,6 +15,17 @@ export async function POST(
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    const body = await req.text();
+    if (body.trim()) {
+      let input;
+      try { input = JSON.parse(body); } catch {
+        return NextResponse.json({ error: 'Invalid export settings' }, { status: 400 });
+      }
+      const platform = SocialPlatformSchema.safeParse(input?.safeAreaPlatform);
+      if (!platform.success) return NextResponse.json({ error: 'Invalid safe area platform' }, { status: 400 });
+      project.safeAreaPlatform = platform.data;
+    }
+    project.safeAreaPlatform ||= 'tiktok';
     project.status = 'rendering';
     saveProject(project);
 

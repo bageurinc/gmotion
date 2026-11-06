@@ -61,7 +61,7 @@ SCENE 4: CTA (11.0s - 15.0s)
 - KineticHeadline: "DOWNLOAD PANDUAN PONDASI"
 - Voiceover: "Mau bangun rumah tanpa was-was? Download checklist struktur gratis di bio."`;
 
-    const storyboard = parseStoryboardFromLLMResponse(geminiOutput, 'Bangun rumah tahan gempa', 'ads-ui', '9:16');
+    const storyboard = parseStoryboardFromLLMResponse(geminiOutput, 'Iklan rumah tahan gempa dengan CTA download panduan', 'ads-ui', '9:16');
     expect(storyboard).not.toBeNull();
     expect(storyboard?.scenes).toHaveLength(4);
     expect(storyboard?.scenes[0].kineticHeadline).toBe('RUMAH CEPAT RETAK?');

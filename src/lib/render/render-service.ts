@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
-import { StudioProject, AspectRatioDimensions } from '@/types/studio';
+import { StudioProject, AspectRatioDimensions, SocialPlatformSchema } from '@/types/studio';
 
 export interface RenderProgressCallback {
   (progress: number): void;
@@ -42,11 +42,11 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
 
     // 1. Materialize virtual TSX files to disk
     for (const [filename, code] of Object.entries(project.files)) {
-      let finalCode = code;
+      // Bundled public assets are served under /public/, not the bundle root.
+      // Rewrite every virtual file and preserve audio revision query strings.
+      let finalCode = code.split(`/api/projects/${projectId}/assets/`).join('/public/');
 
-      // In MainVideo.tsx, rewrite /api/projects/${projectId}/assets/ to / for local Remotion bundle server
       if (filename === 'MainVideo.tsx') {
-        finalCode = finalCode.replace(new RegExp(`/api/projects/${projectId}/assets/`, 'g'), '/');
         if (!finalCode.includes('export default') && finalCode.includes('MainVideo')) {
           finalCode += '\nexport default MainVideo;\n';
         }
@@ -75,18 +75,24 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
       (acc, s) => acc + (s.durationInFrames || 120),
       0
     );
+    const platform = SocialPlatformSchema.catch('tiktok').parse(project.safeAreaPlatform);
 
     // 2. Write Root entry point for Remotion with registerRoot
     const rootEntryCode = `import React from 'react';
 import { Composition, registerRoot } from 'remotion';
 import { MainVideo } from './MainVideo';
+import { SocialSafeFrame } from '@/components/video/SocialSafeFrame';
+
+const SafeMainVideo: React.FC = () => (
+  <SocialSafeFrame platform=${JSON.stringify(platform)}><MainVideo /></SocialSafeFrame>
+);
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
         id="MainVideo"
-        component={MainVideo}
+        component={SafeMainVideo}
         durationInFrames={${totalDurationInFrames}}
         fps={${project.storyboard.fps || 30}}
         width={${width}}
@@ -139,6 +145,7 @@ export default RemotionRoot;
     const outputPath = path.join(exportsDir, outputFileName);
 
     console.log(`[RenderService] Rendering MP4 to ${outputPath}...`);
+    let lastPercent = -1;
     await renderMedia({
       composition,
       serveUrl: bundleLocation,
@@ -147,7 +154,8 @@ export default RemotionRoot;
       outputLocation: outputPath,
       onProgress: ({ progress }) => {
         const percent = Math.min(100, Math.round(progress * 100));
-        if (onProgress) {
+        if (onProgress && percent !== lastPercent) {
+          lastPercent = percent;
           onProgress(percent);
         }
       },

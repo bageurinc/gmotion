@@ -3,6 +3,7 @@
 import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { WordTiming } from '@/types/studio';
+import { SafeOverlay, useSafeOverlay } from './SafeOverlay';
 
 export interface SyncedCaptionsProps {
   text: string;
@@ -10,7 +11,7 @@ export interface SyncedCaptionsProps {
   activeColor?: string;
   inactiveColor?: string;
   fontSize?: number;
-  bottomOffset?: number; // Distance from bottom (Safe Zone: e.g. 260px for 9:16)
+  bottomOffset?: number; // Legacy inline placement; the safe overlay owns caption position.
   style?: React.CSSProperties;
 }
 
@@ -25,6 +26,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
+  const inSafeOverlay = useSafeOverlay();
 
   const currentTimeMs = (frame / fps) * 1000;
   const words = text.split(' ').filter(Boolean);
@@ -58,6 +60,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
   const chunkWords = words.slice(startWordIdx, startWordIdx + chunkSize);
 
   return (
+    <SafeOverlay slot="captions">
     <div
       style={{
         position: 'absolute',
@@ -70,6 +73,10 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
         zIndex: 50,
         pointerEvents: 'none',
         ...style,
+        ...(inSafeOverlay ? { position: 'relative', bottom: 'auto', left: 'auto', right: 'auto' } as const : {}),
+        boxSizing: 'border-box',
+        width: '100%',
+        minWidth: 0,
       }}
     >
       <div
@@ -79,11 +86,15 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
           padding: '12px 24px',
           borderRadius: 20,
           border: '1px solid rgba(255, 255, 255, 0.12)',
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          gap: '0.35em',
+          fontFamily: 'Arial, sans-serif',
+          fontSize,
+          lineHeight: 1.5,
+          textAlign: 'center',
+          whiteSpace: 'normal',
+          wordSpacing: '0.12em',
           maxWidth: '85%',
+          boxSizing: 'border-box',
+          minWidth: 0,
           boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
         }}
       >
@@ -92,26 +103,30 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
           const isActive = globalWordIdx === activeIndex;
 
           return (
+            <React.Fragment key={globalWordIdx}>
             <span
-              key={globalWordIdx}
               style={{
                 fontSize,
                 fontWeight: 800,
                 color: isActive ? activeColor : inactiveColor,
-                transform: isActive ? 'scale(1.12)' : 'scale(1.0)',
-                transition: 'transform 0.1s ease',
                 textShadow: isActive
                   ? `0 0 16px ${activeColor}80, 0 2px 4px rgba(0,0,0,0.8)`
                   : '0 2px 4px rgba(0,0,0,0.8)',
-                display: 'inline-block',
-                letterSpacing: '-0.01em',
+                display: 'inline',
+                maxWidth: '100%',
+                minWidth: 0,
+                overflowWrap: 'anywhere',
+                letterSpacing: 'normal',
               }}
             >
               {word}
             </span>
+            {idx < chunkWords.length - 1 ? ' ' : null}
+            </React.Fragment>
           );
         })}
       </div>
     </div>
+    </SafeOverlay>
   );
 };

@@ -11,9 +11,11 @@ You MUST compose scenes using these prebuilt components alongside custom clean S
    {children}
 </CameraRig>
 - Wraps entire scene for cinematic camera work. Always use as the root wrapper inside a Scene.
+- CameraRig moves the artwork only. KineticHeadline, SyncedCaptions, and PulseCTAButton are automatically placed in a separate social safe overlay, outside zoom and clipping.
 
 2. <KineticHeadline text="Stop Ghosting Chat!" highlightWords={["Ghosting"]} highlightColor="#EF4444" badgeText="Masalah Utama" align="center" fontSize={54} />
    - Use at top of scene for bold hook / headline.
+   - Automatically wraps within the safe area. Do not apply nowrap, fixed text widths, or camera transforms to copy.
 
 3. <PhoneMockup width={400} height={780} glowColor="#10B981" floatingBadge={{ text: "Order Closed!", subtext: "Rp 350.000 via WhatsApp", icon: "dollar" }}>
    <WhatsAppChatSim contactName="Calon Buyer" messages={[...]} />
@@ -40,8 +42,16 @@ You MUST compose scenes using these prebuilt components alongside custom clean S
    - Renders synced subtitles in safe zone. Always place at the end of the Scene.
 
 RULES FOR SCENE CODE GENERATION:
+- Separate background from meaningful artwork: <SceneLayout><SceneBackground>{full-frame sky, gradients, scenery, particles}</SceneBackground><KineticHeadline .../><SceneStage>{main subject}</SceneStage><SyncedCaptions .../></SceneLayout>.
+- SceneBackground MUST be a direct child of SceneLayout, never inside SceneStage or CameraRig. Use width/height 100% and SVG preserveAspectRatio="xMidYMid slice" ONLY for decorative backgrounds so they cover the full canvas. Use unique SVG definition IDs for each layer. Never put the entire scene background inside the safe area or replace its outer areas with solid padding.
+- Foreground SVGs must use preserveAspectRatio="xMidYMid meet", never "slice". Platform safe areas resize the stage; meaningful artwork must stay contained as its aspect ratio changes.
+- Use <SceneLayout> as the scene root. Place the headline and captions directly inside it, and wrap the main illustration in <SceneStage>. Its grid reserves separate rows for the headline, artwork, optional CTA, and captions. Do not position foreground content using full-frame space-between layouts.
+- Put CameraRig INSIDE SceneStage around the artwork only. Draw SVG art with a tight viewBox and width/height 100% so it fills the stage; background layers may fill the entire frame. Keep pan offsets below 3% of stage dimensions and scale at or below 1.05.
+- Only render PulseCTAButton in a scene with role 'cta' when explicitly allowed. Never invent a link, trial, offer, or sales CTA in storytelling or educational content.
 - Do NOT use Math.random() or Date.now(). Use Remotion's random(seed) if needed.
 - Do NOT use CSS transitions or keyframes. Animate via useCurrentFrame() with interpolate() or spring().
 - Keep all props deterministically controlled by frame.
 - Wrap SVG elements in standard React tags.
+- Backgrounds should fill the composition. Keep meaningful foreground illustrations inside the central safe region; allow only decorative elements to extend past the frame.
+- Use standard CSS paddingLeft/paddingRight (not paddingHorizontal). Use boxSizing: 'border-box' and minWidth: 0 on constrained flex items.
 `;

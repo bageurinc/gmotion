@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   generateSceneAudio,
   estimateWordTimings,
@@ -6,8 +6,22 @@ import {
 } from '../src/lib/pipeline/tts-engine';
 import { SceneSpec } from '../src/types/studio';
 import * as musicMetadata from 'music-metadata';
+import fs from 'node:fs';
+
+const speechFixture = fs.readFileSync(new URL('./fixtures/tts-indonesian.mp3', import.meta.url));
 
 describe('Stage 2: Audio-First TTS Engine', () => {
+  beforeEach(() => {
+    vi.stubEnv('TTS_PROVIDER', '9router');
+    vi.stubEnv('TTS_BASE_URL', 'https://tts.example/v1');
+    vi.stubEnv('TTS_API_KEY', 'test-key');
+    vi.stubEnv('TTS_MODEL', 'edge-tts/id-ID-ArdiNeural');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      new Uint8Array(speechFixture),
+      { headers: { 'Content-Type': 'audio/mpeg' } },
+    )));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
   it('creates valid PCM WAV buffer with accurate duration', async () => {
     const duration = 2.5;
     const buffer = createFallbackAudioBuffer(duration);
@@ -49,7 +63,26 @@ describe('Stage 2: Audio-First TTS Engine', () => {
     });
 
     expect(result.audioUrl).toContain('test-scene-1');
+    expect(result.audioUrl).toMatch(/\?v=[a-f0-9]{12}$/);
     expect(result.durationInFrames).toBeGreaterThanOrEqual(90);
+    const metadata = await musicMetadata.parseBuffer(speechFixture, { mimeType: 'audio/mpeg' }, { duration: true });
+    expect(result.durationInFrames).toBe(Math.max(90, Math.ceil((metadata.format.duration! + 0.35) * 30)));
     expect(result.wordTimings.length).toBeGreaterThan(0);
+    expect(fetch).toHaveBeenCalledWith('https://tts.example/v1/audio/speech', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ model: 'edge-tts/id-ID-ArdiNeural', input: dummyScene.voiceoverText, response_format: 'mp3' }),
+    }));
+  });
+
+  it.each([503, 401])('reports provider HTTP %s instead of creating fake narration', async (status) => {
+    vi.mocked(fetch).mockResolvedValue(new Response('upstream failed', { status }));
+    const scene = { id: 'failed-tts', voiceoverText: 'Tes suara' } as SceneSpec;
+    await expect(generateSceneAudio(scene, { projectId: 'test_project_unit' })).rejects.toThrow(`HTTP ${status}`);
+  });
+
+  it('rejects a successful HTTP response that contains no valid audio', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('not audio'));
+    const scene = { id: 'invalid-tts', voiceoverText: 'Tes suara' } as SceneSpec;
+    await expect(generateSceneAudio(scene, { projectId: 'test_project_unit' })).rejects.toThrow();
   });
 });

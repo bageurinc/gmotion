@@ -66,7 +66,11 @@ export interface ProjectChatMessage {
   targetedSceneId?: string;
 }
 
+export const SocialPlatformSchema = z.enum(['generic', 'tiktok', 'instagram', 'shorts', 'facebook']);
+export type SocialPlatform = z.infer<typeof SocialPlatformSchema>;
+
 export interface StudioProject {
+  safeAreaPlatform?: SocialPlatform;
   id: string;
   createdAt: number;
   updatedAt: number;

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
+import { SafeOverlay } from './SafeOverlay';
 
 export interface KineticHeadlineProps {
   text: string;
@@ -43,6 +44,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
   });
 
   return (
+    <SafeOverlay slot="headline">
     <div
       className={className}
       style={{
@@ -51,6 +53,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
         alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
         textAlign: align,
         width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
         padding: '0 32px',
         ...style,
       }}
@@ -73,6 +78,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 8,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflowWrap: 'anywhere',
             boxShadow: `0 0 20px ${badgeTextColor}25`,
           }}
         >
@@ -96,6 +104,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
           lineHeight: 1.15,
           color: textColor,
           margin: 0,
+          width: '100%',
+          minWidth: 0,
+          maxWidth: '100%',
           display: 'flex',
           flexWrap: 'wrap',
           justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
@@ -126,6 +137,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
               key={i}
               style={{
                 display: 'inline-block',
+                maxWidth: '100%',
+                minWidth: 0,
+                overflowWrap: 'anywhere',
                 transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`,
                 opacity,
                 color: isHighlighted ? highlightColor : textColor,
@@ -138,5 +152,6 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
         })}
       </h1>
     </div>
+    </SafeOverlay>
   );
 };

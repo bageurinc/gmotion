@@ -125,6 +125,8 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
 
       const res = await fetch(`/api/projects/${project.id}/render`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ safeAreaPlatform: project.safeAreaPlatform || 'tiktok' }),
       });
       clearInterval(progressTimer);
 
@@ -429,7 +431,11 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
         {/* Right Panel: Interactive Remotion Canvas & Studio Timeline */}
         <div className="flex-1 bg-slate-950 flex flex-col overflow-hidden">
           <div className="flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden">
-            <RemotionPreviewPlayer project={project} />
+            <RemotionPreviewPlayer project={project} platform={project.safeAreaPlatform || 'tiktok'}
+              onPlatformChange={safeAreaPlatform => {
+                setProject(prev => ({ ...prev, safeAreaPlatform }));
+                setExportUrl(null);
+              }} />
           </div>
         </div>
       </div>

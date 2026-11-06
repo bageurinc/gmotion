@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
 import { generateStoryboard } from '../src/lib/pipeline/director-agent';
 import { syncStoryboardWithAudio } from '../src/lib/pipeline/tts-engine';
 import { generateProjectVirtualFiles, reviseSceneCode } from '../src/lib/pipeline/coder-agent';
@@ -7,6 +8,16 @@ import { saveProject, getProject } from '../src/lib/storage/project-store';
 import { StudioProject } from '../src/types/studio';
 
 describe('End-to-End Pipeline Verification', () => {
+  beforeEach(() => {
+    vi.stubEnv('OPENAI_API_KEY', '');
+    vi.stubEnv('TTS_PROVIDER', '9router');
+    vi.stubEnv('TTS_BASE_URL', 'https://tts.example/v1');
+    vi.stubEnv('TTS_API_KEY', 'test-key');
+    const speech = fs.readFileSync(new URL('./fixtures/tts-indonesian.mp3', import.meta.url));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(new Uint8Array(speech))));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
   it('generates a full Ads UI project, locks frame durations, and compiles in browser compiler', async () => {
     const prompt = 'Buat video iklan FB Ads 15 detik untuk WhatsApp AI Chatbot anti-ghosting closing omzet naik';
     const projectId = 'test_e2e_ads_project';

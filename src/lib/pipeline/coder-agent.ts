@@ -1,6 +1,6 @@
 import { generateText } from 'ai';
 import { getCoderModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
-import { Storyboard, SceneSpec, VirtualFileMap } from '@/types/studio';
+import { Storyboard, SceneSpec, VirtualFileMap, AspectRatioDimensions } from '@/types/studio';
 import { MOTION_KIT_PROMPT_DOCS } from '@/motion-kit/docs';
 import { validateSceneCode } from './code-validator';
 
@@ -15,7 +15,7 @@ CRITICAL RULES:
 1. ONLY import from:
    - 'react' (React, useMemo, etc.)
    - 'remotion' (useCurrentFrame, useVideoConfig, interpolate, spring, Easing, random, Sequence)
-   - '@/motion-kit' (CameraRig, KineticHeadline, SyncedCaptions, PhoneMockup, WhatsAppChatSim, MetricCard, AnimatedCounter, TrendLineChart, PulseCTAButton, ParallaxWorld, SvgParticles)
+   - '@/motion-kit' (SceneLayout, SceneBackground, SceneStage, CameraRig, KineticHeadline, SyncedCaptions, PhoneMockup, WhatsAppChatSim, MetricCard, AnimatedCounter, TrendLineChart, PulseCTAButton, ParallaxWorld, SvgParticles)
    - 'lucide-react'
 2. Export the component as default or named export matching the scene component name (e.g. export const Scene1: React.FC<SceneProps> = ...).
 3. Do NOT use Math.random() or Date.now().
@@ -27,6 +27,7 @@ CRITICAL RULES:
  * Procedural fallback code generator for Ads UI scenes
  */
 export function generateProceduralAdsSceneCode(scene: SceneSpec, index: number): string {
+  if (scene.role === 'narrative') return generateProceduralStorySceneCode(scene, index);
   const sceneNum = index + 1;
   const compName = `Scene${sceneNum}`;
 
@@ -547,6 +548,7 @@ export default MainVideo;
 export async function generateProjectVirtualFiles(storyboard: Storyboard): Promise<VirtualFileMap> {
   const files: VirtualFileMap = {};
   const isAds = storyboard.preset === 'ads-ui';
+  const { width, height } = AspectRatioDimensions[storyboard.aspectRatio];
 
   for (let i = 0; i < storyboard.scenes.length; i++) {
     const scene = storyboard.scenes[i];
@@ -556,7 +558,9 @@ export async function generateProjectVirtualFiles(storyboard: Storyboard): Promi
     if (isApiKeyConfigured()) {
       try {
         const prompt = `Write Remotion scene component '${fileName}' for:
+Composition: ${width} x ${height} pixels (${storyboard.aspectRatio}). Use useVideoConfig() for responsive positions and sizes; do not assume a 1080x1920 canvas.
 Role: ${scene.role}
+CTA rule: ${scene.role === 'cta' ? 'CTA explicitly allowed for this scene.' : 'No CTA buttons, invented URLs, sales offers, or promotional calls to action. This is content, not an ad closing.'}
 Title: ${scene.title}
 Kinetic Headline: "${scene.kineticHeadline}"
 Voiceover Text: "${scene.voiceoverText}"
@@ -579,7 +583,7 @@ Ensure you import components from '@/motion-kit' and write high-converting clean
 
         // Validate
         const val = validateSceneCode(code, fileName);
-        if (!val.valid) {
+        if (!val.valid || (scene.role !== 'cta' && /<PulseCTAButton\b/.test(code))) {
           console.warn(`[CoderAgent] Generated code for ${fileName} had errors, falling back to procedural template:`, val.errors);
           code = isAds
             ? generateProceduralAdsSceneCode(scene, i)

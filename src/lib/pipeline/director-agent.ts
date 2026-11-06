@@ -8,7 +8,7 @@ import {
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 
 const DIRECTOR_SYSTEM_PROMPT = `
-You are an award-winning Creative Video Director specializing in high-converting short-form motion graphics for Meta Ads (FB/IG Reels), TikTok, and YouTube Shorts.
+You are a Creative Video Director for short-form motion graphics, educational content, storytelling, and advertisements. Match the user's purpose; do not turn ordinary content into a sales pitch.
 
 Your task is to take a simple prompt from the user and generate a complete, structured 4-scene Motion Graphic Storyboard.
 
@@ -16,8 +16,8 @@ CRITICAL RULES:
 1. NARRATIVE STRUCTURE (4 Scenes):
    - Scene 1 (Hook): Stop the scroll in the first 2-3 seconds with high emotional stakes, problem resonance, or a shocking contrast.
    - Scene 2 (Problem/Mechanism): Clearly visualize the pain point and introduce the core mechanism.
-   - Scene 3 (Proof & Metrics): Concrete proof, numbers, growth metrics, or transformative result.
-   - Scene 4 (CTA): High-urgency, clear Call to Action.
+   - Scene 3 (Result): Show the story outcome, insight, or transformation. Only use metrics when relevant and supplied; do not invent numerical claims for a story.
+   - Scene 4 (Resolution): End with the story outcome, takeaway, or moral. Use a CTA ONLY if the user explicitly requests one or asks for an advertisement/promotion. Content, educational, and storytelling videos must not invent buttons, links, free trials, offers, or sales copy.
 
 2. LANGUAGE & VOICE:
    - Voiceover MUST be in natural, persuasive Bahasa Indonesia.
@@ -60,7 +60,7 @@ CRITICAL RULES:
  * Robust parser that can parse both JSON objects and structured Markdown responses
  * from LLMs (such as Gemini or DeepSeek that might format output as markdown headings).
  */
-export function parseStoryboardFromLLMResponse(
+function parseStoryboardRaw(
   text: string,
   userPrompt: string,
   preset: StylePreset,
@@ -187,6 +187,26 @@ export function parseStoryboardFromLLMResponse(
   return null;
 }
 
+export function wantsCallToAction(prompt: string): boolean {
+  if (/(?:tanpa|jangan|tidak perlu|tidak usah|no|without|bukan).{0,30}\b(?:cta|call.to.action|promosi|iklan|promotion)\b/i.test(prompt)) return false;
+  return /\b(?:cta|call.to.action|iklan|promosi|advertisement|advertising|ads|marketing|jualkan|jualan)\b/i.test(prompt);
+}
+
+function applyCtaPolicy(storyboard: Storyboard, prompt: string): Storyboard {
+  if (wantsCallToAction(prompt)) return storyboard;
+  return { ...storyboard, scenes: storyboard.scenes.map(scene => scene.role !== 'cta' ? scene : {
+    ...scene, role: 'narrative', title: 'Penutup Cerita',
+    kineticHeadline: 'PELAJARAN DARI PERJALANAN INI',
+    voiceoverText: 'Setiap langkah kecil membawa perubahan. Perjalanan ini mengingatkan kita untuk terus belajar dan bertumbuh.',
+    visualPrompt: 'Visual penutup yang merangkum perjalanan dan pesan moral. Tanpa CTA, tombol, tautan, penawaran, atau promosi.',
+  }) };
+}
+
+export function parseStoryboardFromLLMResponse(text: string, userPrompt: string, preset: StylePreset, aspectRatio: AspectRatio): Storyboard | null {
+  const storyboard = parseStoryboardRaw(text, userPrompt, preset, aspectRatio);
+  return storyboard ? applyCtaPolicy(storyboard, userPrompt) : null;
+}
+
 export async function generateStoryboard(
   userPrompt: string,
   preset: StylePreset = 'ads-ui',
@@ -201,6 +221,7 @@ export async function generateStoryboard(
 Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
+CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
 FPS: 30`,
       });
 
@@ -228,6 +249,14 @@ FPS: 30`,
  * High-quality procedural fallback storyboard generator
  */
 export function generateProceduralStoryboard(
+  userPrompt: string,
+  preset: StylePreset,
+  aspectRatio: AspectRatio
+): Storyboard {
+  return applyCtaPolicy(generateProceduralStoryboardBase(userPrompt, preset, aspectRatio), userPrompt);
+}
+
+function generateProceduralStoryboardBase(
   userPrompt: string,
   preset: StylePreset,
   aspectRatio: AspectRatio
