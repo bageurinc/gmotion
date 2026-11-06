@@ -1,7 +1,7 @@
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import {
   Storyboard,
-  StoryboardSchema,
+  SceneSpec,
   StylePreset,
   AspectRatio,
 } from '@/types/studio';
@@ -10,33 +10,182 @@ import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 const DIRECTOR_SYSTEM_PROMPT = `
 You are an award-winning Creative Video Director specializing in high-converting short-form motion graphics for Meta Ads (FB/IG Reels), TikTok, and YouTube Shorts.
 
-Your task is to take a simple 1-2 sentence prompt from the user and generate a complete, structured 4-scene Motion Graphic Storyboard.
+Your task is to take a simple prompt from the user and generate a complete, structured 4-scene Motion Graphic Storyboard.
 
 CRITICAL RULES:
 1. NARRATIVE STRUCTURE (4 Scenes):
    - Scene 1 (Hook): Stop the scroll in the first 2-3 seconds with high emotional stakes, problem resonance, or a shocking contrast.
-   - Scene 2 (Problem/Mechanism): Clearly visualize the pain point (e.g. lost sales from slow response, ghosting, manual chaos) and introduce the core mechanism.
-   - Scene 3 (Proof & Metrics): Concrete proof, numbers, growth metrics, or transformative result (e.g., closing rate +320%, fast 0.5s response).
-   - Scene 4 (CTA): High-urgency, clear Call to Action (e.g., "Klik link di bio", "Coba gratis sekarang").
+   - Scene 2 (Problem/Mechanism): Clearly visualize the pain point and introduce the core mechanism.
+   - Scene 3 (Proof & Metrics): Concrete proof, numbers, growth metrics, or transformative result.
+   - Scene 4 (CTA): High-urgency, clear Call to Action.
 
 2. LANGUAGE & VOICE:
    - Voiceover MUST be in natural, persuasive Bahasa Indonesia.
-   - Conversational, authoritative, yet approachable Indonesian (not stiff translation).
+   - Conversational, authoritative, yet approachable Indonesian.
    - Kinetic headline must be brief (3-6 punchy words).
 
-3. VISUAL CHOREOGRAPHY:
-   - Provide concrete visual instructions referencing Motion-Kit components:
-     * CameraRig (macro-zoom-in, slow-push, pan-parallax, tilt-3d)
-     * KineticHeadline with contrast highlight words
-     * PhoneMockup with dynamic island and floating badges
-     * WhatsAppChatSim with bouncing dots typing & instant AI reply
-     * MetricsDashboard (MetricCard, AnimatedCounter, TrendLineChart)
-     * PulseCTAButton for scene 4
-     * ParallaxWorld & SvgParticles for narrative presets.
-
-4. COLOR PALETTE:
-   - Cohesive, high-contrast dark-mode palette suitable for modern tech/SaaS or warm organic storytelling.
+3. FORMAT REQUIREMENT:
+   Output ONLY valid JSON matching this schema:
+   {
+     "title": "Judul Video",
+     "preset": "ads-ui" or "story-2d",
+     "aspectRatio": "9:16",
+     "fps": 30,
+     "bgmTrack": "dark-tech-pulse",
+     "palette": {
+       "background": "#090D16",
+       "surface": "#1E293B",
+       "primary": "#10B981",
+       "secondary": "#38BDF8",
+       "alert": "#EF4444",
+       "text": "#F8FAFC"
+     },
+     "scenes": [
+       {
+         "id": "scene-1-hook",
+         "order": 1,
+         "role": "hook",
+         "title": "Scene 1: Hook Title",
+         "voiceoverText": "Naskah narasi suara lengkap bahasa indonesia",
+         "kineticHeadline": "TEKS HEADLINE BOLD",
+         "visualPrompt": "Instruksi visual animasi",
+         "cameraAction": "macro-zoom-in",
+         "sfxCue": "pop"
+       }
+     ]
+   }
 `;
+
+/**
+ * Robust parser that can parse both JSON objects and structured Markdown responses
+ * from LLMs (such as Gemini or DeepSeek that might format output as markdown headings).
+ */
+export function parseStoryboardFromLLMResponse(
+  text: string,
+  userPrompt: string,
+  preset: StylePreset,
+  aspectRatio: AspectRatio
+): Storyboard | null {
+  // 1. Try finding a JSON object block
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const obj = JSON.parse(jsonMatch[0]);
+      if (obj.scenes && Array.isArray(obj.scenes) && obj.scenes.length >= 2) {
+        return {
+          title: obj.title || userPrompt.slice(0, 40),
+          preset: (obj.preset as StylePreset) || preset,
+          aspectRatio: (obj.aspectRatio as AspectRatio) || aspectRatio,
+          fps: obj.fps || 30,
+          bgmTrack: obj.bgmTrack || (preset === 'ads-ui' ? 'dark-tech-pulse' : 'warm-acoustic'),
+          palette: {
+            background: obj.palette?.background || '#090D16',
+            surface: obj.palette?.surface || '#1E293B',
+            primary: obj.palette?.primary || '#10B981',
+            secondary: obj.palette?.secondary || '#38BDF8',
+            alert: obj.palette?.alert || '#EF4444',
+            text: obj.palette?.text || '#F8FAFC',
+          },
+          scenes: obj.scenes.map((s: Record<string, unknown>, idx: number) => {
+            const role = typeof s.role === 'string' && ['hook', 'problem', 'mechanism', 'proof', 'cta', 'narrative'].includes(s.role)
+              ? (s.role as SceneSpec['role'])
+              : (['hook', 'mechanism', 'proof', 'cta'][idx] as SceneSpec['role']) || 'hook';
+
+            return {
+              id: typeof s.id === 'string' ? s.id : `scene-${idx + 1}-${role}`,
+              order: typeof s.order === 'number' ? s.order : idx + 1,
+              role,
+              title: typeof s.title === 'string' ? s.title : `Scene ${idx + 1}`,
+              voiceoverText: typeof s.voiceoverText === 'string' ? s.voiceoverText : `Narasi adegan ${idx + 1}`,
+              kineticHeadline: typeof s.kineticHeadline === 'string' ? s.kineticHeadline : `HEADLINE ${idx + 1}`,
+              visualPrompt: typeof s.visualPrompt === 'string' ? s.visualPrompt : '',
+              cameraAction: (typeof s.cameraAction === 'string' && ['macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d', 'static'].includes(s.cameraAction)
+                ? s.cameraAction
+                : 'macro-zoom-in') as SceneSpec['cameraAction'],
+              sfxCue: (typeof s.sfxCue === 'string' && ['none', 'pop', 'whoosh', 'notification', 'cash-register', 'success'].includes(s.sfxCue)
+                ? s.sfxCue
+                : 'pop') as SceneSpec['sfxCue'],
+              durationInFrames: typeof s.durationInFrames === 'number' ? s.durationInFrames : 120,
+              wordTimings: Array.isArray(s.wordTimings) ? s.wordTimings : [],
+            };
+          }),
+        };
+      }
+    } catch {
+      // Ignore JSON parse failure and proceed to markdown parsing
+    }
+  }
+
+  // 2. Parse Markdown structured output (e.g. SCENE 1: HOOK ... KineticHeadline: ... Voiceover: ...)
+  const sceneBlocks = text.split(/SCENE\s*\d+:/i).slice(1);
+  if (sceneBlocks.length >= 2) {
+    const roles: Array<SceneSpec['role']> = ['hook', 'mechanism', 'proof', 'cta'];
+    const validCamActions: Array<SceneSpec['cameraAction']> = [
+      'macro-zoom-in',
+      'slow-push',
+      'pan-parallax',
+      'tilt-3d',
+      'static',
+    ];
+
+    const scenes: SceneSpec[] = [];
+    sceneBlocks.forEach((block, idx) => {
+      const headlineMatch =
+        block.match(/KineticHeadline:\s*["']([^"']+)["']/i) ||
+        block.match(/KineticHeadline:\s*([^\n]+)/i);
+      const voMatch =
+        block.match(/Voiceover:\s*["']([^"']+)["']/i) ||
+        block.match(/Voiceover:\s*([^\n]+)/i);
+      const camMatch = block.match(/CameraRig:\s*`?([a-zA-Z0-9-]+)`?/i);
+
+      const headline = headlineMatch
+        ? headlineMatch[1].replace(/["']/g, '').trim()
+        : `Scene ${idx + 1}`;
+      const voiceover = voMatch
+        ? voMatch[1].replace(/["']/g, '').trim()
+        : `Narasi untuk adegan ${idx + 1}`;
+      const camRaw = camMatch ? camMatch[1] : '';
+      const cam: SceneSpec['cameraAction'] = validCamActions.includes(camRaw as SceneSpec['cameraAction'])
+        ? (camRaw as SceneSpec['cameraAction'])
+        : idx === 0
+        ? 'macro-zoom-in'
+        : 'slow-push';
+
+      scenes.push({
+        id: `scene-${idx + 1}-${roles[idx] || 'narrative'}`,
+        order: idx + 1,
+        role: roles[idx] || 'narrative',
+        title: headline.slice(0, 32),
+        voiceoverText: voiceover,
+        kineticHeadline: headline,
+        visualPrompt: block.trim().slice(0, 300),
+        cameraAction: cam,
+        sfxCue: idx === 0 ? 'pop' : idx === 3 ? 'success' : 'whoosh',
+        durationInFrames: 120,
+        wordTimings: [],
+      });
+    });
+
+    return {
+      title: userPrompt.slice(0, 40),
+      preset,
+      aspectRatio,
+      fps: 30,
+      bgmTrack: preset === 'ads-ui' ? 'dark-tech-pulse' : 'warm-acoustic',
+      palette: {
+        background: '#1A1D20',
+        surface: '#24282D',
+        primary: '#F59E0B',
+        secondary: '#10B981',
+        alert: '#EF4444',
+        text: '#F9FAFB',
+      },
+      scenes,
+    };
+  }
+
+  return null;
+}
 
 export async function generateStoryboard(
   userPrompt: string,
@@ -45,9 +194,8 @@ export async function generateStoryboard(
 ): Promise<Storyboard> {
   if (isApiKeyConfigured()) {
     try {
-      const { object } = await generateObject({
+      const response = await generateText({
         model: getDirectorModel(),
-        schema: StoryboardSchema,
         system: DIRECTOR_SYSTEM_PROMPT,
         prompt: `Buat storyboard video motion graphic untuk:
 Prompt: "${userPrompt}"
@@ -55,14 +203,24 @@ Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 FPS: 30`,
       });
-      return object;
+
+      const parsed = parseStoryboardFromLLMResponse(
+        response.text,
+        userPrompt,
+        preset,
+        aspectRatio
+      );
+
+      if (parsed) {
+        return parsed;
+      }
+      console.warn('[DirectorAgent] Could not parse LLM output, falling back to procedural storyboard generator.');
     } catch (error) {
       console.warn('[DirectorAgent] LLM generation failed, falling back to procedural storyboard generator:', error);
-      return generateProceduralStoryboard(userPrompt, preset, aspectRatio);
     }
   }
 
-  // Fallback procedural storyboard if no API key is configured
+  // Fallback procedural storyboard if no API key or parse error
   return generateProceduralStoryboard(userPrompt, preset, aspectRatio);
 }
 
