@@ -1,11 +1,17 @@
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
-import type { SceneSpec, Storyboard } from '@/types/studio';
+import { contrastRatio } from '@/lib/pipeline/anti-slop';
+import type { ColorPalette, SceneSpec, Storyboard } from '@/types/studio';
 import { generateAsset, GeneratedAsset, parseAssetResponse, repairAsset, sceneAssetPrompt } from './asset-generator';
 
 function assetModel(): string {
   return process.env.ASSET_MODEL || process.env.CODER_MODEL || 'ag/gemini-3.8-flash-high';
+}
+
+/** Captions sit on a dark box, so their highlight must read on black whatever the palette is. */
+function captionHighlight(palette: ColorPalette): string {
+  return [palette.secondary, palette.primary].find((color) => contrastRatio(color, '#000000') >= 4.5) ?? '#FFD166';
 }
 
 export function composeAssetScene(asset: GeneratedAsset, storyboard: Storyboard, index: number): string {
@@ -35,7 +41,7 @@ const shots = buildAssetShots(manifest, ${scene.durationInFrames}, ${storyboard.
 export const ${componentName} = () => (
   <AssetStage manifest={manifest} Asset={Asset} shots={shots}>
     <KineticHeadline text={${JSON.stringify(scene.kineticHeadline)}} highlightColor={${JSON.stringify(palette.primary)}} textColor={${JSON.stringify(palette.text)}} />
-    <SyncedCaptions text={${JSON.stringify(scene.voiceoverText)}} wordTimings={${JSON.stringify(scene.wordTimings)}} activeColor={${JSON.stringify(palette.primary)}} />
+    <SyncedCaptions text={${JSON.stringify(scene.voiceoverText)}} wordTimings={${JSON.stringify(scene.wordTimings)}} activeColor={${JSON.stringify(captionHighlight(palette))}} />
   </AssetStage>
 );
 

@@ -86,12 +86,12 @@ export const SceneLayout: React.FC<React.PropsWithChildren<{
 );
 
 /** Decorative scene layers fill the canvas independently of the safe content grid. */
-export const SceneBackground: React.FC<React.PropsWithChildren<{ style?: React.CSSProperties }>> = ({ children, style }) => (
+export const SceneBackground: React.FC<React.PropsWithChildren<{ style?: React.CSSProperties; scrim?: boolean }>> = ({ children, style, scrim = true }) => (
   <div data-scene-background aria-hidden style={{ ...style, position: 'absolute', inset: 0,
     width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
     {children}
-    <div style={{ position: 'absolute', inset: 0,
-      background: 'linear-gradient(180deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.18) 100%)' }} />
+    {scrim && <div style={{ position: 'absolute', inset: 0,
+      background: 'linear-gradient(180deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.18) 100%)' }} />}
   </div>
 );
 

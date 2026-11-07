@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { contrastRatio } from '../../lib/pipeline/anti-slop';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
 import { SafeOverlay } from './SafeOverlay';
 
@@ -31,6 +32,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
   className = '',
   style,
 }) => {
+  const hasDarkText = /^#[0-9a-fA-F]{6}$/.test(textColor) && contrastRatio(textColor, '#000000') < 7;
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -143,7 +145,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
                 transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`,
                 opacity,
                 color: isHighlighted ? highlightColor : textColor,
-                textShadow: isHighlighted ? `0 0 28px ${highlightColor}60` : '0 4px 16px rgba(0,0,0,0.4)',
+                textShadow: hasDarkText ? 'none' : isHighlighted ? `0 0 28px ${highlightColor}60` : '0 4px 16px rgba(0,0,0,0.4)',
               }}
             >
               {word}

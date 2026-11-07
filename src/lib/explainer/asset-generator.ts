@@ -1,4 +1,5 @@
 import { AssetManifest, AssetManifestSchema, missingContractIds } from './asset-contract';
+import { VISUAL_ANTI_SLOP_RULES } from '../pipeline/anti-slop';
 import { validateSceneCode } from '../pipeline/code-validator';
 
 export interface LlmUsage {
@@ -37,13 +38,15 @@ TOPIC HANDLING
 
 VISUAL STANDARD
 Aim for polished semi-realistic textbook illustration:
-- Layer every major form: base gradient, core shadow, reflected light, rim light, specular highlights, then a dark variable-feeling outline.
+- Layer every major form: base gradient, core shadow, reflected light, rim light, and specular highlights, then a variable-feeling outline in a darker shade of that form's own color.
 - Use organic cubic Bezier paths. Avoid assembling the subject from plain circles and rectangles.
 - Add believable secondary detail such as fibres, seams, panels, rivets, veins, droplets, grain, or texture lines.
 - Use at least 60 meaningful shapes across the asset, and at least 25 in each view.
 - Fill 70-85% of the square canvas with the subject. Keep the outer area transparent because the stage paints the background.
 - Keep the same silhouette, proportions, and light direction in all views. Later views reveal, cut open, or change state of the same subject.
 - Build shape loops from data arrays when repeating texture.
+
+${VISUAL_ANTI_SLOP_RULES}
 
 SIZE BUDGET
 Keep the whole answer under 14000 tokens. Do not think out loud. Spend the budget on the silhouette, lighting, and the most visible detail. Use small helpers and data arrays for repeated detail.
@@ -89,7 +92,7 @@ export const CRITIC_SYSTEM_PROMPT = `
 You are a strict art director reviewing a generated vertical explainer clip. The image is a contact sheet of 4 frames in order: close-up, wide shot, second view with a highlighted part, and zoom to another part.
 Score each criterion from 1 to 10:
 - recognizability: the subject and topic are immediately understood.
-- illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, or basic shapes scores 4 or lower.
+- illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, basic shapes, or a dark and murky image scores 4 or lower.
 - viewConsistency: frames show the same subject with the same proportions.
 - labelAccuracy: labels point at the correct visible parts and facts are right.
 - composition: clear framing, nothing important is cut off, text remains readable.
@@ -248,7 +251,8 @@ ${context.outline}
 This scene: ${context.sceneTitle}
 Narration: "${context.narration}"
 Visual direction: "${context.visualPrompt}"
-Video colors, which must dominate the illustration: ${JSON.stringify(context.palette)}
+Video palette for backgrounds, accents, and highlighted parts: ${JSON.stringify(context.palette)}
+Objects keep their believable real-world colors, and they must stand out clearly from the background color.
 
 Draw what this exact stage needs to explain, with accurate structure and correct real-world detail. All scenes share one illustration style, light direction, and color world so the video feels like one film.`;
 }

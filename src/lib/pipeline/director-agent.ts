@@ -7,6 +7,7 @@ import {
   TimelapseKind,
 } from '@/types/studio';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
+import { COPY_ANTI_SLOP_RULES, normalizePalette, VISUAL_ANTI_SLOP_RULES } from './anti-slop';
 import { MAX_DRAFT_SCENES } from './draft';
 
 const DIRECTOR_SYSTEM_PROMPT = `
@@ -34,6 +35,9 @@ CRITICAL RULES:
    - Kinetic headline must be brief (3-6 punchy words).
    - visualPrompt MUST be in plain Bahasa Indonesia that a non-technical user can review and edit. In 1-2 sentences, describe the concrete objects on screen and what moves. Prefer explanatory visuals such as cross-sections, cutaways, zoom-ins, and step-by-step assembly over abstract shapes.
 
+${VISUAL_ANTI_SLOP_RULES}
+${COPY_ANTI_SLOP_RULES}
+
 3. FORMAT REQUIREMENT:
    Output ONLY valid JSON matching this schema:
    {
@@ -43,12 +47,12 @@ CRITICAL RULES:
      "fps": 30,
      "bgmTrack": "dark-tech-pulse",
      "palette": {
-       "background": "#090D16",
-       "surface": "#1E293B",
-       "primary": "#10B981",
-       "secondary": "#38BDF8",
-       "alert": "#EF4444",
-       "text": "#F8FAFC"
+       "background": "<hex drawn from this subject>",
+       "surface": "<hex>",
+       "primary": "<hex>",
+       "secondary": "<hex>",
+       "alert": "<hex>",
+       "text": "<hex readable on background>"
      },
      "scenes": [
        {
@@ -94,14 +98,14 @@ function parseStoryboardRaw(
           aspectRatio: (obj.aspectRatio as AspectRatio) || aspectRatio,
           fps: obj.fps || 30,
           bgmTrack: obj.bgmTrack || (preset === 'ads-ui' ? 'dark-tech-pulse' : 'warm-acoustic'),
-          palette: {
-            background: obj.palette?.background || '#090D16',
-            surface: obj.palette?.surface || '#1E293B',
-            primary: obj.palette?.primary || '#10B981',
-            secondary: obj.palette?.secondary || '#38BDF8',
-            alert: obj.palette?.alert || '#EF4444',
-            text: obj.palette?.text || '#F8FAFC',
-          },
+          palette: normalizePalette({
+            background: String(obj.palette?.background ?? ''),
+            surface: String(obj.palette?.surface ?? ''),
+            primary: String(obj.palette?.primary ?? ''),
+            secondary: String(obj.palette?.secondary ?? ''),
+            alert: String(obj.palette?.alert ?? ''),
+            text: String(obj.palette?.text ?? ''),
+          }),
           scenes: scenes.map((s: Record<string, unknown>, idx: number) => {
             const role = typeof s.role === 'string' && ['hook', 'problem', 'mechanism', 'proof', 'cta', 'narrative'].includes(s.role)
               ? (s.role as SceneSpec['role'])

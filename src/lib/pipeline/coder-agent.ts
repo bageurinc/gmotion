@@ -3,6 +3,7 @@ import { getCoderModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { Storyboard, SceneSpec, VirtualFileMap, AspectRatioDimensions } from '@/types/studio';
 import { MOTION_KIT_PROMPT_DOCS } from '@/motion-kit/docs';
 import { TIMELAPSE_FEW_SHOT_EXAMPLES } from '@/motion-kit/timelapse/examples';
+import { COPY_ANTI_SLOP_RULES, VISUAL_ANTI_SLOP_RULES } from './anti-slop';
 import { validateSceneCode } from './code-validator';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 
@@ -12,6 +13,9 @@ You are an expert Remotion & React developer specializing in high-converting mot
 Your task is to write a single self-contained React component for a Remotion scene.
 
 ${MOTION_KIT_PROMPT_DOCS}
+
+${VISUAL_ANTI_SLOP_RULES}
+${COPY_ANTI_SLOP_RULES}
 
 CRITICAL RULES:
 1. ONLY import from:

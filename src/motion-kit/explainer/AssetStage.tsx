@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Easing, interpolate, random, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { getLength, getPointAtLength } from '@remotion/paths';
 import { SceneBackground, SceneLayout, useSafeInsets } from '../core/SafeOverlay';
 import type { AssetFocus, AssetManifest, GeneratedAssetProps } from '../../lib/explainer/asset-contract';
@@ -16,6 +16,7 @@ export interface StageShot {
 const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
 const EASE = Easing.bezier(0.45, 0, 0.2, 1);
 const MIN_SHOT_SECONDS = 2.2;
+const MAX_ZOOM = 1.6;
 
 /** Splits a scene into a wide shot followed by a close look at each part it has time for. */
 export function buildAssetShots(manifest: AssetManifest, durationInFrames = 300, fps = 30): StageShot[] {
@@ -35,7 +36,7 @@ export function buildAssetShots(manifest: AssetManifest, durationInFrames = 300,
     return {
       ...range,
       view,
-      focus: part.focus,
+      focus: { ...part.focus, scale: Math.min(part.focus.scale, MAX_ZOOM) },
       highlightPart: part.id,
       flowId: flows.length ? flows[index % flows.length].id : undefined,
     };
@@ -66,39 +67,6 @@ function cameraAt(frame: number, shots: StageShot[], fps: number): AssetFocus {
   return { ...camera, scale: camera.scale * drift };
 }
 
-const Bokeh: React.FC<{ manifest: AssetManifest; frame: number; width: number; height: number }> = ({
-  manifest,
-  frame,
-  width,
-  height,
-}) => (
-  <>
-    {Array.from({ length: 34 }, (_, index) => {
-      const seed = `${manifest.topic}-${index}`;
-      const size = 8 + random(`${seed}-size`) * 70;
-      const speed = 0.2 + random(`${seed}-speed`) * 0.8;
-      const x = random(`${seed}-x`) * width;
-      const y = (random(`${seed}-y`) * height - frame * speed + height * 2) % height;
-      return (
-        <div
-          key={seed}
-          style={{
-            position: 'absolute',
-            left: x,
-            top: y,
-            width: size,
-            height: size,
-            borderRadius: '50%',
-            background: index % 3 === 0 ? manifest.palette.accentAlt : manifest.palette.accent,
-            opacity: 0.08 + random(`${seed}-opacity`) * 0.2,
-            filter: `blur(${size / 5}px)`,
-          }}
-        />
-      );
-    })}
-  </>
-);
-
 const FlowParticles: React.FC<{ d: string; color: string; frame: number; opacity: number }> = ({
   d,
   color,
@@ -112,7 +80,7 @@ const FlowParticles: React.FC<{ d: string; color: string; frame: number; opacity
         const offset = ((frame * 5 + (index * length) / 14) % length + length) % length;
         const point = getPointAtLength(d, offset);
         if (!point) return null;
-        return <circle key={index} cx={point.x} cy={point.y} r={7} fill={color} stroke="#FFFFFF" strokeOpacity={0.55} strokeWidth={2} />;
+        return <circle key={index} cx={point.x} cy={point.y} r={7} fill={color} stroke={color} strokeOpacity={0.35} strokeWidth={6} />;
       })}
     </g>
   );
@@ -179,12 +147,11 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
   return (
     <SceneLayout backgroundColor={manifest.palette.backgroundTo}>
       <SceneBackground
+        scrim={false}
         style={{
-          background: `radial-gradient(circle at 50% 48%, ${manifest.palette.backgroundFrom} 0%, ${manifest.palette.backgroundTo} 72%)`,
+          background: `radial-gradient(circle at 50% 48%, ${manifest.palette.backgroundFrom} 0%, ${manifest.palette.backgroundTo} 78%)`,
         }}
-      >
-        <Bokeh manifest={manifest} frame={frame} width={width} height={height} />
-      </SceneBackground>
+      />
       <div style={{ position: 'absolute', top: stageTop, left: stageLeft, width: stageSize, height: stageSize, zIndex: 1 }}>
         <div
           style={{
@@ -209,8 +176,8 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
               opacity: labelOpacity,
               padding: '10px 22px',
               borderRadius: 16,
-              background: 'rgba(12, 8, 20, 0.82)',
-              border: `2px solid ${manifest.palette.accent}`,
+              background: manifest.palette.backgroundFrom,
+              border: `3px solid ${manifest.palette.accent}`,
               color: manifest.palette.text,
               fontFamily: 'Arial, sans-serif',
               fontSize: Math.round(width * 0.03),
@@ -222,6 +189,15 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
           </div>
         )}
       </div>
+      <div
+        style={{
+          position: 'absolute',
+          inset: '0 0 auto 0',
+          height: height * (insets.top + 0.14),
+          zIndex: 2,
+          background: `linear-gradient(to bottom, ${manifest.palette.backgroundTo} 62%, transparent)`,
+        }}
+      />
       {children}
     </SceneLayout>
   );
