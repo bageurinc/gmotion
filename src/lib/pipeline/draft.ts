@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
 
 export const MAX_DRAFT_SCENES = 12;
-const STALE_GENERATION_MS = 15 * 60_000;
 const WORDS_PER_SECOND = 2.4;
 
 export const DraftUpdateSchema = z.object({
@@ -64,6 +63,12 @@ export function estimateNarrationSeconds(text: string): number {
   return words === 0 ? 0 : Math.max(3, words / WORDS_PER_SECOND + 0.35);
 }
 
-export function isGenerationStale(project: StudioProject, now = Date.now()): boolean {
-  return project.status === 'generating' && now - (project.generationStartedAt ?? 0) > STALE_GENERATION_MS;
+export function readyScenes(project: Pick<StudioProject, 'storyboard' | 'sceneProgress'>): SceneSpec[] {
+  const { sceneProgress, storyboard } = project;
+  if (!sceneProgress) return storyboard.scenes;
+  return storyboard.scenes.filter((scene) => sceneProgress[scene.id]?.stage === 'ready');
+}
+
+export function hasFailedScene(project: Pick<StudioProject, 'sceneProgress'>): boolean {
+  return Object.values(project.sceneProgress ?? {}).some((scene) => scene.stage === 'failed');
 }

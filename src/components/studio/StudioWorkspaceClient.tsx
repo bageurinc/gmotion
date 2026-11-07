@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
 import { StudioProject } from '@/types/studio';
+import { GenerationProgress } from './GenerationProgress';
 
 const RemotionPreviewPlayer = dynamic(
   () => import('./RemotionPreviewPlayer').then((mod) => mod.RemotionPreviewPlayer),
@@ -53,7 +55,42 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   );
   const [showExportModal, setShowExportModal] = useState(false);
 
-  const totalFrames = project.storyboard.scenes.reduce(
+  const [interrupted, setInterrupted] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const isGenerating = project.status === 'generating';
+  const previewScenes = readyScenes(project);
+  const showProgress = isGenerating || hasFailedScene(project);
+  const isBusy = isGenerating || hasFailedScene(project);
+
+  useEffect(() => {
+    if (!isGenerating || interrupted) return;
+    const source = new EventSource(`/api/projects/${project.id}/events`);
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data) as { project: StudioProject; interrupted: boolean };
+      setProject(data.project);
+      setInterrupted(data.interrupted);
+      if (data.interrupted || data.project.status !== 'generating') source.close();
+    };
+    return () => source.close();
+  }, [project.id, isGenerating, interrupted]);
+
+  useEffect(() => {
+    const code = project.files[selectedFile];
+    if (code && !editingCode) setEditingCode(code);
+  }, [project.files, selectedFile, editingCode]);
+
+  const handleRetryGeneration = async () => {
+    setIsRetrying(true);
+    const res = await fetch(`/api/projects/${project.id}/generate`, { method: 'POST' }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (data?.project) {
+      setInterrupted(false);
+      setProject(data.project);
+    }
+    setIsRetrying(false);
+  };
+
+  const totalFrames = previewScenes.reduce(
     (acc, s) => acc + (s.durationInFrames || 120),
     0
   );
@@ -179,7 +216,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={handleStartExport}
-            disabled={isExporting}
+            disabled={isExporting || isBusy}
             className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-lg shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition disabled:opacity-50"
           >
             {isExporting ? (
@@ -196,6 +233,15 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel: Co-Director Controls */}
         <div className="w-[480px] lg:w-[520px] border-r border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
+          {showProgress && (
+            <GenerationProgress
+              project={project}
+              interrupted={interrupted}
+              isRetrying={isRetrying}
+              onRetry={handleRetryGeneration}
+            />
+          )}
+
           {/* Tab Selector */}
           <div className="flex border-b border-slate-800 bg-slate-900/90 p-1 gap-1 shrink-0">
             <button
@@ -317,7 +363,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                   />
                   <button
                     onClick={() => handleSendRevision()}
-                    disabled={!chatInput.trim() || isRevising}
+                    disabled={!chatInput.trim() || isRevising || isBusy}
                     className="p-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-bold transition disabled:opacity-40"
                   >
                     <Send className="w-4 h-4" />
@@ -419,7 +465,8 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                 </span>
                 <button
                   onClick={handleSaveCode}
-                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition"
+                  disabled={isBusy}
+                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Terapkan Kode
                 </button>
@@ -431,11 +478,15 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
         {/* Right Panel: Interactive Remotion Canvas & Studio Timeline */}
         <div className="flex-1 bg-slate-950 flex flex-col overflow-hidden">
           <div className="flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden">
-            <RemotionPreviewPlayer project={project} platform={project.safeAreaPlatform || 'tiktok'}
+            {previewScenes.length === 0 ? (
+              <p className="max-w-xs text-center text-sm text-slate-300">
+                Adegan pertama sedang dibuat. Pratinjaunya muncul di sini begitu selesai.
+              </p>
+            ) : <RemotionPreviewPlayer project={project} platform={project.safeAreaPlatform || 'tiktok'}
               onPlatformChange={safeAreaPlatform => {
                 setProject(prev => ({ ...prev, safeAreaPlatform }));
                 setExportUrl(null);
-              }} />
+              }} />}
           </div>
         </div>
       </div>

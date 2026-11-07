@@ -15,6 +15,10 @@ export async function POST(
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    if (project.status === 'generating') {
+      return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
+    }
+
     const body = await req.json();
     const userMessage = body.userMessage?.trim();
     let targetSceneId = body.sceneId;

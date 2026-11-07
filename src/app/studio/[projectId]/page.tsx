@@ -16,8 +16,8 @@ export default async function StudioPage({ params }: PageProps) {
     notFound();
   }
 
-  if (project.status === 'draft' || project.status === 'generating') {
-    return <DraftReviewClient key={project.status} initialProject={project} />;
+  if (project.status === 'draft') {
+    return <DraftReviewClient initialProject={project} />;
   }
 
   return <StudioWorkspaceClient initialProject={project} />;

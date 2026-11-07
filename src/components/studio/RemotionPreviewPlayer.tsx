@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { SocialSafeFrame } from '@/components/video/SocialSafeFrame';
 import { SOCIAL_PLATFORMS, SocialPlatform } from '@/components/video/SocialPlatformOverlay';
 import { Player } from '@remotion/player';
+import { readyScenes } from '@/lib/pipeline/draft';
 import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
 import { StudioProject, AspectRatioDimensions } from '@/types/studio';
 
@@ -31,11 +32,8 @@ export const RemotionPreviewPlayer: React.FC<RemotionPreviewPlayerProps> = ({
   const previewPlatform = isPortrait ? platform : 'generic';
 
   const totalDurationInFrames = useMemo(() => {
-    return project.storyboard.scenes.reduce(
-      (acc, s) => acc + (s.durationInFrames || 120),
-      0
-    );
-  }, [project.storyboard.scenes]);
+    return readyScenes(project).reduce((acc, s) => acc + (s.durationInFrames || 120), 0);
+  }, [project]);
 
   // Recompile virtual files into a React component whenever project.files changes
   const CompiledComponent = useMemo(() => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProject, saveProject } from '@/lib/storage/project-store';
+import { hasFailedScene } from '@/lib/pipeline/draft';
 import { renderProvider } from '@/lib/render/render-service';
 import { SocialPlatformSchema } from '@/types/studio';
 
@@ -13,6 +14,10 @@ export async function POST(
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    if (project.status === 'generating' || hasFailedScene(project)) {
+      return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
     }
 
     const body = await req.text();

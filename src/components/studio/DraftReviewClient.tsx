@@ -7,7 +7,6 @@ import { ArrowDown, ArrowLeft, ArrowUp, Plus, RefreshCw, Sparkles, Trash2 } from
 import {
   estimateNarrationSeconds,
   firstSceneWithoutNarration,
-  isGenerationStale,
   MAX_DRAFT_SCENES,
 } from '@/lib/pipeline/draft';
 import { SceneSpec, StudioProject } from '@/types/studio';
@@ -53,11 +52,11 @@ function createScene(): SceneSpec {
 
 export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({ initialProject }) => {
   const router = useRouter();
-  const [project, setProject] = useState(initialProject);
+  const project = initialProject;
   const [title, setTitle] = useState(initialProject.storyboard.title);
   const [scenes, setScenes] = useState(initialProject.storyboard.scenes);
   const [saveState, setSaveState] = useState<SaveState>('saved');
-  const [isGenerating, setIsGenerating] = useState(initialProject.status === 'generating');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(initialProject.generationError ?? '');
   const [removed, setRemoved] = useState<RemovedScene | null>(null);
   const hasEdited = useRef(false);
@@ -106,23 +105,6 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     return () => clearTimeout(timer);
   }, [saveState, isGenerating, persist]);
 
-  useEffect(() => {
-    if (!isGenerating) return;
-    const timer = setInterval(async () => {
-      const res = await fetch(`/api/projects/${initialProject.id}`).catch(() => null);
-      const data = await res?.json().catch(() => null);
-      if (!data?.project) return;
-      setProject(data.project);
-      if (data.project.status === 'ready') {
-        router.refresh();
-      } else if (data.project.status === 'draft') {
-        setIsGenerating(false);
-        setError(data.project.generationError ?? 'Video gagal dibuat. Coba lagi.');
-      }
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [initialProject.id, isGenerating, router]);
-
   const edit = (next: () => void) => {
     hasEdited.current = true;
     next();
@@ -167,12 +149,11 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     : missingNarration >= 0
       ? `Adegan ${missingNarration + 1} belum punya narasi.`
       : '';
-  const canRestartStaleJob = isGenerating && isGenerationStale(project);
 
   const handleGenerate = async () => {
     if (validationMessage) return;
     setError('');
-    if (!canRestartStaleJob && !(await persist())) {
+    if (!(await persist())) {
       setError('Draf belum tersimpan. Periksa koneksi, lalu coba lagi.');
       return;
     }
@@ -203,7 +184,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
             role="status"
             className={`text-sm ${saveState === 'error' ? 'text-red-300' : 'text-slate-300'}`}
           >
-            {isGenerating ? 'Sedang dibuat' : SAVE_LABELS[saveState]}
+            {SAVE_LABELS[saveState]}
           </span>
         </div>
       </header>
@@ -370,9 +351,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
       <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-800 bg-slate-900">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <div className="min-w-0 text-sm" aria-live="polite">
-            {isGenerating ? (
-              <p className="text-slate-200">Membuat suara dan animasi. Ini bisa memakan beberapa menit.</p>
-            ) : error || validationMessage ? (
+            {error || validationMessage ? (
               <p className={error ? 'text-red-300' : 'text-amber-300'}>{error || validationMessage}</p>
             ) : (
               <p className="tabular-nums text-slate-200">
@@ -382,16 +361,16 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
           </div>
           <button
             type="button"
-            disabled={(isGenerating && !canRestartStaleJob) || Boolean(validationMessage)}
+            disabled={isGenerating || Boolean(validationMessage)}
             onClick={handleGenerate}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 transition-colors duration-150 hover:bg-emerald-300 sm:w-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
           >
-            {isGenerating && !canRestartStaleJob ? (
+            {isGenerating ? (
               <RefreshCw className="h-4 w-4 motion-safe:animate-spin" />
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            {canRestartStaleJob ? 'Coba lagi' : isGenerating ? 'Sedang dibuat' : error ? 'Coba lagi' : 'Buat Video'}
+            {isGenerating ? 'Membuka editor…' : error ? 'Coba lagi' : 'Buat Video'}
           </button>
         </div>
       </footer>

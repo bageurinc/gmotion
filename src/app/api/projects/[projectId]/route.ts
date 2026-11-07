@@ -26,6 +26,10 @@ export async function PUT(
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
+  if (existing.status === 'generating') {
+    return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
+  }
+
   const body = await req.json();
   const updated = {
     ...existing,

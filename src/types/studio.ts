@@ -82,6 +82,13 @@ export interface ProjectChatMessage {
 export const SocialPlatformSchema = z.enum(['generic', 'tiktok', 'instagram', 'shorts', 'facebook']);
 export type SocialPlatform = z.infer<typeof SocialPlatformSchema>;
 
+export type SceneStage = 'queued' | 'audio' | 'animation' | 'ready' | 'failed';
+
+export interface SceneProgress {
+  stage: SceneStage;
+  error?: string;
+}
+
 export interface StudioProject {
   safeAreaPlatform?: SocialPlatform;
   id: string;
@@ -92,7 +99,7 @@ export interface StudioProject {
   files: VirtualFileMap; // e.g. "Scene1.tsx", "Scene2.tsx", "MainVideo.tsx"
   chatHistory: ProjectChatMessage[];
   status: 'draft' | 'idle' | 'generating' | 'rendering' | 'ready' | 'error';
-  generationStartedAt?: number;
+  sceneProgress?: Record<string, SceneProgress>;
   generationError?: string;
   exportVideoUrl?: string;
 }

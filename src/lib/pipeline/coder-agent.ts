@@ -984,13 +984,17 @@ export default ${compName};
 /**
  * Generate MainVideo composition file combining all scenes and audio
  */
-export function generateMainVideoCode(storyboard: Storyboard): string {
-  const sceneImports = storyboard.scenes
-    .map((s, i) => `import Scene${i + 1} from './Scene${i + 1}';`)
+export function generateMainVideoCode(
+  storyboard: Storyboard,
+  sceneIndexes: number[] = storyboard.scenes.map((_, index) => index)
+): string {
+  const sceneImports = sceneIndexes
+    .map((i) => `import Scene${i + 1} from './Scene${i + 1}';`)
     .join('\n');
 
-  const sequences = storyboard.scenes
-    .map((s, i) => {
+  const sequences = sceneIndexes
+    .map((i) => {
+      const s = storyboard.scenes[i];
       return `      <Series.Sequence durationInFrames={${s.durationInFrames}}>
         <Scene${i + 1} palette={palette} />
         {/* Voiceover audio for Scene ${i + 1} */}
@@ -1020,16 +1024,13 @@ export default MainVideo;
 }
 
 /**
- * Generate virtual project files for all scenes and MainVideo
+ * Generate the TSX file for one scene
  */
-export async function generateProjectVirtualFiles(storyboard: Storyboard): Promise<VirtualFileMap> {
-  const files: VirtualFileMap = {};
+export async function generateSceneFile(storyboard: Storyboard, i: number): Promise<string> {
   const isAds = storyboard.preset === 'ads-ui';
   const { width, height } = AspectRatioDimensions[storyboard.aspectRatio];
-
   const outline = storyboard.scenes.map((scene, index) => `${index + 1}. ${scene.title}`).join('\n');
-
-  const sceneCodes = await mapWithConcurrency(storyboard.scenes, PIPELINE_CONCURRENCY, async (scene, i) => {
+  const scene = storyboard.scenes[i];
     const fileName = `Scene${i + 1}.tsx`;
 
     let code = '';
@@ -1132,13 +1133,20 @@ Fix all errors and return ONLY clean, working TypeScript/TSX code inside \`\`\`t
     }
 
     return code;
-  });
+}
+
+/**
+ * Generate virtual project files for all scenes and MainVideo
+ */
+export async function generateProjectVirtualFiles(storyboard: Storyboard): Promise<VirtualFileMap> {
+  const files: VirtualFileMap = {};
+  const sceneCodes = await mapWithConcurrency(storyboard.scenes, PIPELINE_CONCURRENCY, (_, index) =>
+    generateSceneFile(storyboard, index)
+  );
 
   sceneCodes.forEach((code, index) => {
     files[`Scene${index + 1}.tsx`] = code;
   });
-
-  // Generate MainVideo.tsx
   files['MainVideo.tsx'] = generateMainVideoCode(storyboard);
 
   return files;

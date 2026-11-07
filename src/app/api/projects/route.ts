@@ -32,14 +32,7 @@ export async function POST(req: NextRequest) {
       userPrompt: prompt,
       storyboard,
       files: {},
-      chatHistory: [
-        {
-          id: `msg_${Date.now()}`,
-          sender: 'assistant',
-          content: `Proyek video berhasil dibuat dengan preset **${preset === 'ads-ui' ? 'High-Converting Ads UI' : '2D Illustrated Story'}** (${aspectRatio}). Anda dapat meninjau video di player kanan atau meminta revisi per-adegan di sini.`,
-          timestamp: Date.now(),
-        },
-      ],
+      chatHistory: [],
       status: 'draft',
     };
 

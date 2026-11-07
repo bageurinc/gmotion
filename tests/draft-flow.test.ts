@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateMainVideoCode, generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
+import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { POST as createProject } from '@/app/api/projects/route';
 import { POST as generateProject } from '@/app/api/projects/[projectId]/generate/route';
 import { PATCH as updateDraft } from '@/app/api/projects/[projectId]/storyboard/route';
+import { GET as projectEvents } from '@/app/api/projects/[projectId]/events/route';
+import { POST as projectRender } from '@/app/api/projects/[projectId]/render/route';
+import { PUT as updateProject } from '@/app/api/projects/[projectId]/route';
 import {
   applyDraftUpdate,
   estimateNarrationSeconds,
   firstSceneWithoutNarration,
-  isGenerationStale,
+  hasFailedScene,
+  readyScenes,
   normalizeSceneOrder,
 } from '@/lib/pipeline/draft';
 import { generateProceduralStoryboard, parseStoryboardFromLLMResponse } from '@/lib/pipeline/director-agent';
@@ -81,10 +87,28 @@ describe('draft helpers', () => {
     expect(estimateNarrationSeconds(Array(24).fill('kata').join(' '))).toBeCloseTo(10.35);
   });
 
-  it('treats an old generating job as stale', () => {
-    const project = { status: 'generating', generationStartedAt: 0 } as StudioProject;
-    expect(isGenerationStale(project, 16 * 60_000)).toBe(true);
-    expect(isGenerationStale(project, 60_000)).toBe(false);
+  it('previews only finished scenes', () => {
+    const [first, second] = storyboard.scenes;
+    const project = { storyboard, sceneProgress: { [first.id]: { stage: 'ready' as const }, [second.id]: { stage: 'audio' as const } } };
+    expect(readyScenes(project).map((scene) => scene.id)).toEqual([first.id]);
+    expect(readyScenes({ storyboard }).length).toBe(storyboard.scenes.length);
+  });
+
+  it('detects failed scenes', () => {
+    expect(hasFailedScene({ sceneProgress: { a: { stage: 'failed' } } })).toBe(true);
+    expect(hasFailedScene({ sceneProgress: { a: { stage: 'ready' } } })).toBe(false);
+    expect(hasFailedScene({})).toBe(false);
+  });
+});
+
+describe('partial preview', () => {
+  it('compiles a video from only the finished scenes', async () => {
+    const storyboard = generateProceduralStoryboard('Topik uji', 'story-2d', '9:16');
+    const main = generateMainVideoCode(storyboard, [1]);
+    expect(main).toContain('Scene2');
+    expect(main).not.toContain('Scene1');
+    const files = { 'Scene2.tsx': await generateSceneFile(storyboard, 1), 'MainVideo.tsx': main };
+    expect(typeof compileVirtualProject(files, 'MainVideo.tsx')).toBe('function');
   });
 });
 
@@ -134,7 +158,14 @@ describe('draft review flow', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('saves edits and generates from the edited draft', async () => {
+  const finished = (id: string) =>
+    vi.waitFor(() => {
+      const project = getProject(id) as StudioProject;
+      expect(project.status).toBe('ready');
+      return project;
+    }, { timeout: 5000, interval: 25 });
+
+  it('saves edits and generates from the edited draft in the background', async () => {
     const project = await createDraft();
     const update = toUpdate(project);
     update.scenes[0].voiceoverText = 'Narasi hasil revisi user.';
@@ -143,12 +174,35 @@ describe('draft review flow', () => {
     expect(saved.status).toBe(200);
 
     const res = await generateProject(request(), context(project.id));
-    expect(res.status).toBe(200);
-    const result = getProject(project.id) as StudioProject;
-    expect(result.status).toBe('ready');
+    expect(res.status).toBe(202);
+    expect((await res.json()).project.status).toBe('generating');
+
+    const result = await finished(project.id);
     expect(result.storyboard.scenes[3].voiceoverText).toBe('Narasi hasil revisi user.');
     expect(result.storyboard.scenes[0].id).toMatch(/^scene-1-/);
-    expect(result.files['MainVideo.tsx']).toBeDefined();
+    expect(Object.values(result.sceneProgress ?? {}).every((scene) => scene.stage === 'ready')).toBe(true);
+    expect(result.files['MainVideo.tsx']).toContain('Scene4');
+    expect(result.chatHistory).toHaveLength(1);
+  });
+
+  it('streams scene progress until the job finishes', async () => {
+    const project = await createDraft();
+    await generateProject(request(), context(project.id));
+    const res = await projectEvents(new NextRequest('http://localhost/api'), context(project.id));
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    const body = await res.text();
+    const events = body.split('\n\n').filter((part) => part.startsWith('data:'));
+    const last = JSON.parse(events.at(-1)!.slice(5));
+    expect(last.project.status).toBe('ready');
+    expect(last.interrupted).toBe(false);
+  });
+
+  it('reports a generation that lost its job', async () => {
+    const project = await createDraft();
+    saveProject({ ...project, status: 'generating' });
+    const res = await projectEvents(new NextRequest('http://localhost/api'), context(project.id));
+    const body = await res.text();
+    expect(JSON.parse(body.split('\n\n')[0].slice(5)).interrupted).toBe(true);
   });
 
   it('blocks generation when a scene has no narration', async () => {
@@ -162,14 +216,35 @@ describe('draft review flow', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('returns to draft with a message when generation fails', async () => {
+  it('keeps finished scenes and retries only the failed one', async () => {
     const project = await createDraft();
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('down', { status: 503 })));
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
+      calls += 1;
+      return calls === 2 ? new Response('down', { status: 503 }) : new Response(new Uint8Array(speech));
+    }));
+    await generateProject(request(), context(project.id));
+    const partial = await finished(project.id);
+    expect(partial.generationError).toContain('1 adegan');
+    const stages = Object.values(partial.sceneProgress ?? {}).map((scene) => scene.stage);
+    expect(stages.filter((stage) => stage === 'ready')).toHaveLength(3);
+    expect(stages).toContain('failed');
+    expect((await projectRender(request({ safeAreaPlatform: 'tiktok' }), context(project.id))).status).toBe(409);
+
+    calls = 10;
     const res = await generateProject(request(), context(project.id));
-    expect(res.status).toBe(500);
-    const result = getProject(project.id) as StudioProject;
-    expect(result.status).toBe('draft');
-    expect(result.generationError).toContain('503');
+    expect(res.status).toBe(202);
+    const complete = await finished(project.id);
+    expect(complete.generationError).toBeUndefined();
+    expect(calls).toBe(11);
+    expect(Object.keys(complete.files).filter((file) => file.startsWith('Scene'))).toHaveLength(4);
+  });
+
+  it('blocks manual edits while scenes are generating', async () => {
+    const project = await createDraft();
+    saveProject({ ...project, status: 'generating' });
+    const res = await updateProject(new NextRequest('http://localhost/api', { method: 'PUT', body: '{}' }), context(project.id));
+    expect(res.status).toBe(409);
   });
 
   it('rejects draft edits after generation', async () => {
