@@ -1,7 +1,7 @@
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import { captureSceneSheets } from '@/lib/render/scene-check';
 import type { StudioProject } from '@/types/studio';
-import { AssetCritique, critiqueAsset, GeneratedAsset, reviseAsset } from './asset-generator';
+import { AssetCritique, critiqueAsset, GeneratedAsset, repairAsset, reviseAsset } from './asset-generator';
 import { assetModel, buildAssetScene, sceneTopicPrompt } from './scene-generator';
 
 /** The critic is strict: clips viewers accepted scored about 5, so only clearly weak scenes are redrawn. */
@@ -94,8 +94,15 @@ export function qualityTools(
     critique: async (project, index, asset, sheet) =>
       (await critiqueAsset(criticModel(), sceneTopicPrompt(project.storyboard, index), asset, sheet)).critique,
     redraw: async (project, index, asset, critique, sheet) => {
-      const { text } = await reviseAsset(assetModel(), sceneTopicPrompt(project.storyboard, index), asset, critique, sheet);
-      return buildAssetScene(text, project.storyboard, index);
+      const prompt = sceneTopicPrompt(project.storyboard, index);
+      const { text } = await reviseAsset(assetModel(), prompt, asset, critique, sheet);
+      try {
+        return buildAssetScene(text, project.storyboard, index);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const repaired = await repairAsset(assetModel(), prompt, text, message);
+        return buildAssetScene(repaired.text, project.storyboard, index);
+      }
     },
     saveScene: (index, draft, score) => {
       commit((project) => {
