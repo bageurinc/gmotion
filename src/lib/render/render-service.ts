@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
+import { isValidProjectId, isVirtualFileName } from '@/lib/security/project-input';
 import { StudioProject, AspectRatioDimensions, SocialPlatformSchema } from '@/types/studio';
 
 export interface RenderProgressCallback {
@@ -20,6 +21,7 @@ export const COMPOSITION_ID = 'MainVideo';
 /** Materializes a project and bundles it. Exports and scene checks share this code path. */
 export async function bundleProject(project: StudioProject): Promise<string> {
     const projectId = project.id;
+    if (!isValidProjectId(projectId)) throw new Error('Invalid project id');
     const projectDir = path.join(process.cwd(), 'storage', 'projects', projectId);
     const buildSrcDir = path.join(projectDir, 'build-src');
 
@@ -39,6 +41,8 @@ export async function bundleProject(project: StudioProject): Promise<string> {
 
     // 1. Materialize virtual TSX files to disk
     for (const [filename, code] of Object.entries(project.files)) {
+      if (!isVirtualFileName(filename)) throw new Error(`Invalid project file name: ${filename}`);
+
       // Bundled public assets are served under /public/, not the bundle root.
       // Rewrite every virtual file and preserve audio revision query strings.
       let finalCode = code.split(`/api/projects/${projectId}/assets/`).join('/public/');

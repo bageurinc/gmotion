@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { RevisionInputSchema } from '@/lib/security/project-input';
 import { getProject, saveProject } from '@/lib/storage/project-store';
 import { reviseSceneCode } from '@/lib/pipeline/coder-agent';
 import { ProjectChatMessage } from '@/types/studio';
@@ -19,13 +20,12 @@ export async function POST(
       return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
     }
 
-    const body = await req.json();
-    const userMessage = body.userMessage?.trim();
-    let targetSceneId = body.sceneId;
-
-    if (!userMessage) {
-      return NextResponse.json({ error: 'userMessage is required' }, { status: 400 });
+    const input = RevisionInputSchema.safeParse(await req.json().catch(() => null));
+    if (!input.success) {
+      return NextResponse.json({ error: 'Pesan revisi tidak valid.' }, { status: 400 });
     }
+    const { userMessage } = input.data;
+    let targetSceneId = input.data.sceneId;
 
     // Infer target scene if not explicitly selected
     if (!targetSceneId) {

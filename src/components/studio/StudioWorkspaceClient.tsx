@@ -129,24 +129,18 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   };
 
   // Handle manual code save
-  const handleSaveCode = () => {
-    const updatedFiles = {
-      ...project.files,
-      [selectedFile]: editingCode,
-    };
-    const updatedProject = {
-      ...project,
-      files: updatedFiles,
-      updatedAt: Date.now(),
-    };
-    setProject(updatedProject);
-
-    // Save to backend
-    fetch(`/api/projects/${project.id}`, {
+  const handleSaveCode = async () => {
+    const res = await fetch(`/api/projects/${project.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: updatedFiles }),
-    });
+      body: JSON.stringify({ files: { [selectedFile]: editingCode } }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (!res?.ok || !data?.project) {
+      alert(data?.error || 'Kode gagal disimpan.');
+      return;
+    }
+    setProject(data.project);
   };
 
   // Handle export MP4

@@ -1,10 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import { isValidProjectId } from '@/lib/security/project-input';
 import { StudioProject } from '@/types/studio';
 
 const STORAGE_ROOT = path.join(process.cwd(), 'storage', 'projects');
 
 export function ensureStorageDir(projectId?: string): string {
+  if (projectId !== undefined && !isValidProjectId(projectId)) {
+    throw new Error('Invalid project id');
+  }
   const targetDir = projectId ? path.join(STORAGE_ROOT, projectId) : STORAGE_ROOT;
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
@@ -19,6 +23,7 @@ export function saveProject(project: StudioProject): void {
 }
 
 export function getProject(projectId: string): StudioProject | null {
+  if (!isValidProjectId(projectId)) return null;
   try {
     const projectFile = path.join(STORAGE_ROOT, projectId, 'project.json');
     if (!fs.existsSync(projectFile)) {

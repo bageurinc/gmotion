@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
 import { saveProject, listProjects } from '@/lib/storage/project-store';
-import { StudioProject, StylePreset, AspectRatio } from '@/types/studio';
+import { CreateProjectSchema } from '@/lib/security/project-input';
+import { StudioProject } from '@/types/studio';
 
 export async function GET() {
   const projects = listProjects();
@@ -10,14 +11,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const prompt = body.prompt?.trim();
-    const preset = (body.preset as StylePreset) || 'ads-ui';
-    const aspectRatio = (body.aspectRatio as AspectRatio) || '9:16';
-
-    if (!prompt) {
-      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
+    const input = CreateProjectSchema.safeParse(await req.json().catch(() => null));
+    if (!input.success) {
+      return NextResponse.json({ error: 'Prompt tidak valid.' }, { status: 400 });
     }
+    const { prompt, preset, aspectRatio } = input.data;
 
     const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 

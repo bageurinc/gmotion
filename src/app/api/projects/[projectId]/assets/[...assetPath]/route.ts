@@ -1,41 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { isValidProjectId } from '@/lib/security/project-input';
+
+const MEDIA_TYPES: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+};
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string; assetPath: string[] }> }
 ) {
   const { projectId, assetPath } = await params;
+  if (!isValidProjectId(projectId)) {
+    return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+  }
+
+  // Only generated media is public. project.json and build sources stay private.
   const projectDir = path.join(process.cwd(), 'storage', 'projects', projectId);
+  const [root, relativePath] =
+    assetPath[0] === 'exports'
+      ? [path.join(projectDir, 'exports'), assetPath.slice(1).join('/')]
+      : [path.join(projectDir, 'assets'), assetPath.join('/')];
+  const filePath = path.resolve(root, relativePath);
+  const isInsideRoot = filePath.startsWith(`${root}${path.sep}`);
+  const isMedia = MEDIA_TYPES[path.extname(filePath).toLowerCase()] !== undefined;
 
-  // Security check to avoid directory traversal
-  const relativeJoined = assetPath.join('/');
-  if (relativeJoined.includes('..')) {
-    return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
-  }
-
-  // Check in assets/ or exports/
-  let filePath = path.join(projectDir, 'assets', relativeJoined);
-  if (!fs.existsSync(filePath)) {
-    filePath = path.join(projectDir, relativeJoined);
-  }
-  if (!fs.existsSync(filePath)) {
-    filePath = path.join(projectDir, 'exports', relativeJoined);
-  }
-
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+  if (!isInsideRoot || !isMedia || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
   }
 
   const stat = fs.statSync(filePath);
-  const ext = path.extname(filePath).toLowerCase();
-
-  let contentType = 'application/octet-stream';
-  if (ext === '.mp3') contentType = 'audio/mpeg';
-  else if (ext === '.wav') contentType = 'audio/wav';
-  else if (ext === '.mp4') contentType = 'video/mp4';
-  else if (ext === '.json') contentType = 'application/json';
+  const contentType = MEDIA_TYPES[path.extname(filePath).toLowerCase()];
 
   const headers: Record<string, string> = {
       'Content-Type': contentType,
