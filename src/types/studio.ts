@@ -87,6 +87,7 @@ export type SceneStage = 'queued' | 'audio' | 'animation' | 'ready' | 'failed';
 export interface SceneProgress {
   stage: SceneStage;
   error?: string;
+  simplified?: boolean;
 }
 
 export interface StudioProject {

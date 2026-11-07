@@ -10,6 +10,7 @@ export * from './ads/MetricsDashboard';
 export * from './ads/PulseCTAButton';
 export * from './story/ParallaxWorld';
 export * from './story/TimelapseClock';
+export * from './explainer/AssetStage';
 export * from './timelapse/primitives';
 export * from './timelapse/examples';
 export * from './docs';

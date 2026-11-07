@@ -67,6 +67,11 @@ export const SafeOverlay: React.FC<React.PropsWithChildren<{
   );
 };
 
+export const useSafeInsets = () => {
+  const { width, height } = useVideoConfig();
+  return getSocialSafeInsets(width, height, useContext(SafeAreaContext));
+};
+
 export const useSafeOverlay = () => useContext(OverlayTarget) !== null;
 
 export const SceneLayout: React.FC<React.PropsWithChildren<{

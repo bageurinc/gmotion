@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { composeAssetScene } from '@/lib/explainer/scene-generator';
+import { validateSceneCode } from '@/lib/pipeline/code-validator';
+import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
+import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
+import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
 import { AssetManifestSchema, missingContractIds } from '@/lib/explainer/asset-contract';
 import { parseAssetResponse, parseCritique } from '@/lib/explainer/asset-generator';
 import { buildAssetShots } from '@/motion-kit/explainer/AssetStage';
@@ -69,11 +74,31 @@ describe('explainer asset contract', () => {
     expect(parseCritique(JSON.stringify(critique)).average).toBe(7.5);
   });
 
-  it('builds the same shot structure for any manifest', () => {
-    const shots = buildAssetShots(AssetManifestSchema.parse(manifest));
-    expect(shots.map((shot) => shot.view)).toEqual(['exterior', 'exterior', 'cutaway', 'cutaway']);
-    expect(shots[2].highlightPart).toBe('fan');
-    expect(shots[3].highlightPart).toBe('compressor');
+  it('fits the shot count to the scene length', () => {
+    const parsed = AssetManifestSchema.parse(manifest);
+    const shots = buildAssetShots(parsed, 300, 30);
+    expect(shots.map((shot) => shot.highlightPart)).toEqual([undefined, 'fan', 'compressor', 'turbine']);
+    expect(shots[0].view).toBe('exterior');
+    expect(shots[1].view).toBe('cutaway');
     expect(shots.at(-1)?.to).toBe(300);
+    expect(buildAssetShots(parsed, 90, 30)).toHaveLength(1);
+  });
+});
+
+describe('asset scene composition', () => {
+  const storyboard = generateProceduralStoryboard('Topik uji', 'story-2d', '9:16');
+  storyboard.scenes[1].kineticHeadline = 'JUDUL "UJI"';
+  const composed = composeAssetScene(parseAssetResponse(response), storyboard, 1);
+
+  it('produces a valid self-contained scene', () => {
+    expect(validateSceneCode(composed, 'Scene2.tsx').valid).toBe(true);
+    expect(composed).toContain('export default Scene2');
+    expect(composed).not.toContain('export default Asset');
+    expect(composed).toContain(storyboard.palette.primary);
+  });
+
+  it('compiles in the browser runtime', () => {
+    const files = { 'Scene2.tsx': composed, 'MainVideo.tsx': generateMainVideoCode(storyboard, [1]) };
+    expect(typeof compileVirtualProject(files, 'MainVideo.tsx')).toBe('function');
   });
 });

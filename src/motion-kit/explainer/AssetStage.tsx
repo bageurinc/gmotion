@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Easing, interpolate, random, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Easing, interpolate, random, useCurrentFrame, useVideoConfig } from 'remotion';
 import { getLength, getPointAtLength } from '@remotion/paths';
+import { SceneBackground, SceneLayout, useSafeInsets } from '../core/SafeOverlay';
 import type { AssetFocus, AssetManifest, GeneratedAssetProps } from '../../lib/explainer/asset-contract';
 
 export interface StageShot {
@@ -10,51 +11,35 @@ export interface StageShot {
   focus: AssetFocus;
   highlightPart?: string;
   flowId?: string;
-  headline?: string;
-  kicker?: string;
-  caption?: string;
 }
 
 const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
 const EASE = Easing.bezier(0.45, 0, 0.2, 1);
+const MIN_SHOT_SECONDS = 2.2;
 
-/** Builds a short topic-neutral shot list from a manifest. */
-export function buildAssetShots(manifest: AssetManifest, fps = 30): StageShot[] {
-  const [firstView, secondView] = manifest.views;
-  const secondViewParts = manifest.parts.filter((part) => part.views.includes(secondView.id));
-  const [partA, partB] = secondViewParts;
-  const flows = manifest.flows.filter((flow) => flow.view === secondView.id);
-  const seconds = (value: number) => Math.round(value * fps);
+/** Splits a scene into a wide shot followed by a close look at each part it has time for. */
+export function buildAssetShots(manifest: AssetManifest, durationInFrames = 300, fps = 30): StageShot[] {
+  const [firstView] = manifest.views;
+  const revealed = manifest.parts.filter((part) => part.views.some((view) => view !== firstView.id));
+  const parts = revealed.length ? revealed : manifest.parts;
+  const shotCount = Math.max(1, Math.min(parts.length + 1, Math.floor(durationInFrames / (MIN_SHOT_SECONDS * fps))));
+  const boundary = (index: number) => Math.round((index * durationInFrames) / shotCount);
 
-  return [
-    {
-      from: 0,
-      to: seconds(2.5),
-      view: firstView.id,
-      focus: manifest.heroFocus,
-      kicker: manifest.subtitle,
-      headline: manifest.title,
-    },
-    { from: seconds(2.5), to: seconds(5), view: firstView.id, focus: WIDE, headline: manifest.title },
-    {
-      from: seconds(5),
-      to: seconds(7.5),
-      view: secondView.id,
-      focus: { x: 500, y: 500, scale: 1.08 },
-      highlightPart: partA.id,
-      flowId: flows[0].id,
-      caption: secondView.label,
-    },
-    {
-      from: seconds(7.5),
-      to: seconds(10),
-      view: secondView.id,
-      focus: partB.focus,
-      highlightPart: partB.id,
-      flowId: (flows[1] ?? flows[0]).id,
-      caption: partB.label,
-    },
-  ];
+  return Array.from({ length: shotCount }, (_, index) => {
+    const range = { from: boundary(index), to: boundary(index + 1) };
+    if (index === 0) return { ...range, view: firstView.id, focus: WIDE };
+
+    const part = parts[index - 1];
+    const view = part.views.find((id) => id !== firstView.id) ?? part.views[0];
+    const flows = manifest.flows.filter((flow) => flow.view === view);
+    return {
+      ...range,
+      view,
+      focus: part.focus,
+      highlightPart: part.id,
+      flowId: flows.length ? flows[index % flows.length].id : undefined,
+    };
+  });
 }
 
 function cameraAt(frame: number, shots: StageShot[], fps: number): AssetFocus {
@@ -133,29 +118,33 @@ const FlowParticles: React.FC<{ d: string; color: string; frame: number; opacity
   );
 };
 
-export const AssetStage: React.FC<{
+export const AssetStage: React.FC<React.PropsWithChildren<{
   manifest: AssetManifest;
   Asset: React.ComponentType<GeneratedAssetProps>;
   shots?: StageShot[];
-}> = ({ manifest, Asset, shots: providedShots }) => {
+}>> = ({ manifest, Asset, shots: providedShots, children }) => {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
-  const shots = useMemo(() => providedShots ?? buildAssetShots(manifest, fps), [providedShots, manifest, fps]);
+  const { fps, width, height, durationInFrames } = useVideoConfig();
+  const insets = useSafeInsets();
+  const shots = useMemo(
+    () => providedShots ?? buildAssetShots(manifest, durationInFrames, fps),
+    [providedShots, manifest, durationInFrames, fps]
+  );
   const shot = shots.find((item) => frame >= item.from && frame < item.to) ?? shots[shots.length - 1];
   const camera = cameraAt(frame, shots, fps);
   const fadeFrames = Math.round(fps * 0.6);
 
   const viewOpacity = Object.fromEntries(
     manifest.views.map((view) => {
-      const entered = shots.reduce((opacity, item) => {
+      const opacity = shots.reduce((current, item) => {
         const target = item.view === view.id ? 1 : 0;
         const progress = interpolate(frame, [item.from, item.from + fadeFrames], [0, 1], {
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });
-        return opacity + (target - opacity) * progress;
+        return current + (target - current) * progress;
       }, shots[0].view === view.id ? 1 : 0);
-      return [view.id, entered];
+      return [view.id, opacity];
     })
   );
 
@@ -172,26 +161,31 @@ export const AssetStage: React.FC<{
     })
   );
 
-  const stageSize = width;
-  const stageTop = (height - stageSize) / 2 + 70;
+  const safeWidth = width * (1 - insets.left - insets.right);
+  const safeHeight = height * (1 - insets.top - insets.bottom);
+  const stageSize = Math.min(safeWidth, safeHeight * 0.72);
+  const stageLeft = width * insets.left + (safeWidth - stageSize) / 2;
+  const stageTop = height * insets.top + (safeHeight - stageSize) * 0.55;
   const pixelsPerUnit = stageSize / 1000;
   const translateX = stageSize / 2 - camera.x * pixelsPerUnit * camera.scale;
   const translateY = stageSize / 2 - camera.y * pixelsPerUnit * camera.scale;
   const activePart = manifest.parts.find((part) => part.id === shot.highlightPart);
   const activeFlow = manifest.flows.find((flow) => flow.id === shot.flowId);
-  const textIn = interpolate(frame, [shot.from, shot.from + 14], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const flowOpacity = interpolate(frame, [shot.from + 8, shot.from + 24], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const labelOpacity = interpolate(frame, [shot.from + 8, shot.from + 24], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   return (
-    <AbsoluteFill
-      style={{
-        background: `radial-gradient(circle at 50% 46%, ${manifest.palette.backgroundFrom} 0%, ${manifest.palette.backgroundTo} 72%)`,
-        overflow: 'hidden',
-        fontFamily: 'Helvetica Neue, Arial, sans-serif',
-      }}
-    >
-      <Bokeh manifest={manifest} frame={frame} width={width} height={height} />
-      <div style={{ position: 'absolute', top: stageTop, left: 0, width: stageSize, height: stageSize }}>
+    <SceneLayout backgroundColor={manifest.palette.backgroundTo}>
+      <SceneBackground
+        style={{
+          background: `radial-gradient(circle at 50% 48%, ${manifest.palette.backgroundFrom} 0%, ${manifest.palette.backgroundTo} 72%)`,
+        }}
+      >
+        <Bokeh manifest={manifest} frame={frame} width={width} height={height} />
+      </SceneBackground>
+      <div style={{ position: 'absolute', top: stageTop, left: stageLeft, width: stageSize, height: stageSize, zIndex: 1 }}>
         <div
           style={{
             position: 'absolute',
@@ -202,7 +196,7 @@ export const AssetStage: React.FC<{
         >
           <Asset viewOpacity={viewOpacity} highlight={highlight} time={frame / fps} />
           <svg viewBox="0 0 1000 1000" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
-            {activeFlow && <FlowParticles d={activeFlow.d} color={activeFlow.color} frame={frame} opacity={flowOpacity} />}
+            {activeFlow && <FlowParticles d={activeFlow.d} color={activeFlow.color} frame={frame} opacity={labelOpacity} />}
           </svg>
         </div>
         {activePart && (
@@ -212,13 +206,14 @@ export const AssetStage: React.FC<{
               left: activePart.anchor.x * pixelsPerUnit * camera.scale + translateX,
               top: activePart.anchor.y * pixelsPerUnit * camera.scale + translateY,
               transform: 'translate(-50%, -50%)',
-              opacity: flowOpacity,
+              opacity: labelOpacity,
               padding: '10px 22px',
               borderRadius: 16,
               background: 'rgba(12, 8, 20, 0.82)',
               border: `2px solid ${manifest.palette.accent}`,
               color: manifest.palette.text,
-              fontSize: 34,
+              fontFamily: 'Arial, sans-serif',
+              fontSize: Math.round(width * 0.03),
               fontWeight: 700,
               whiteSpace: 'nowrap',
             }}
@@ -227,28 +222,7 @@ export const AssetStage: React.FC<{
           </div>
         )}
       </div>
-      {shot.headline && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: '0 0 auto 0',
-            height: 700,
-            opacity: textIn,
-            background: `linear-gradient(to bottom, ${manifest.palette.backgroundTo} 45%, transparent)`,
-          }}
-        />
-      )}
-      <div style={{ position: 'absolute', top: 170, left: 80, right: 80, textAlign: 'center', opacity: textIn, color: manifest.palette.text }}>
-        {shot.kicker && <div style={{ fontSize: 38, fontWeight: 500, marginBottom: 12 }}>{shot.kicker}</div>}
-        {shot.headline && <div style={{ fontSize: 88, lineHeight: 1.05, fontWeight: 300, letterSpacing: 4 }}>{shot.headline}</div>}
-      </div>
-      {shot.caption && (
-        <div style={{ position: 'absolute', left: 90, right: 90, bottom: 300, display: 'flex', justifyContent: 'center', opacity: textIn }}>
-          <div style={{ padding: '18px 34px', borderRadius: 20, background: 'rgba(12, 8, 20, 0.78)', color: manifest.palette.text, fontSize: 44, fontWeight: 700, textAlign: 'center' }}>
-            {shot.caption}
-          </div>
-        </div>
-      )}
-    </AbsoluteFill>
+      {children}
+    </SceneLayout>
   );
 };

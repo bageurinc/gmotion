@@ -228,6 +228,31 @@ async function requestAsset(model: string, content: ChatContent): Promise<{ text
   };
 }
 
+export interface SceneAssetContext {
+  videoTitle: string;
+  outline: string;
+  sceneNumber: number;
+  sceneCount: number;
+  sceneTitle: string;
+  narration: string;
+  visualPrompt: string;
+  palette: Record<string, string>;
+}
+
+export function sceneAssetPrompt(context: SceneAssetContext): string {
+  return `Create the asset for scene ${context.sceneNumber} of ${context.sceneCount} in the video "${context.videoTitle}".
+
+Video outline:
+${context.outline}
+
+This scene: ${context.sceneTitle}
+Narration: "${context.narration}"
+Visual direction: "${context.visualPrompt}"
+Video colors, which must dominate the illustration: ${JSON.stringify(context.palette)}
+
+Draw what this exact stage needs to explain, with accurate structure and correct real-world detail. All scenes share one illustration style, light direction, and color world so the video feels like one film.`;
+}
+
 export function generateAsset(model: string, topicPrompt: string) {
   return requestAsset(model, `Create the asset for this user request:\n"${topicPrompt}"`);
 }

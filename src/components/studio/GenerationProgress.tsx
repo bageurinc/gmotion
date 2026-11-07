@@ -7,7 +7,7 @@ import { SceneStage, StudioProject } from '@/types/studio';
 const STAGE_LABELS: Record<SceneStage, string> = {
   queued: 'Menunggu',
   audio: 'Membuat suara',
-  animation: 'Membuat animasi',
+  animation: 'Menggambar adegan',
   ready: 'Selesai',
   failed: 'Gagal',
 };
@@ -70,7 +70,7 @@ export const GenerationProgress: React.FC<{
                 {index + 1}. {scene.title}
               </span>
               <span className={`shrink-0 ${stage === 'failed' ? 'text-red-300' : 'text-slate-300'}`}>
-                {STAGE_LABELS[stage]}
+                {project.sceneProgress?.[scene.id]?.simplified ? 'Versi sederhana' : STAGE_LABELS[stage]}
               </span>
             </li>
           );

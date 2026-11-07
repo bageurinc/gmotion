@@ -1,6 +1,7 @@
 import { saveProject } from '@/lib/storage/project-store';
 import type { SceneStage, StudioProject } from '@/types/studio';
-import { generateMainVideoCode, generateSceneFile } from './coder-agent';
+import { generateVideoSceneFile } from '@/lib/explainer/scene-generator';
+import { generateMainVideoCode } from './coder-agent';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import { normalizeSceneOrder } from './draft';
 import { generateSceneAudio } from './tts-engine';
@@ -72,9 +73,12 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       }));
 
       setStage(sceneId, 'animation');
-      const code = await generateSceneFile(project.storyboard, index);
+      const { code, simplified } = await generateVideoSceneFile(project.storyboard, index);
       commit((current) => {
-        const sceneProgress = { ...current.sceneProgress, [sceneId]: { stage: 'ready' as const } };
+        const sceneProgress = {
+          ...current.sceneProgress,
+          [sceneId]: { stage: 'ready' as const, ...(simplified ? { simplified } : {}) },
+        };
         const next = { ...current, sceneProgress };
         return {
           sceneProgress,

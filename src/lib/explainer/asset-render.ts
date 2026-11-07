@@ -11,10 +11,15 @@ const SHEET_FRAMES = [45, 130, 215, 285];
 const ROOT_CODE = `import React from 'react';
 import { Composition, registerRoot } from 'remotion';
 import { AssetStage } from '@/motion-kit/explainer/AssetStage';
+import { KineticHeadline } from '@/motion-kit/core/KineticHeadline';
 import Asset from './Asset';
 import manifest from './manifest.json';
 
-const Clip: React.FC = () => <AssetStage manifest={manifest as never} Asset={Asset} />;
+const Clip: React.FC = () => (
+  <AssetStage manifest={manifest as never} Asset={Asset}>
+    <KineticHeadline text={manifest.title} highlightColor={manifest.palette.accent} />
+  </AssetStage>
+);
 
 const Root: React.FC = () => (
   <Composition id="AssetClip" component={Clip} durationInFrames={${CLIP_FRAMES}} fps={30} width={1080} height={1920} />
