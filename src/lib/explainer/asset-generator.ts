@@ -108,7 +108,7 @@ const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 const MAX_ROUTER_RETRIES = 6;
 const ROUTER_RETRY_DELAY_MS = 100_000;
 
-async function callChat(options: {
+export async function callChat(options: {
   model: string;
   system: string;
   content: ChatContent;
@@ -213,7 +213,7 @@ function assetContext(asset: GeneratedAsset): string {
 const COMPACT_RETRY_NOTE =
   'Your previous answer exceeded the size limit and was cut off. Keep the whole answer under 12000 tokens. Reuse helpers and compact data arrays for repeated detail.';
 
-async function requestAsset(model: string, content: ChatContent): Promise<{ text: string; usage: LlmUsage }> {
+export async function requestAsset(model: string, content: ChatContent): Promise<{ text: string; usage: LlmUsage }> {
   const first = await callChat({ model, system: ASSET_SYSTEM_PROMPT, content, maxTokens: 48_000 });
   if (first.finishReason !== 'length') return { text: first.text, usage: first.usage };
 
