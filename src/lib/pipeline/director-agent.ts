@@ -45,7 +45,7 @@ ${COPY_ANTI_SLOP_RULES}
      "preset": "ads-ui" or "story-2d",
      "aspectRatio": "9:16",
      "fps": 30,
-     "bgmTrack": "dark-tech-pulse",
+     "bgmTrack": "one of warm-acoustic, upbeat-saas, dark-tech-pulse, cinematic-story, none; choose the mood that suits this topic",
      "look": "dark or bright, whichever suits this topic",
      "palette": {
        "background": "<hex drawn from this subject>",
@@ -65,7 +65,7 @@ ${COPY_ANTI_SLOP_RULES}
          "kineticHeadline": "TEKS HEADLINE BOLD",
          "visualPrompt": "Deskripsi visual yang mudah dipahami",
          "cameraAction": "macro-zoom-in (or slow-push, pan-parallax, tilt-3d, static, timelapse)",
-         "sfxCue": "pop",
+         "sfxCue": "one of none, pop, whoosh, notification, cash-register, success; choose a sound that fits this scene's opening moment",
          "timelapse": { "kind": "day-night", "fromLabel": "06:00", "toLabel": "20:00" }
        }
      ]
@@ -98,7 +98,9 @@ function parseStoryboardRaw(
           preset: (obj.preset as StylePreset) || preset,
           aspectRatio: (obj.aspectRatio as AspectRatio) || aspectRatio,
           fps: obj.fps || 30,
-          bgmTrack: obj.bgmTrack || (preset === 'ads-ui' ? 'dark-tech-pulse' : 'warm-acoustic'),
+          bgmTrack: ['warm-acoustic', 'upbeat-saas', 'dark-tech-pulse', 'cinematic-story', 'none'].includes(obj.bgmTrack)
+            ? obj.bgmTrack
+            : preset === 'ads-ui' ? 'upbeat-saas' : 'warm-acoustic',
           palette: normalizePalette({
             background: String(obj.palette?.background ?? ''),
             surface: String(obj.palette?.surface ?? ''),

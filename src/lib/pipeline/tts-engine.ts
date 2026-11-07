@@ -1,3 +1,4 @@
+import { alignWordsToSpeech, detectSpeechSegments } from '@/lib/audio/speech-timing';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import fs from 'fs';
 import path from 'path';
@@ -168,7 +169,10 @@ export async function generateSceneAudio(
   }
   // Only replace existing narration after a real audio response has been validated.
   fs.writeFileSync(audioFilePath, audioBuffer);
-  const wordTimings: WordTiming[] = estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
+  const alignedTimings = isWav ? alignWordsToSpeech(scene.voiceoverText, detectSpeechSegments(audioBuffer)) : [];
+  const wordTimings: WordTiming[] = alignedTimings.length
+    ? alignedTimings
+    : estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
 
   // Audio-First Frame Lock Formula:
   // Math.max(90, Math.ceil((audioDurationSeconds + 0.35) * fps))

@@ -997,18 +997,23 @@ export function generateMainVideoCode(
     .join('\n');
 
   const sequences = sceneIndexes
-    .map((i) => {
+    .map((i, position) => {
       const s = storyboard.scenes[i];
+      const cue = position === 0 ? 'none' : s.sfxCue === 'none' ? 'whoosh' : s.sfxCue;
       return `      <Series.Sequence durationInFrames={${s.durationInFrames}}>
-        <Scene${i + 1} palette={palette} />
-        {/* Voiceover audio for Scene ${i + 1} */}
+        <SceneTransition color={palette.background} first={${position === 0}}>
+          <Scene${i + 1} palette={palette} />
+        </SceneTransition>
         ${s.audioUrl ? `<Audio src="${s.audioUrl}" volume={1.0} />` : ''}
+        <SceneSfx cue="${cue}" />
       </Series.Sequence>`;
     })
     .join('\n');
+  const sceneDurations = sceneIndexes.map((i) => storyboard.scenes[i].durationInFrames);
 
   return `import React from 'react';
 import { Series, Audio } from 'remotion';
+import { MusicBed, SceneSfx, SceneTransition } from '@/motion-kit';
 ${sceneImports}
 
 export const MainVideo: React.FC = () => {
@@ -1016,6 +1021,7 @@ export const MainVideo: React.FC = () => {
 
   return (
     <div style={{ flex: 1, backgroundColor: palette.background, width: '100%', height: '100%' }}>
+      <MusicBed track="${storyboard.bgmTrack}" sceneDurations={${JSON.stringify(sceneDurations)}} />
       <Series>
 ${sequences}
       </Series>

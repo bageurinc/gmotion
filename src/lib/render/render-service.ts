@@ -39,6 +39,9 @@ export async function bundleProject(project: StudioProject): Promise<string> {
       }
     }
 
+    // Music and effects are shared files served from the app's public folder.
+    fs.cpSync(path.join(process.cwd(), 'public', 'audio'), path.join(publicDir, 'audio'), { recursive: true });
+
     // 1. Materialize virtual TSX files to disk
     for (const [filename, code] of Object.entries(project.files)) {
       if (!isVirtualFileName(filename)) throw new Error(`Invalid project file name: ${filename}`);

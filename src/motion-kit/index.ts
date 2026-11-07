@@ -3,6 +3,7 @@
 export * from './core/CameraRig';
 export * from './core/KineticHeadline';
 export * from './core/SyncedCaptions';
+export * from './core/VideoTimeline';
 export { SceneLayout, SceneStage, SceneBackground } from './core/SafeOverlay';
 export * from './ads/PhoneMockup';
 export * from './ads/WhatsAppChatSim';
