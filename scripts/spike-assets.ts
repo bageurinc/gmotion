@@ -26,7 +26,7 @@ function argument(name: string, fallback: string): string {
   return index >= 0 ? process.argv[index + 1] : fallback;
 }
 
-const model = argument('model', 'ag/claude-opus-5-5-high');
+const model = argument('model', 'ag/gemini-3.8-flash-high');
 const criticModel = argument('critic', 'ag/gemini-3.8-flash-high');
 const topicIds = argument('topics', Object.keys(TOPICS).join(',')).split(',');
 const maxRounds = Number(argument('rounds', '3'));

@@ -98,6 +98,10 @@ Set imageVisible to false if you cannot see the frames.
 List at most 8 issues, ordered by visual impact, and say exactly what to change.
 `;
 
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+const MAX_ROUTER_RETRIES = 6;
+const ROUTER_RETRY_DELAY_MS = 100_000;
+
 async function callChat(options: {
   model: string;
   system: string;
@@ -110,21 +114,29 @@ async function callChat(options: {
   if (!baseUrl || !apiKey) throw new Error('OPENAI_BASE_URL and OPENAI_API_KEY are required');
 
   const startedAt = Date.now();
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: options.model,
-      stream: true,
-      stream_options: { include_usage: true },
-      max_tokens: options.maxTokens,
-      messages: [
-        { role: 'system', content: options.system },
-        { role: 'user', content: options.content },
-      ],
-    }),
-    signal: AbortSignal.timeout(options.timeoutMs ?? 20 * 60_000),
-  });
+  const send = () =>
+    fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: options.model,
+        stream: true,
+        stream_options: { include_usage: true },
+        max_tokens: options.maxTokens,
+        messages: [
+          { role: 'system', content: options.system },
+          { role: 'user', content: options.content },
+        ],
+      }),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 20 * 60_000),
+    });
+
+  let response = await send();
+  for (let attempt = 0; attempt < MAX_ROUTER_RETRIES && RETRYABLE_STATUS.has(response.status); attempt += 1) {
+    await response.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, ROUTER_RETRY_DELAY_MS));
+    response = await send();
+  }
   if (!response.ok || !response.body) {
     throw new Error(`LLM request failed with HTTP ${response.status}`);
   }
