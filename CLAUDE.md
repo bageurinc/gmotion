@@ -3,7 +3,7 @@
 SaaS pembuat video motion graphic dari 1–2 kalimat prompt, berbasis Next.js 15 dan Remotion 4. Bahasa produk dan narasi adalah Bahasa Indonesia.
 
 Baca dua file ini sebelum mengerjakan fitur:
-- [plan_fitur.md](plan_fitur.md): checklist status dan prioritas. Perbarui setiap ada fitur selesai.
+- [plan_fitur.md](plan_fitur.md): aturan teknis wajib, checklist status, dan prioritas. Perbarui setiap ada fitur selesai.
 - [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md): keputusan, alasan, hasil uji, dan jebakan teknis.
 
 ## Perintah
@@ -22,6 +22,7 @@ npx tsx --env-file=.env scripts/spike-world.ts --run hp --topic "Aman nggak sih 
 
 ## Aturan kerja
 
+- Selalu gunakan codebase-memory MCP untuk menelusuri kode: `search_graph` untuk simbol, `trace_path` untuk relasi, `get_code_snippet` untuk sumber, dan `query_graph` atau `get_architecture` untuk struktur luas. Pakai grep dan baca file hanya untuk teks literal, config, file non-kode, atau baris yang tidak tercakup indeks. Cek `check_index_coverage` untuk setiap file yang dijadikan dasar.
 - Jangan jalankan `next build` saat server dev hidup, karena keduanya memakai `.next`. Mulai ulang server dev setelah mengedit file server.
 - Hanya kode yang lolos `validateSceneCode` di [code-validator.ts](src/lib/pipeline/code-validator.ts) yang boleh disimpan.
 - Hasil visual dinilai dari frame hasil render, bukan dari kode. Keputusan kualitas akhir ada pada user saat menonton. Skor kritik hanya penyaring.
@@ -36,7 +37,7 @@ npx tsx --env-file=.env scripts/spike-world.ts --run hp --topic "Aman nggak sih 
 | Lokasi | Isi |
 |---|---|
 | `src/lib/pipeline/` | Director, coder, TTS, draf, job generate, validator, aturan anti-slop |
-| `src/lib/explainer/` | Generator aset, kontrak aset, penilaian adegan, Mode Dunia |
+| `src/lib/explainer/` | Dunia 3D untuk gaya Isometrik, dan pipeline ilustrasi untuk Story 2D dan Ads |
 | `src/lib/render/` | Bundling, export MP4, cek crash |
 | `src/lib/audio/` | Sintesis musik dan SFX, timing subtitle |
 | `src/lib/security/` | Skema input dan validasi nama |

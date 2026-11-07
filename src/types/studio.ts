@@ -1,8 +1,23 @@
 import { z } from 'zod';
 import type { AssetManifest } from '@/lib/explainer/asset-contract';
 
-export const StylePresetSchema = z.enum(['ads-ui', 'story-2d']);
+export const StylePresetSchema = z.enum(['story-2d', 'ads-ui', 'world']);
 export type StylePreset = z.infer<typeof StylePresetSchema>;
+
+/** 'story' and 'ads' were 3D presets for a while, and those saved videos must still open and export. */
+export const StoredPresetSchema = z.enum(['story-2d', 'ads-ui', 'world', 'story', 'ads']);
+export type StoredPreset = z.infer<typeof StoredPresetSchema>;
+
+/** Isometric videos are one 3D world, while Story 2D and Ads keep one scene file per scene. */
+export const usesWorldEngine = (preset: StoredPreset) => preset !== 'ads-ui' && preset !== 'story-2d';
+
+export const PRESET_LABELS: Record<StoredPreset, string> = {
+  'story-2d': 'Story 2D',
+  'ads-ui': 'Ads',
+  world: 'Isometrik',
+  story: 'Isometrik',
+  ads: 'Isometrik',
+};
 
 export const AspectRatioSchema = z.enum(['9:16', '4:5', '16:9']);
 export type AspectRatio = z.infer<typeof AspectRatioSchema>;
@@ -56,7 +71,7 @@ export type ColorPalette = z.infer<typeof ColorPaletteSchema>;
 
 export const StoryboardSchema = z.object({
   title: z.string(),
-  preset: StylePresetSchema,
+  preset: StoredPresetSchema,
   aspectRatio: AspectRatioSchema,
   fps: z.number().default(30),
   voice: z.string().optional(),
@@ -107,6 +122,8 @@ export interface StudioProject {
   checkingScenes?: boolean;
   sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
   generationError?: string;
+  /** Automatic world repairs, kept so the editor can report them. */
+  worldRepairs?: string[];
   exportVideoUrl?: string;
 }
 

@@ -1,21 +1,30 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AbsoluteFill, Audio, Easing, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { useSafeInsets } from '../core/SafeOverlay';
+import { MusicBed, SceneSfx } from '../core/VideoTimeline';
 import { getLength, getPointAtLength } from '@remotion/paths';
 import type { AssetManifest, GeneratedAssetProps } from '../../lib/explainer/asset-contract';
 import type { WorldScript } from '../../lib/explainer/world-plan';
 import type { WordTiming } from '../../types/studio';
 import { ArtBounds, fitArtwork } from '../explainer/AssetStage';
 
-export type TimedBeat = WorldScript['beats'][number] & {
+export type TimedBeat = Omit<WorldScript['beats'][number], 'value' | 'clock'> & {
+  /** Null hides the number, because the panel may only show stated numbers. */
+  value: number | null;
+  clock: string | null;
   from: number;
   duration: number;
+  /** A bundled file name, or a full path for files the app serves. */
   audio: string;
   wordTimings: WordTiming[];
+  sfx?: string;
+  /** Call to action button, for ads only. */
+  cta?: { text: string; color: string };
 };
 
 export interface WorldVideoProps {
   manifest: AssetManifest;
-  script: Omit<WorldScript, 'beats'> & { beats: TimedBeat[] };
+  script: Omit<WorldScript, 'beats'> & { beats: TimedBeat[]; music?: string };
 }
 
 const MOVE_FRAMES = 26;
@@ -67,20 +76,29 @@ const Flow: React.FC<{ d: string; color: string; frame: number }> = ({ d, color,
 const Hud: React.FC<{ script: WorldVideoProps['script']; beat: TimedBeat; index: number; frame: number; width: number; height: number; fps: number }> = ({
   script, beat, index, frame, width, height, fps,
 }) => {
-  const previous = script.beats[index - 1]?.value ?? beat.value;
+  const numbers = script.beats.flatMap((item) => (item.value === null ? [] : [item.value]));
+  const history = script.beats.slice(0, index + 1).flatMap((item) => (item.value === null ? [] : [item.value]));
+  const hasNumbers = numbers.length > 0;
+  // Panel color reaches the top edge, but its text stays below the platform's own controls.
+  const insets = useSafeInsets();
+  const textTop = Math.max(0.075, insets.top + 0.006);
+  const panelHeight = height * (textTop + (hasNumbers ? 0.21 : 0.125));
+  const hasReachedNumber = history.length > 0;
+  const showsTrend = new Set(numbers).size > 1;
+  const reached = history.at(-1) ?? 0;
+  const previous = beat.value === null ? reached : history.at(-2) ?? reached;
   const value = Math.round(
-    interpolate(frame, [beat.from, beat.from + Math.min(beat.duration, fps * 1.4)], [previous, beat.value], {
+    interpolate(frame, [beat.from, beat.from + Math.min(beat.duration, fps * 1.4)], [previous, reached], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     })
   );
-  const history = script.beats.slice(0, index + 1).map((item) => item.value);
-  const top = Math.max(...script.beats.map((item) => item.value), 1);
-  const bottom = Math.min(...script.beats.map((item) => item.value), 0);
-  const chartWidth = width * 0.36;
+  const top = Math.max(...numbers, 1);
+  const bottom = Math.min(...numbers, 0);
+  const chartWidth = width * 0.3;
   const points = history
     .map((item, position) => {
-      const x = (position / Math.max(script.beats.length - 1, 1)) * chartWidth;
+      const x = (position / Math.max(numbers.length - 1, 1)) * chartWidth;
       const y = 44 - ((item - bottom) / Math.max(top - bottom, 1)) * 40;
       return `${x},${y}`;
     })
@@ -91,27 +109,40 @@ const Hud: React.FC<{ script: WorldVideoProps['script']; beat: TimedBeat; index:
 
   return (
     <>
-      <div style={{ position: 'absolute', inset: '0 0 auto 0', height: height * 0.285, background: script.palette.hud }} />
-      <div style={{ position: 'absolute', top: height * 0.285, left: 0, right: 0, height: height * 0.05, background: `linear-gradient(to bottom, ${script.palette.hud}, transparent)` }} />
-      <div style={{ position: 'absolute', top: height * 0.075, left: width * 0.07, right: width * 0.07, fontFamily: FONT, color: script.palette.hudText }}>
+      <div style={{ position: 'absolute', inset: '0 0 auto 0', height: panelHeight, background: script.palette.hud }} />
+      <div style={{ position: 'absolute', top: panelHeight, left: 0, right: 0, height: height * 0.05, background: `linear-gradient(to bottom, ${script.palette.hud}, transparent)` }} />
+      <div style={{ position: 'absolute', top: height * textTop, left: width * Math.max(0.07, insets.left), right: width * Math.max(0.07, insets.right), fontFamily: FONT, color: script.palette.hudText }}>
         <div style={{ fontSize: width * 0.052, lineHeight: 1.16, fontWeight: 800, minHeight: width * 0.122 }}>
           {before}
           {beat.accent && after !== undefined && beat.headline.includes(beat.accent) ? <span style={{ color: script.palette.accent }}>{beat.accent}</span> : null}
           {after}
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: height * 0.014 }}>
-          <div style={{ fontSize: width * 0.085, fontWeight: 800, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-            {value}
-            <span style={{ fontSize: width * 0.036, marginLeft: 8 }}>{script.unit}</span>
-          </div>
-          <svg width={chartWidth} height={48} style={{ overflow: 'visible' }}>
-            <polyline points={points} fill="none" stroke={script.palette.hudText} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          {hasNumbers ? (
+            <>
+              {/* Stays empty until the story states its first number, so nothing is invented. */}
+              <div style={{ fontSize: width * 0.085, fontWeight: 800, fontVariantNumeric: 'tabular-nums', lineHeight: 1, minHeight: width * 0.085 }}>
+                {hasReachedNumber && (
+                  <>
+                    {value}
+                    <span style={{ fontSize: width * 0.036, marginLeft: 8 }}>{script.unit}</span>
+                  </>
+                )}
+              </div>
+              {showsTrend && (
+                <svg width={chartWidth} height={48} style={{ overflow: 'visible' }}>
+                  <polyline points={points} fill="none" stroke={script.palette.hudText} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </>
+          ) : <div />}
           <div style={{ textAlign: 'right' }}>
-            <div style={{ border: `2px solid ${script.palette.accent}`, color: script.palette.accent, borderRadius: 999, padding: '6px 16px', fontSize: width * 0.024, fontWeight: 700 }}>
-              {beat.status}
-            </div>
-            <div style={{ fontSize: width * 0.022, marginTop: 8, fontVariantNumeric: 'tabular-nums' }}>{beat.clock}</div>
+            {beat.status && (
+              <div style={{ border: `2px solid ${script.palette.accent}`, color: script.palette.accent, borderRadius: 999, padding: '6px 16px', fontSize: width * 0.024, fontWeight: 700 }}>
+                {beat.status}
+              </div>
+            )}
+            {beat.clock && <div style={{ fontSize: width * 0.022, marginTop: 8, fontVariantNumeric: 'tabular-nums' }}>{beat.clock}</div>}
           </div>
         </div>
       </div>
@@ -126,19 +157,62 @@ const CaptionPill: React.FC<{ beat: TimedBeat; frame: number; fps: number; width
   const current = Math.max(0, beat.wordTimings.findLastIndex((word) => timeMs >= word.startMs));
   const chunkStart = Math.floor(current / 5) * 5;
   const words = beat.wordTimings.slice(chunkStart, chunkStart + 5);
+  const insets = useSafeInsets();
   return (
-    <div style={{ position: 'absolute', left: width * 0.08, right: width * 0.17, top: height * 0.72, display: 'flex', justifyContent: 'center' }}>
+    <div style={{ position: 'absolute', left: width * insets.left, right: width * insets.right, bottom: height * insets.bottom, display: 'flex', justifyContent: 'center' }}>
       <div style={{ background: '#FFFFFF', color: palette.ink, borderRadius: 18, padding: '10px 18px', fontFamily: FONT, fontSize: width * 0.04, fontWeight: 800, textAlign: 'center', lineHeight: 1.3, boxShadow: `0 3px 0 ${palette.ink}55` }}>
         {words.map((word, position) => {
           const isActive = chunkStart + position === current;
           return (
-            <span key={position} style={{ padding: '2px 6px', borderRadius: 8, background: isActive ? palette.ink : 'transparent', color: isActive ? '#FFFFFF' : palette.ink }}>
-              {word.word}
-            </span>
+            <React.Fragment key={position}>
+              <span style={{ padding: '2px 6px', borderRadius: 8, background: isActive ? palette.ink : 'transparent', color: isActive ? '#FFFFFF' : palette.ink }}>
+                {word.word}
+              </span>{' '}
+            </React.Fragment>
           );
         })}
       </div>
     </div>
+  );
+};
+
+/** Everything drawn over the world: sticker, data panel, captions, and sound. */
+export const WorldOverlay: React.FC<{ script: WorldVideoProps['script'] }> = ({ script }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const index = activeIndex(script.beats, frame);
+  const beat = script.beats[index];
+  const safeBottom = useSafeInsets().bottom;
+  const stickerScale = spring({ frame: frame - beat.from - 4, fps, config: { damping: 11, stiffness: 180 } });
+  const stickerFade = interpolate(frame, [beat.from + 32, beat.from + 42], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+  return (
+    <>
+      {beat.cta && (
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: height * (safeBottom + 0.1), display: 'flex', justifyContent: 'center' }}>
+          <div style={{ background: script.palette.accent, color: beat.cta.color, borderRadius: 999, padding: '20px 44px', fontFamily: FONT, fontSize: width * 0.046, fontWeight: 800, transform: `scale(${spring({ frame: frame - beat.from - 6, fps, config: { damping: 13, stiffness: 150 } })})` }}>
+            {beat.cta.text}
+          </div>
+        </div>
+      )}
+
+      {beat.sticker && (
+        <div style={{ position: 'absolute', top: height * 0.4, left: 0, right: 0, textAlign: 'center', fontFamily: FONT, fontSize: width * 0.085, fontWeight: 900, color: script.palette.accent, WebkitTextStroke: `4px ${script.palette.ink}`, paintOrder: 'stroke fill', transform: `rotate(-6deg) scale(${stickerScale})`, opacity: stickerFade }}>
+          {beat.sticker}
+        </div>
+      )}
+
+      <Hud script={script} beat={beat} index={index} frame={frame} width={width} height={height} fps={fps} />
+      <CaptionPill beat={beat} frame={frame} fps={fps} width={width} height={height} palette={script.palette} />
+
+      {script.beats.map((item) => (
+        <Sequence key={item.from} from={item.from} durationInFrames={item.duration}>
+          <Audio src={item.audio.startsWith('/') ? item.audio : staticFile(item.audio)} />
+          <SceneSfx cue={item.sfx ?? 'none'} />
+        </Sequence>
+      ))}
+      <MusicBed track={script.music ?? 'upbeat-saas'} sceneDurations={script.beats.map((item) => item.duration)} />
+    </>
   );
 };
 
@@ -186,8 +260,6 @@ export const WorldVideo: React.FC<{ world: WorldVideoProps; Asset: React.Compone
 
   const part = manifest.parts.find((item) => item.id === beat.focus);
   const labelOpacity = interpolate(frame, [beat.from + 16, beat.from + 26], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const stickerScale = spring({ frame: frame - beat.from - 4, fps, config: { damping: 11, stiffness: 180 } });
-  const stickerFade = interpolate(frame, [beat.from + 32, beat.from + 42], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   return (
     <AbsoluteFill style={{ background: script.palette.ground, overflow: 'hidden' }}>
@@ -208,21 +280,7 @@ export const WorldVideo: React.FC<{ world: WorldVideoProps; Asset: React.Compone
         </div>
       )}
 
-      {beat.sticker && (
-        <div style={{ position: 'absolute', top: height * 0.34, left: 0, right: 0, textAlign: 'center', fontFamily: FONT, fontSize: width * 0.085, fontWeight: 900, color: script.palette.accent, WebkitTextStroke: `4px ${script.palette.ink}`, paintOrder: 'stroke fill', transform: `rotate(-6deg) scale(${stickerScale})`, opacity: stickerFade }}>
-          {beat.sticker}
-        </div>
-      )}
-
-      <Hud script={script} beat={beat} index={index} frame={frame} width={width} height={height} fps={fps} />
-      <CaptionPill beat={beat} frame={frame} fps={fps} width={width} height={height} palette={script.palette} />
-
-      {script.beats.map((item) => (
-        <Sequence key={item.from} from={item.from} durationInFrames={item.duration}>
-          <Audio src={staticFile(item.audio)} />
-        </Sequence>
-      ))}
-      <Audio src={staticFile('audio/music/upbeat-saas.wav')} loop volume={0.1} />
+      <WorldOverlay script={script} />
     </AbsoluteFill>
   );
 };

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { RevisionInputSchema } from '@/lib/security/project-input';
 import { getProject, saveProject } from '@/lib/storage/project-store';
 import { reviseSceneCode } from '@/lib/pipeline/coder-agent';
-import { ProjectChatMessage } from '@/types/studio';
+import { ProjectChatMessage, usesWorldEngine } from '@/types/studio';
 
 export async function POST(
   req: NextRequest,
@@ -18,6 +18,10 @@ export async function POST(
 
     if (project.status === 'generating') {
       return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
+    }
+
+    if (usesWorldEngine(project.storyboard.preset)) {
+      return NextResponse.json({ error: 'Revisi lewat chat belum tersedia untuk video 3D.' }, { status: 409 });
     }
 
     const input = RevisionInputSchema.safeParse(await req.json().catch(() => null));

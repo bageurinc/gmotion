@@ -19,9 +19,9 @@ Keduanya hanya acuan format. Jangan menyalin aset, logo, atau identitas kreatorn
 1. `POST /api/projects` hanya membuat draf lewat director, tanpa TTS dan tanpa kode.
 2. User mereview draf: judul, narasi, teks, arahan visual, urutan, dan suara. Perubahan tersimpan otomatis.
 3. `POST /api/projects/[id]/generate` menjawab 202, lalu editor langsung terbuka.
-4. Job per adegan berjalan paralel maksimal 4 di [generation-job.ts](../src/lib/pipeline/generation-job.ts): audio lalu ilustrasi.
+4. Job di [generation-job.ts](../src/lib/pipeline/generation-job.ts) membuat audio per adegan, paralel maksimal 4. Story 2D dan Ads lalu menggambar ilustrasi per adegan, sedangkan Isometrik membuat satu dunia 3D dari seluruh narasi yang sudah disetujui.
 5. Editor menerima progres lewat SSE di `/api/projects/[id]/events`, dan adegan yang selesai langsung masuk pratinjau.
-6. Setelah semua selesai, adegan dinilai dan yang lemah digambar ulang, lalu dicek crash.
+6. Setelah semua selesai, adegan ilustrasi dinilai dan yang lemah digambar ulang. Semua gaya lalu dicek crash.
 7. Export memakai renderer yang sama dengan pengecekan crash.
 
 Adegan bertanda `cta` tetap memakai coder lama karena butuh tombol CTA sungguhan. Adegan yang gagal diilustrasikan ditandai `simplified`, dan tampil sebagai "Versi sederhana".
@@ -38,12 +38,17 @@ Adegan bertanda `cta` tetap memakai coder lama karena butuh tombol CTA sungguhan
 | Revisi gambar hanya dipakai jika skornya naik | Pada uji jantung, revisi kadang menurunkan skor |
 | Musik dan SFX disintesis kode | Router tidak punya model musik yang berfungsi, dan hasilnya bebas royalti |
 | Keamanan penuh ditunda | User memilih fokus ke hasil video dan audio dulu |
+| Pilihan gaya adalah Story 2D, Ads, dan Isometrik | Keputusan user pada 7 November 2026, menggantikan keputusan sebelumnya bahwa semua video baru memakai 3D. Story 2D dan Ads memakai ilustrasi per adegan, dan hanya Isometrik memakai mesin dunia. Project tersimpan dengan preset `story` atau `ads` tetap dibuka sebagai 3D |
+| Contoh prompt timelapse dihapus dari halaman utama | Fitur itu berbasis komponen 2D, sehingga tidak berlaku lagi untuk video baru |
+| HyperFrames tidak dipakai | User memutuskan tetap di Remotion. Uji 9,6 detik berhasil dirender, tetapi engine tidak menyelesaikan masalah utama, yaitu pembuatan dunia isometrik |
 
 ## Usulan yang belum diputuskan
 
-Pilihan di halaman utama sebaiknya dipisah menjadi **Tujuan** (Konten, Iklan) dan **Gaya** (Otomatis, Ilustrasi, Isometrik), karena "Ads" adalah tujuan sedangkan "2D" adalah gaya. Kerjakan setelah mesin isometrik terbukti.
-
 Mesin isometrik diusulkan berbasis data: AI menyebut objek seperti balok, silinder, dan pelat, lalu kode yang menggambarnya. Alasannya, uji Mode Dunia menunjukkan Gemini lemah saat menghitung koordinat isometrik di SVG mentah.
+
+`@remotion/three` dengan kamera ortografis adalah kandidat utama penggambarnya, karena tumpang tindih objek dan kamera dihitung otomatis. Uji teknisnya lolos, tetapi keputusan akhir menunggu user menonton klip di `storage/spike/iso-world/{hp,pdam,selam}/clip.mp4`.
+
+Di Mode Dunia berbasis objek, Gemini hanya menyebut objek, ukuran, warna, dan "berada di atas apa". Kode di [iso-world.ts](../src/lib/explainer/iso-world.ts) menghitung tinggi, batas, rute pipa, kamera, sorotan, dan objek penghalang. Prinsipnya, angka yang bisa dihitung kode jangan diminta dari model.
 
 ## Hasil uji yang perlu diingat
 
@@ -55,6 +60,14 @@ Mesin isometrik diusulkan berbasis data: AI menyebut objek seperti balok, silind
 | Penilaian otomatis | 5 dari 7 gambar ulang lebih baik, waktu bertambah sekitar 1–2 menit |
 | Jet dengan audio penuh | 5 adegan, 455 detik sampai generate selesai, 62 detik video, tanpa clipping |
 | Mode Dunia, HP dicas | Mekanisme berhasil, 143 detik. Bentuk HP salah, warna gelap, isometrik tidak rapi |
+| `@remotion/three`, HP terbuka, 17 objek ditulis tangan | 240 frame 1080×1920. Export 3,8–4,1 detik dengan `angle` (GPU Mac) dan 22,1 detik dengan `swangle` (CPU). Selisih piksel antar keduanya rata-rata di bawah 0,7 dari 255. Frame yang sama dirender dua kali identik |
+| 3D, jantung | 6 adegan, draf 21 detik, generate 184 detik, video 37,2 detik, export 34 detik. Alur benar, tetapi bentuknya diagram pipa, bukan jantung |
+| 3D, inflasi | 6 adegan, draf 25 detik, generate 156 detik, video 31,8 detik, export 39 detik. Terbaca sebagai dunia toko dan uang |
+| 3D, iklan aplikasi kasir | 5 adegan, draf 19 detik, generate 98 detik, video 26,1 detik, export 14 detik. CTA jalan, layar HP polos |
+| Mode Dunia di aplikasi, lift | 5 adegan, draf sekitar 30 detik, generate 238 detik, video 29,8 detik, export 23–25 detik. 1 objek disesuaikan otomatis |
+| Mode Dunia di aplikasi, baterai 80 persen | 6 adegan, generate 111 detik lewat tombol, video 35,7 detik, export 29 detik, tanpa perbaikan otomatis |
+| Story 2D setelah pilihan dikembalikan, langit biru | 5 adegan, draf 22 detik, generate 403 detik, video 54,3 detik, export 45 detik, tanpa versi sederhana |
+| Dunia objek Gemini, 3 topik | Total untuk 2 permintaan: 11–12 ribu token masuk, 13–36 ribu token keluar, dan 83–240 detik. Video 30–33 detik, 7 beat, 17–20 objek. Render 12–13 detik dengan `angle` |
 
 Uji enam topik dihentikan user setelah jantung dan jet, jadi topik abstrak seperti inflasi dan sejarah belum terbukti di generator lama.
 
@@ -79,6 +92,22 @@ Uji enam topik dihentikan user setelah jantung dan jet, jadi topik abstrak seper
 - **esbuild menghapus import yang tidak dipakai.** Validator memakai `verbatimModuleSyntax` supaya import terlarang tetap terbaca.
 - **Validator AST bukan batas keamanan penuh.** Akses properti hasil gabungan string tidak bisa dideteksi statis, jadi sandbox iframe tetap diperlukan.
 - **Skrip uji harus menunggu server siap.** Request pertama ke route dev bisa mendapat HTML, bukan JSON.
+- **WebGL butuh `chromiumOptions.gl`.** Skrip uji memakai `angle` di Mac. Server tanpa GPU memakai `swangle`, sekitar 6 kali lebih lambat tetapi masih jauh lebih cepat dari durasi video. Opsi yang sama harus dipakai `selectComposition`, `renderStill`, `renderMedia`, dan `openBrowser`.
+- **Garis tepi Three.js punya dua lapis.** `LineSegments2` untuk lipatan, karena garis WebGL biasa selalu 1 piksel, dan hull belakang untuk siluet benda melengkung. Hull harus memakai vertex gabungan supaya tidak terbelah di sudut.
+- **Sorotan hull tertutup permukaan di bawahnya** jika memakai depth biasa. Karena itu hull sorotan digambar dengan depth bias tanpa menulis depth, lalu bendanya digambar lagi di atasnya.
+- **Sisi yang sebidang menimbulkan z-fighting,** terlihat sebagai goresan bergerak. Dua benda juga tidak boleh saling menembus. Dunia buatan AI perlu validasi untuk kedua hal ini.
+- **Jawaban pertama Gemini selalu ditolak pada 5 dari 5 percobaan,** paling sering karena objek saling tumpang tindih atau anak lebih besar dari induknya. Validator menangkapnya, dan percobaan kedua lolos tanpa perbaikan paksa pada 4 dari 5. Hal ini menggandakan token, jadi pertimbangkan memperbaiki prompt sebelum produksi.
+- **Tanpa aturan warna eksplisit, Gemini kembali ke slate gelap** untuk topik rumahan. Kolom `look` dan pengecekan kontras di `resolveIsoPlan` memperbaikinya.
+- **Gemini menambah meja dan pajangan** yang mengecilkan subjek. Alas kini otomatis, dan subjek wajib menutupi minimal seperempat area.
+- **Objek di depan fokus bisa menutupi layar,** terlihat pada rumah di video PDAM. `occludersOf` memudarkan penghalang selama beat itu.
+- **Garis tepi benda gelap harus lebih terang,** karena di latar gelap garis yang lebih gelap hilang.
+- **Bentuk melengkung sulit dipotong.** Nampan selalu punya dinding tegak, sehingga kapal selam masih terlihat seperti tongkang meskipun lambungnya membulat.
+- **Route Next tidak boleh mengimpor runtime Remotion.** Gejalanya error `Remotion requires React.createContext`, dan hanya muncul di server Next, tidak di `vitest`, `tsc`, atau `tsx`. Geometri yang dipakai server ada di `iso-geometry.ts`, dan `iso-world.test.ts` menjaganya.
+- **Angka di panel harus cocok dengan satuannya.** Video iklan sempat menampilkan "14 %" dari "14 hari".
+- **Setiap adegan Mode Dunia adalah satu beat.** Dunia disimpan sebagai data di dalam `MainVideo.tsx`, sehingga pratinjau dan export otomatis memakai kode yang sama. File `Scene*.tsx` tidak dipakai.
+- **Angka di panel dibatasi kode,** bukan hanya prompt, lewat `keepStatedNumbers`. Prompt saja tidak cukup untuk mencegah Gemini mengarang angka.
+- **Dua server dev dari satu folder berbagi `.next`.** Port 3000 dan 3100 sempat hidup bersamaan saat uji, dan port 3100 tidak merespons.
+- **`THREE.Clock` deprecated** muncul di log render dari `@react-three/fiber`. Peringatan ini tidak memengaruhi hasil.
 - **File audio dibagi dua:** pratinjau membaca `/audio/...`, sedangkan render membaca `staticFile`. Lihat `sharedAudio` di [VideoTimeline.tsx](../src/motion-kit/core/VideoTimeline.tsx).
 
 ## Kontrak aset

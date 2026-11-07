@@ -2,8 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
+import type { ChromiumOptions } from '@remotion/renderer';
 import { isValidProjectId, isVirtualFileName } from '@/lib/security/project-input';
-import { StudioProject, AspectRatioDimensions, SocialPlatformSchema } from '@/types/studio';
+import { StudioProject, AspectRatioDimensions, SocialPlatformSchema, usesWorldEngine } from '@/types/studio';
 
 export interface RenderProgressCallback {
   (progress: number): void;
@@ -17,6 +18,16 @@ export interface VideoRenderProvider {
 }
 
 export const COMPOSITION_ID = 'MainVideo';
+
+/**
+ * World videos draw with WebGL. Macs use the GPU, while servers without one use the slower CPU
+ * renderer. Every Chromium step of a render must receive the same options.
+ */
+export function chromiumOptionsFor(project: Pick<StudioProject, 'storyboard'>): ChromiumOptions {
+  if (!usesWorldEngine(project.storyboard.preset)) return {};
+  const gl = process.env.RENDER_GL === 'swangle' || process.env.RENDER_GL === 'angle' ? process.env.RENDER_GL : undefined;
+  return { gl: gl ?? (process.platform === 'darwin' ? 'angle' : 'swangle') };
+}
 
 /** Materializes a project and bundles it. Exports and scene checks share this code path. */
 export async function bundleProject(project: StudioProject): Promise<string> {
@@ -150,11 +161,13 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
     if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
 
     const bundleLocation = await bundleProject(project);
+    const chromiumOptions = chromiumOptionsFor(project);
 
     // 4. Select Composition
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: COMPOSITION_ID,
+      chromiumOptions,
     });
 
     const outputFileName = 'video.mp4';
@@ -168,6 +181,7 @@ export class LocalRemotionRenderProvider implements VideoRenderProvider {
       codec: 'h264',
       pixelFormat: 'yuv420p',
       outputLocation: outputPath,
+      chromiumOptions,
       onProgress: ({ progress }) => {
         const percent = Math.min(100, Math.round(progress * 100));
         if (onProgress && percent !== lastPercent) {

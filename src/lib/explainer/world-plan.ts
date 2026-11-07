@@ -56,6 +56,9 @@ export async function generateWorldAsset(model: string, topic: string) {
   }
 }
 
+export const WORLD_STORY_RULES = `- 6 to 7 beats, 18 to 22 seconds total. Each text is at most 11 words.
+- Open with a question that makes people stop scrolling. End with a clear answer.`;
+
 const SCRIPT_PROMPT = `You write the timeline for a short vertical explainer in casual spoken Bahasa Indonesia, as if talking to a friend.
 Output only JSON:
 {
@@ -64,8 +67,7 @@ Output only JSON:
  "beats": [{"text":"one short spoken sentence","headline":"short heading for the top panel","accent":"word from the headline to highlight","value":21,"status":"mengisi","clock":"+0:00 jam","view":"view id","focus":"part id or null for wide","zoom":2.2,"label":"short label or null","sticker":"short sound word or null"}]
 }
 Rules:
-- 6 to 7 beats, 18 to 22 seconds total. Each text is at most 11 words.
-- Open with a question that makes people stop scrolling. End with a clear answer.
+${WORLD_STORY_RULES}
 - value is the number that changes through the story, such as a percentage or temperature. Keep it realistic for the topic.
 - The camera must travel: at most two beats in a row share a focus. Use wide shots only for the opening and ending. Zoom 2 to 3 on parts.
 - Use a sticker on at most 2 beats.

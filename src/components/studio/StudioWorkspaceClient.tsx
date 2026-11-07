@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
-import { StudioProject } from '@/types/studio';
+import { PRESET_LABELS, StudioProject, usesWorldEngine } from '@/types/studio';
 import { GenerationProgress } from './GenerationProgress';
 
 const RemotionPreviewPlayer = dynamic(
@@ -195,7 +195,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
               {project.storyboard.title}
             </span>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
-              {project.storyboard.preset === 'ads-ui' ? 'Ads UI' : 'Story 2D'}
+              {PRESET_LABELS[project.storyboard.preset]}
             </span>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
               {project.storyboard.aspectRatio}
@@ -311,59 +311,67 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                 )}
               </div>
 
-              {/* Quick Prompt Suggestions */}
-              <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/60 flex items-center gap-2 overflow-x-auto text-[11px] shrink-0">
-                <span className="text-slate-500 font-semibold whitespace-nowrap">Saran:</span>
-                <button
-                  onClick={() => handleSendRevision('Ubah aksen warna di scene 3 jadi emas/gold')}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full border border-slate-700 whitespace-nowrap transition"
-                >
-                  ✨ Ubah warna Scene 3 jadi emas
-                </button>
-                <button
-                  onClick={() => handleSendRevision('Ganti target omzet di grafik menjadi Rp 150.000.000')}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full border border-slate-700 whitespace-nowrap transition"
-                >
-                  📈 Target omzet Rp 150 Juta
-                </button>
-              </div>
-
-              {/* Revision Input Box */}
-              <div className="p-3 border-t border-slate-800 bg-slate-900 shrink-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-[11px] text-slate-400 font-semibold">Target Scene:</label>
-                  <select
-                    value={targetSceneId}
-                    onChange={(e) => setTargetSceneId(e.target.value)}
-                    className="bg-slate-800 text-slate-200 text-xs rounded-md px-2 py-1 border border-slate-700 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="all">Semua / Deteksi Otomatis</option>
-                    {project.storyboard.scenes.map((s, i) => (
-                      <option key={s.id} value={s.id}>
-                        Scene {i + 1}: {s.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendRevision()}
-                    placeholder="Ketik revisi (contoh: 'Perbesar font headline di scene 1')..."
-                    className="flex-1 bg-slate-800 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-                  />
+              {usesWorldEngine(project.storyboard.preset) ? (
+                <p className="p-4 border-t border-slate-800 bg-slate-900 text-xs text-slate-300 shrink-0">
+                  Revisi lewat chat belum tersedia untuk video 3D.
+                </p>
+              ) : (
+                <>
+                {/* Quick Prompt Suggestions */}
+                <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/60 flex items-center gap-2 overflow-x-auto text-[11px] shrink-0">
+                  <span className="text-slate-500 font-semibold whitespace-nowrap">Saran:</span>
                   <button
-                    onClick={() => handleSendRevision()}
-                    disabled={!chatInput.trim() || isRevising || isBusy}
-                    className="p-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-bold transition disabled:opacity-40"
+                    onClick={() => handleSendRevision('Ubah aksen warna di scene 3 jadi emas/gold')}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full border border-slate-700 whitespace-nowrap transition"
                   >
-                    <Send className="w-4 h-4" />
+                    ✨ Ubah warna Scene 3 jadi emas
+                  </button>
+                  <button
+                    onClick={() => handleSendRevision('Ganti target omzet di grafik menjadi Rp 150.000.000')}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full border border-slate-700 whitespace-nowrap transition"
+                  >
+                    📈 Target omzet Rp 150 Juta
                   </button>
                 </div>
-              </div>
+
+                {/* Revision Input Box */}
+                <div className="p-3 border-t border-slate-800 bg-slate-900 shrink-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="text-[11px] text-slate-400 font-semibold">Target Scene:</label>
+                    <select
+                      value={targetSceneId}
+                      onChange={(e) => setTargetSceneId(e.target.value)}
+                      className="bg-slate-800 text-slate-200 text-xs rounded-md px-2 py-1 border border-slate-700 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="all">Semua / Deteksi Otomatis</option>
+                      {project.storyboard.scenes.map((s, i) => (
+                        <option key={s.id} value={s.id}>
+                          Scene {i + 1}: {s.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendRevision()}
+                      placeholder="Ketik revisi (contoh: 'Perbesar font headline di scene 1')..."
+                      className="flex-1 bg-slate-800 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => handleSendRevision()}
+                      disabled={!chatInput.trim() || isRevising || isBusy}
+                      className="p-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-bold transition disabled:opacity-40"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                </>
+              )}
             </div>
           )}
 

@@ -203,6 +203,33 @@ describe('draft review flow', () => {
     expect(last.interrupted).toBe(false);
   });
 
+  it('marks every scene failed when a 3D world cannot be made, then allows a retry', async () => {
+    const res = await createProject(request({ prompt: 'Ceritakan perjalanan biji kopi', preset: 'world', aspectRatio: '9:16' }));
+    const { project } = await res.json();
+    created.push(project.id);
+    expect(project.storyboard.preset).toBe('world');
+
+    expect((await generateProject(request(), context(project.id))).status).toBe(202);
+    const finished = await vi.waitFor(() => {
+      const saved = getProject(project.id)!;
+      if (saved.status !== 'ready') throw new Error('still running');
+      return saved;
+    }, { timeout: 5000 });
+
+    const stages = Object.values(finished.sceneProgress ?? {}).map((scene) => scene.stage);
+    expect(new Set(stages)).toEqual(new Set(['failed']));
+    expect(finished.generationError).toContain('gagal');
+    expect(finished.files['MainVideo.tsx']).toBeUndefined();
+    expect(finished.storyboard.scenes.every((scene) => scene.audioUrl)).toBe(true);
+
+    const audioCalls = vi.mocked(fetch).mock.calls.length;
+    expect((await generateProject(request(), context(project.id))).status).toBe(202);
+    await vi.waitFor(() => {
+      if (getProject(project.id)!.status !== 'ready') throw new Error('still running');
+    }, { timeout: 5000 });
+    expect(vi.mocked(fetch).mock.calls.length).toBe(audioCalls);
+  });
+
   it('reports a generation that lost its job', async () => {
     const project = await createDraft();
     saveProject({ ...project, status: 'generating' });

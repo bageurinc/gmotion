@@ -2,7 +2,7 @@ import { openBrowser, renderStill, selectComposition } from '@remotion/renderer'
 import sharp from 'sharp';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import type { StudioProject } from '@/types/studio';
-import { bundleProject, COMPOSITION_ID } from './render-service';
+import { bundleProject, chromiumOptionsFor, COMPOSITION_ID } from './render-service';
 
 export interface SceneCrash {
   index: number;
@@ -27,7 +27,8 @@ export function sampleSceneFrames(durations: number[]): Array<{ index: number; f
 
 export async function findSceneCrashes(project: StudioProject): Promise<SceneCrash[]> {
   const serveUrl = await bundleProject(project);
-  const browser = await openBrowser('chrome');
+  const chromiumOptions = chromiumOptionsFor(project);
+  const browser = await openBrowser('chrome', { chromiumOptions });
   try {
     const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, puppeteerInstance: browser });
     const crashes = new Map<number, string>();

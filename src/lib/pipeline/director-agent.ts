@@ -2,9 +2,11 @@ import { generateText } from 'ai';
 import {
   Storyboard,
   SceneSpec,
+  StoredPreset,
   StylePreset,
   AspectRatio,
   TimelapseKind,
+  usesWorldEngine,
 } from '@/types/studio';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { COPY_ANTI_SLOP_RULES, normalizePalette, VISUAL_ANTI_SLOP_RULES } from './anti-slop';
@@ -42,7 +44,6 @@ ${COPY_ANTI_SLOP_RULES}
    Output ONLY valid JSON matching this schema:
    {
      "title": "Judul Video",
-     "preset": "ads-ui" or "story-2d",
      "aspectRatio": "9:16",
      "fps": 30,
      "bgmTrack": "one of warm-acoustic, upbeat-saas, dark-tech-pulse, cinematic-story, none; choose the mood that suits this topic",
@@ -83,7 +84,7 @@ ${COPY_ANTI_SLOP_RULES}
 function parseStoryboardRaw(
   text: string,
   userPrompt: string,
-  preset: StylePreset,
+  preset: StoredPreset,
   aspectRatio: AspectRatio
 ): Storyboard | null {
   // 1. Try finding a JSON object block
@@ -95,12 +96,12 @@ function parseStoryboardRaw(
         const scenes = obj.scenes.slice(0, MAX_DRAFT_SCENES);
         return {
           title: obj.title || userPrompt.slice(0, 40),
-          preset: (obj.preset as StylePreset) || preset,
+          preset,
           aspectRatio: (obj.aspectRatio as AspectRatio) || aspectRatio,
           fps: obj.fps || 30,
           bgmTrack: ['warm-acoustic', 'upbeat-saas', 'dark-tech-pulse', 'cinematic-story', 'none'].includes(obj.bgmTrack)
             ? obj.bgmTrack
-            : preset === 'ads-ui' ? 'upbeat-saas' : 'warm-acoustic',
+            : isAdsPreset(preset) ? 'upbeat-saas' : 'warm-acoustic',
           palette: normalizePalette({
             background: String(obj.palette?.background ?? ''),
             surface: String(obj.palette?.surface ?? ''),
@@ -216,7 +217,7 @@ function parseStoryboardRaw(
       preset,
       aspectRatio,
       fps: 30,
-      bgmTrack: preset === 'ads-ui' ? 'dark-tech-pulse' : 'warm-acoustic',
+      bgmTrack: isAdsPreset(preset) ? 'dark-tech-pulse' : 'warm-acoustic',
       palette: {
         background: '#1A1D20',
         surface: '#24282D',
@@ -237,6 +238,8 @@ export function wantsCallToAction(prompt: string): boolean {
   return /\b(?:cta|call.to.action|iklan|promosi|advertisement|advertising|ads|marketing|jualkan|jualan)\b/i.test(prompt);
 }
 
+const isAdsPreset = (preset: StoredPreset) => preset === 'ads' || preset === 'ads-ui';
+
 function applyCtaPolicy(storyboard: Storyboard, prompt: string): Storyboard {
   if (wantsCallToAction(prompt)) return storyboard;
   return { ...storyboard, scenes: storyboard.scenes.map(scene => scene.role !== 'cta' ? scene : {
@@ -247,10 +250,15 @@ function applyCtaPolicy(storyboard: Storyboard, prompt: string): Storyboard {
   }) };
 }
 
-export function parseStoryboardFromLLMResponse(text: string, userPrompt: string, preset: StylePreset, aspectRatio: AspectRatio): Storyboard | null {
+export function parseStoryboardFromLLMResponse(text: string, userPrompt: string, preset: StoredPreset, aspectRatio: AspectRatio): Storyboard | null {
   const storyboard = parseStoryboardRaw(text, userPrompt, preset, aspectRatio);
-  return storyboard ? applyCtaPolicy(storyboard, userPrompt) : null;
+  // The model does not choose the preset, so the user's choice applies before the CTA policy.
+  return storyboard ? applyCtaPolicy({ ...storyboard, preset }, userPrompt) : null;
 }
+
+const WORLD_DIRECTOR_NOTE = `
+This video happens inside ONE continuous 3D world while a camera travels across it. Every scene is one camera stop. A story that moves between places treats them as neighboring areas of that world.
+Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
 
 export async function generateStoryboard(
   userPrompt: string,
@@ -268,7 +276,7 @@ Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
-FPS: 30`,
+FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}`,
       });
 
       const parsed = parseStoryboardFromLLMResponse(
@@ -278,9 +286,7 @@ FPS: 30`,
         aspectRatio
       );
 
-      if (parsed) {
-        return parsed;
-      }
+      if (parsed) return parsed;
       if (options.strict) throw new Error('AI belum berhasil menyusun draf. Coba lagi.');
       console.warn('[DirectorAgent] Could not parse LLM output, falling back to procedural storyboard generator.');
     } catch (error) {
@@ -289,8 +295,9 @@ FPS: 30`,
     }
   }
 
-  // Fallback procedural storyboard if no API key or parse error
-  return generateProceduralStoryboard(userPrompt, preset, aspectRatio);
+  // The procedural templates are written around the classic presets.
+  const fallback = generateProceduralStoryboard(userPrompt, preset === 'ads-ui' ? 'ads-ui' : 'story-2d', aspectRatio);
+  return { ...fallback, preset };
 }
 
 /**
@@ -298,7 +305,7 @@ FPS: 30`,
  */
 export function generateProceduralStoryboard(
   userPrompt: string,
-  preset: StylePreset,
+  preset: StoredPreset,
   aspectRatio: AspectRatio
 ): Storyboard {
   return applyCtaPolicy(generateProceduralStoryboardBase(userPrompt, preset, aspectRatio), userPrompt);
@@ -306,7 +313,7 @@ export function generateProceduralStoryboard(
 
 function generateProceduralStoryboardBase(
   userPrompt: string,
-  preset: StylePreset,
+  preset: StoredPreset,
   aspectRatio: AspectRatio
 ): Storyboard {
   const isConstruction = /gedung|bangun|konstruksi|lantai|tower|arsitektur|building|skyscraper/i.test(userPrompt);

@@ -1,6 +1,7 @@
 import { saveProject } from '@/lib/storage/project-store';
+import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
-import { generateVideoSceneFile } from '@/lib/explainer/scene-generator';
+import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
 import { findSceneCrashes, repairCrashedScenes } from '@/lib/render/scene-check';
@@ -8,6 +9,7 @@ import { generateMainVideoCode, reviseSceneCode, simpleSceneCode } from './coder
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import { hasFailedScene, normalizeSceneOrder } from './draft';
 import { generateSceneAudio } from './tts-engine';
+import { buildWorldFiles } from './world-video';
 
 const globalJobs = globalThis as typeof globalThis & { __gmotionGenerationJobs?: Set<string> };
 const activeJobs = (globalJobs.__gmotionGenerationJobs ??= new Set<string>());
@@ -38,6 +40,76 @@ export function prepareGeneration(project: StudioProject): StudioProject {
   };
 }
 
+function completionMessage(project: StudioProject): string {
+  if (!usesWorldEngine(project.storyboard.preset)) {
+    return 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.';
+  }
+  const repairs = project.worldRepairs?.length ?? 0;
+  return repairs
+    ? `Dunia selesai dibuat. Ada ${repairs} objek yang disesuaikan otomatis karena tidak muat. Tonton hasilnya di player.`
+    : 'Dunia selesai dibuat. Tonton hasilnya di player.';
+}
+
+interface WorldJobTools {
+  current: () => StudioProject;
+  commit: (changes: (current: StudioProject) => Partial<StudioProject>) => void;
+  setStage: (sceneId: string, stage: SceneStage, error?: string) => void;
+}
+
+/** One world serves every scene, so audio runs per scene and the world is made once from all of them. */
+async function generateWorld(pending: number[], { current, commit, setStage }: WorldJobTools): Promise<void> {
+  await mapWithConcurrency(pending, PIPELINE_CONCURRENCY, async (index) => {
+    const scene = current().storyboard.scenes[index];
+    try {
+      setStage(scene.id, 'audio');
+      if (!scene.audioUrl) {
+        const audio = await generateSceneAudio(scene, {
+          fps: current().storyboard.fps,
+          projectId: current().id,
+          voice: current().storyboard.voice,
+        });
+        commit((project) => ({
+          storyboard: {
+            ...project.storyboard,
+            scenes: project.storyboard.scenes.map((item) => (item.id === scene.id ? { ...item, ...audio } : item)),
+          },
+        }));
+      }
+      setStage(scene.id, 'animation');
+    } catch (err: unknown) {
+      console.error(`[GenerationJob] Scene ${scene.id} audio failed:`, err);
+      setStage(scene.id, 'failed', err instanceof Error ? err.message : 'Audio adegan gagal dibuat.');
+    }
+  });
+  if (hasFailedScene(current())) return;
+
+  const failAll = (message: string) => {
+    for (const scene of current().storyboard.scenes) setStage(scene.id, 'failed', message);
+  };
+  try {
+    const { code, repairs } = await buildWorldFiles(assetModel(), current());
+    commit((project) => ({
+      files: { ...project.files, 'MainVideo.tsx': code },
+      worldRepairs: repairs,
+      sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
+    }));
+  } catch (err: unknown) {
+    console.error(`[GenerationJob] World failed for ${current().id}:`, err);
+    failAll(err instanceof Error ? err.message : 'Dunia gagal dibuat.');
+    return;
+  }
+
+  commit(() => ({ checkingScenes: true }));
+  try {
+    const crashes = await findSceneCrashes(current());
+    if (crashes.length) failAll(`Dunia gagal dirender: ${crashes[0].message}`);
+  } catch (err) {
+    // A broken checker must not block a video that may be fine. Export still reports real crashes.
+    console.error(`[GenerationJob] Scene check failed for ${current().id}:`, err);
+  }
+  commit(() => ({ checkingScenes: undefined }));
+}
+
 export async function runGeneration(initial: StudioProject): Promise<void> {
   let project = initial;
   activeJobs.add(project.id);
@@ -60,7 +132,9 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     project.sceneProgress?.[scene.id]?.stage === 'ready' ? [] : [index]
   );
 
-  await mapWithConcurrency(pending, PIPELINE_CONCURRENCY, async (index) => {
+  const isWorld = usesWorldEngine(project.storyboard.preset);
+
+  await mapWithConcurrency(isWorld ? [] : pending, PIPELINE_CONCURRENCY, async (index) => {
     const sceneId = project.storyboard.scenes[index].id;
     try {
       setStage(sceneId, 'audio');
@@ -100,7 +174,9 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     }
   });
 
-  if (isApiKeyConfigured() && !hasFailedScene(project)) {
+  if (isWorld) {
+    await generateWorld(pending, { current: () => project, commit, setStage });
+  } else if (isApiKeyConfigured() && !hasFailedScene(project)) {
     commit(() => ({ checkingScenes: true }));
     try {
       await improveWeakScenes(project, qualityTools(() => project, commit));
@@ -149,7 +225,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
               {
                 id: `msg_${Date.now()}`,
                 sender: 'assistant',
-                content: 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.',
+                content: completionMessage(current),
                 timestamp: Date.now(),
               },
             ],
