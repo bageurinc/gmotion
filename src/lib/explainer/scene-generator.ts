@@ -77,7 +77,8 @@ export async function generateVideoSceneFile(
   storyboard: Storyboard,
   index: number
 ): Promise<{ code: string; simplified: boolean }> {
-  if (storyboard.preset !== 'story-2d' || !isApiKeyConfigured()) {
+  // CTA scenes need the real button component, which the illustration stage does not draw.
+  if (storyboard.scenes[index].role === 'cta' || !isApiKeyConfigured()) {
     return { code: await generateSceneFile(storyboard, index), simplified: false };
   }
 
