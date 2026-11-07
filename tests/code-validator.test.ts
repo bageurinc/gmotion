@@ -74,4 +74,13 @@ export const Scene1 = () => {
     const result = validateSceneCode(cssTransitionCode, 'Scene1.tsx');
     expect(result.warnings.some((w) => w.includes('CSS transitions'))).toBe(true);
   });
+
+  it('rejects JSX that only the export compiler refuses', () => {
+    const code = `import React from 'react';
+export const Scene1 = () => <text>PENETRASI > 5.0M</text>;
+export default Scene1;`;
+    const result = validateSceneCode(code, 'Scene1.tsx');
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/Export compilation error/);
+  });
 });

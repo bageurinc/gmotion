@@ -1719,7 +1719,7 @@ es-to-primitive@^1.3.0:
     is-date-object "^1.1.0"
     is-symbol "^1.1.1"
 
-esbuild@~0.28.0, esbuild@0.28.1:
+esbuild@^0.28.1, esbuild@~0.28.0, esbuild@0.28.1:
   version "0.28.1"
   resolved "https://registry.npmjs.org/esbuild/-/esbuild-0.28.1.tgz"
   integrity sha512-HrJrvZv5ayxBzPfwphOoNzkzOIIlifzk0KJrGK2c8R4+LKpMtpYLQeUdjnwjWv/LZlkH2laZk+4w78pi99D4Vw==

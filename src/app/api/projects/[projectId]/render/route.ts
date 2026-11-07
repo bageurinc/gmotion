@@ -8,8 +8,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  const { projectId } = await params;
   try {
-    const { projectId } = await params;
     const project = getProject(projectId);
 
     if (!project) {
@@ -52,6 +52,8 @@ export async function POST(
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Failed to render MP4 video';
     console.error('[API /render] Error rendering project to MP4:', err);
+    const project = getProject(projectId);
+    if (project?.status === 'rendering') saveProject({ ...project, status: 'ready' });
     return NextResponse.json(
       { error: errorMsg },
       { status: 500 }

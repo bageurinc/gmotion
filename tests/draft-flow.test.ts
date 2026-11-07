@@ -240,6 +240,14 @@ describe('draft review flow', () => {
     expect(Object.keys(complete.files).filter((file) => file.startsWith('Scene'))).toHaveLength(4);
   });
 
+  it('leaves the rendering state when an export fails', async () => {
+    const project = await createDraft();
+    saveProject({ ...project, status: 'ready', files: { 'Scene1.tsx': 'bad <<<' } });
+    const res = await projectRender(request({ safeAreaPlatform: 'tiktok' }), context(project.id));
+    expect(res.status).toBe(500);
+    expect(getProject(project.id)?.status).toBe('ready');
+  }, 60_000);
+
   it('blocks manual edits while scenes are generating', async () => {
     const project = await createDraft();
     saveProject({ ...project, status: 'generating' });

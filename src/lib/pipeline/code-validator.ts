@@ -1,3 +1,4 @@
+import { transformSync } from 'esbuild';
 import { transform } from 'sucrase';
 
 export interface ValidationResult {
@@ -71,6 +72,14 @@ export function validateSceneCode(code: string, fileName = 'Scene.tsx'): Validat
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     errors.push(`Sucrase compilation error in ${fileName}: ${errorMsg}`);
+  }
+
+  // 4. Exports compile with esbuild, which is stricter than the browser preview.
+  try {
+    transformSync(code, { loader: 'tsx', logLevel: 'silent' });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    errors.push(`Export compilation error in ${fileName}: ${errorMsg}`);
   }
 
   return {
