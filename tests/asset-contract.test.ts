@@ -6,7 +6,7 @@ import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
 import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
 import { AssetManifestSchema, missingContractIds } from '@/lib/explainer/asset-contract';
 import { parseAssetResponse, parseCritique } from '@/lib/explainer/asset-generator';
-import { buildAssetShots } from '@/motion-kit/explainer/AssetStage';
+import { buildAssetShots, fitArtwork, fitFocus } from '@/motion-kit/explainer/AssetStage';
 
 const manifest = {
   topic: 'Mesin jet',
@@ -82,6 +82,29 @@ describe('explainer asset contract', () => {
     expect(shots[1].view).toBe('cutaway');
     expect(shots.at(-1)?.to).toBe(300);
     expect(buildAssetShots(parsed, 90, 30)).toHaveLength(1);
+  });
+});
+
+describe('artwork fit', () => {
+  it('leaves artwork alone until it is measured', () => {
+    expect(fitArtwork(null)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+  });
+
+  it('centers and enlarges small artwork', () => {
+    const fit = fitArtwork({ x: 100, y: 200, width: 640, height: 320 });
+    expect(fit.scale).toBe(1.5);
+    expect((100 + 320) * fit.scale + fit.offsetX).toBeCloseTo(500);
+    expect((200 + 160) * fit.scale + fit.offsetY).toBeCloseTo(500);
+  });
+
+  it('limits how far oversized artwork shrinks', () => {
+    expect(fitArtwork({ x: -2000, y: 0, width: 5000, height: 900 }).scale).toBe(0.75);
+  });
+
+  it('keeps a zoomed view inside the artwork', () => {
+    const focus = fitFocus({ x: 20, y: 980, scale: 1.6 }, { scale: 1, offsetX: 0, offsetY: 0 });
+    expect(focus.x).toBeCloseTo(312.5);
+    expect(focus.y).toBeCloseTo(687.5);
   });
 });
 

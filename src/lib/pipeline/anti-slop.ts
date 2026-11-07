@@ -50,7 +50,7 @@ export function contrastRatio(first: string, second: string): number {
 }
 
 /** Moves a color toward black or white until it reads against the background. */
-function ensureContrast(color: string, background: string, minimum: number): string {
+export function ensureContrast(color: string, background: string, minimum: number): string {
   const target = luminance(background) > 0.4 ? [0, 0, 0] : [255, 255, 255];
   const source = channels(color);
   for (let step = 0; step <= 10; step += 1) {

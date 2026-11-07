@@ -1,7 +1,7 @@
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
-import { contrastRatio } from '@/lib/pipeline/anti-slop';
+import { ensureContrast } from '@/lib/pipeline/anti-slop';
 import type { ColorPalette, SceneSpec, Storyboard } from '@/types/studio';
 import { generateAsset, GeneratedAsset, parseAssetResponse, repairAsset, sceneAssetPrompt } from './asset-generator';
 
@@ -11,7 +11,7 @@ function assetModel(): string {
 
 /** Captions sit on a dark box, so their highlight must read on black whatever the palette is. */
 function captionHighlight(palette: ColorPalette): string {
-  return [palette.secondary, palette.primary].find((color) => contrastRatio(color, '#000000') >= 4.5) ?? '#FFD166';
+  return ensureContrast(palette.primary, '#000000', 7);
 }
 
 export function composeAssetScene(asset: GeneratedAsset, storyboard: Storyboard, index: number): string {

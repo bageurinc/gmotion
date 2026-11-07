@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { getLength, getPointAtLength } from '@remotion/paths';
 import { SceneBackground, SceneLayout, useSafeInsets } from '../core/SafeOverlay';
@@ -15,8 +15,46 @@ export interface StageShot {
 
 const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
 const EASE = Easing.bezier(0.45, 0, 0.2, 1);
+const TEXT_RESERVE = 0.17;
 const MIN_SHOT_SECONDS = 2.2;
 const MAX_ZOOM = 1.6;
+const ART_FILL = 960;
+const FIT_LIMITS = { min: 0.75, max: 1.5 };
+
+export interface ArtBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ArtFit {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+/** Centers the drawn artwork and scales it to fill the stage. */
+export function fitArtwork(bounds: ArtBounds | null): ArtFit {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
+  const scale = Math.min(FIT_LIMITS.max, Math.max(FIT_LIMITS.min, ART_FILL / Math.max(bounds.width, bounds.height)));
+  return {
+    scale,
+    offsetX: 500 - (bounds.x + bounds.width / 2) * scale,
+    offsetY: 500 - (bounds.y + bounds.height / 2) * scale,
+  };
+}
+
+/** Maps a focus through the fit and keeps the zoomed view inside the artwork. */
+export function fitFocus(focus: AssetFocus, fit: ArtFit): AssetFocus {
+  const margin = 500 / focus.scale;
+  const place = (value: number) => Math.min(1000 - margin, Math.max(margin, value));
+  return {
+    x: place(focus.x * fit.scale + fit.offsetX),
+    y: place(focus.y * fit.scale + fit.offsetY),
+    scale: focus.scale,
+  };
+}
 
 /** Splits a scene into a wide shot followed by a close look at each part it has time for. */
 export function buildAssetShots(manifest: AssetManifest, durationInFrames = 300, fps = 30): StageShot[] {
@@ -99,7 +137,21 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
     [providedShots, manifest, durationInFrames, fps]
   );
   const shot = shots.find((item) => frame >= item.from && frame < item.to) ?? shots[shots.length - 1];
-  const camera = cameraAt(frame, shots, fps);
+  const artRef = useRef<HTMLDivElement>(null);
+  const [bounds, setBounds] = useState<ArtBounds | null>(null);
+  const fit = useMemo(() => fitArtwork(bounds), [bounds]);
+  const fittedShots = useMemo(
+    () => shots.map((item) => ({ ...item, focus: fitFocus(item.focus, fit) })),
+    [shots, fit]
+  );
+  const camera = cameraAt(frame, fittedShots, fps);
+
+  useLayoutEffect(() => {
+    const art = artRef.current?.querySelector<SVGSVGElement>('svg:not([data-flow-layer])');
+    if (!art) return;
+    const box = art.getBBox();
+    setBounds((current) => current ?? { x: box.x, y: box.y, width: box.width, height: box.height });
+  }, []);
   const fadeFrames = Math.round(fps * 0.6);
 
   const viewOpacity = Object.fromEntries(
@@ -129,11 +181,11 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
     })
   );
 
-  const safeWidth = width * (1 - insets.left - insets.right);
   const safeHeight = height * (1 - insets.top - insets.bottom);
-  const stageSize = Math.min(safeWidth, safeHeight * 0.72);
-  const stageLeft = width * insets.left + (safeWidth - stageSize) / 2;
-  const stageTop = height * insets.top + (safeHeight - stageSize) * 0.55;
+  const safeCenter = width * (insets.left + (1 - insets.left - insets.right) / 2);
+  const stageSize = Math.min(width * 0.96, safeHeight - height * TEXT_RESERVE);
+  const stageLeft = Math.max(0, safeCenter - stageSize / 2);
+  const stageTop = height * insets.top + (safeHeight - stageSize) * 0.52;
   const pixelsPerUnit = stageSize / 1000;
   const translateX = stageSize / 2 - camera.x * pixelsPerUnit * camera.scale;
   const translateY = stageSize / 2 - camera.y * pixelsPerUnit * camera.scale;
@@ -143,6 +195,13 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
+  const labelLeft = activePart
+    ? ((activePart.anchor.x * fit.scale + fit.offsetX) * pixelsPerUnit * camera.scale + translateX)
+    : 0;
+  const labelTop = activePart
+    ? ((activePart.anchor.y * fit.scale + fit.offsetY) * pixelsPerUnit * camera.scale + translateY)
+    : 0;
+  const stageEdgeFade = 'linear-gradient(to bottom, transparent 0, #000 5%, #000 95%, transparent 100%)';
 
   return (
     <SceneLayout backgroundColor={manifest.palette.backgroundTo}>
@@ -152,52 +211,67 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
           background: `radial-gradient(circle at 50% 48%, ${manifest.palette.backgroundFrom} 0%, ${manifest.palette.backgroundTo} 78%)`,
         }}
       />
-      <div style={{ position: 'absolute', top: stageTop, left: stageLeft, width: stageSize, height: stageSize, zIndex: 1 }}>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            transformOrigin: '0 0',
-            transform: `translate(${translateX}px, ${translateY}px) scale(${camera.scale})`,
-          }}
-        >
-          <Asset viewOpacity={viewOpacity} highlight={highlight} time={frame / fps} />
-          <svg viewBox="0 0 1000 1000" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
-            {activeFlow && <FlowParticles d={activeFlow.d} color={activeFlow.color} frame={frame} opacity={labelOpacity} />}
-          </svg>
-        </div>
-        {activePart && (
-          <div
-            style={{
-              position: 'absolute',
-              left: activePart.anchor.x * pixelsPerUnit * camera.scale + translateX,
-              top: activePart.anchor.y * pixelsPerUnit * camera.scale + translateY,
-              transform: 'translate(-50%, -50%)',
-              opacity: labelOpacity,
-              padding: '10px 22px',
-              borderRadius: 16,
-              background: manifest.palette.backgroundFrom,
-              border: `3px solid ${manifest.palette.accent}`,
-              color: manifest.palette.text,
-              fontFamily: 'Arial, sans-serif',
-              fontSize: Math.round(width * 0.03),
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {activePart.label}
-          </div>
-        )}
-      </div>
       <div
         style={{
           position: 'absolute',
-          inset: '0 0 auto 0',
-          height: height * (insets.top + 0.14),
-          zIndex: 2,
-          background: `linear-gradient(to bottom, ${manifest.palette.backgroundTo} 62%, transparent)`,
+          top: stageTop,
+          left: 0,
+          width,
+          height: stageSize,
+          zIndex: 1,
+          overflow: 'hidden',
+          maskImage: stageEdgeFade,
+          WebkitMaskImage: stageEdgeFade,
         }}
-      />
+      >
+        <div style={{ position: 'absolute', top: 0, left: stageLeft, width: stageSize, height: stageSize }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              transformOrigin: '0 0',
+              transform: `translate(${translateX}px, ${translateY}px) scale(${camera.scale})`,
+            }}
+          >
+            <div
+              ref={artRef}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                transformOrigin: '0 0',
+                transform: `translate(${fit.offsetX * pixelsPerUnit}px, ${fit.offsetY * pixelsPerUnit}px) scale(${fit.scale})`,
+              }}
+            >
+              <Asset viewOpacity={viewOpacity} highlight={highlight} time={frame / fps} />
+              <svg data-flow-layer viewBox="0 0 1000 1000" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
+                {activeFlow && <FlowParticles d={activeFlow.d} color={activeFlow.color} frame={frame} opacity={labelOpacity} />}
+              </svg>
+            </div>
+          </div>
+          {activePart && (
+            <div
+              style={{
+                position: 'absolute',
+                left: Math.min(stageSize * 0.8, Math.max(stageSize * 0.2, labelLeft)),
+                top: Math.min(stageSize * 0.92, Math.max(stageSize * 0.08, labelTop)),
+                transform: 'translate(-50%, -50%)',
+                opacity: labelOpacity,
+                padding: '10px 22px',
+                borderRadius: 16,
+                background: manifest.palette.backgroundFrom,
+                border: `3px solid ${manifest.palette.accent}`,
+                color: manifest.palette.text,
+                fontFamily: 'Arial, sans-serif',
+                fontSize: Math.round(width * 0.03),
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {activePart.label}
+            </div>
+          )}
+        </div>
+      </div>
       {children}
     </SceneLayout>
   );

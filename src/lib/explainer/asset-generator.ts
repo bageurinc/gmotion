@@ -42,7 +42,10 @@ Aim for polished semi-realistic textbook illustration:
 - Use organic cubic Bezier paths. Avoid assembling the subject from plain circles and rectangles.
 - Add believable secondary detail such as fibres, seams, panels, rivets, veins, droplets, grain, or texture lines.
 - Use at least 60 meaningful shapes across the asset, and at least 25 in each view.
-- Fill 70-85% of the square canvas with the subject. Keep the outer area transparent because the stage paints the background.
+- Compose one large, connected subject that fills the canvas from about 40 to 960 on both axes. Do not scatter small objects across empty space.
+- Every important object stays fully inside the canvas. Nothing meaningful may be cut off by the edge or placed outside it.
+- Each view must show a rich, finished picture on its own. A view that is mostly empty space, or only small icons, is a failure.
+- Do not paint a full-canvas background rectangle, because the stage paints the background. Do not draw UI cards floating around the subject unless the subject is a screen.
 - Keep the same silhouette, proportions, and light direction in all views. Later views reveal, cut open, or change state of the same subject.
 - Build shape loops from data arrays when repeating texture.
 
@@ -95,7 +98,7 @@ Score each criterion from 1 to 10:
 - illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, basic shapes, or a dark and murky image scores 4 or lower.
 - viewConsistency: frames show the same subject with the same proportions.
 - labelAccuracy: labels point at the correct visible parts and facts are right.
-- composition: clear framing, nothing important is cut off, text remains readable.
+- composition: one large clear subject fills the frame, there are no big empty areas, nothing important is cut off, and text remains readable.
 Return only JSON: {"imageVisible":true,"scores":{"recognizability":0,"illustrationRichness":0,"viewConsistency":0,"labelAccuracy":0,"composition":0},"issues":["specific fix"]}.
 Set imageVisible to false if you cannot see the frames.
 List at most 8 issues, ordered by visual impact, and say exactly what to change.
