@@ -12,6 +12,8 @@ export * from './ads/PulseCTAButton';
 export * from './story/ParallaxWorld';
 export * from './story/TimelapseClock';
 export * from './explainer/AssetStage';
+export * from './explainer/ImageStage';
+export * from './explainer/image-camera';
 export * from './world/IsoVideo';
 export * from './timelapse/primitives';
 export * from './timelapse/examples';

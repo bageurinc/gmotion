@@ -1,6 +1,8 @@
 import { saveProject } from '@/lib/storage/project-store';
 import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
+import { buildImageScene } from '@/lib/explainer/image-scene';
+import { planSceneMoments, ScenePlan } from '@/lib/explainer/scene-moments';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
@@ -134,24 +136,62 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
 
   const isWorld = usesWorldEngine(project.storyboard.preset);
 
+  const makeAudio = async (index: number) => {
+    const scene = project.storyboard.scenes[index];
+    setStage(scene.id, 'audio');
+    const audio = await generateSceneAudio(scene, {
+      fps: project.storyboard.fps,
+      projectId: project.id,
+      voice: project.storyboard.voice,
+    });
+    commit((current) => ({
+      storyboard: {
+        ...current.storyboard,
+        scenes: current.storyboard.scenes.map((item) => (item.id === scene.id ? { ...item, ...audio } : item)),
+      },
+    }));
+  };
+
+  // Story 2D plans all scenes together, and that plan needs the real narration timing.
+  const usesMoments = project.storyboard.preset === 'story-2d' && isApiKeyConfigured();
+  const audioFailures = new Map<number, string>();
+  let plans: ScenePlan[] | null = null;
+  if (usesMoments) {
+    await mapWithConcurrency(pending, PIPELINE_CONCURRENCY, async (index) => {
+      try {
+        await makeAudio(index);
+      } catch (err: unknown) {
+        audioFailures.set(index, err instanceof Error ? err.message : 'Audio adegan gagal dibuat.');
+      }
+    });
+    try {
+      plans = await planSceneMoments(assetModel(), project.storyboard);
+    } catch (err) {
+      console.warn(`[GenerationJob] Moment plan failed for ${project.id}, drawing every scene from parts:`, err);
+    }
+  }
+
+  const drawScene = async (index: number) => {
+    const plan = plans?.[index];
+    if (plan?.kind !== 'image') return generateVideoSceneFile(project.storyboard, index);
+    try {
+      return { code: await buildImageScene(project.id, project.storyboard, plan, index), simplified: false, asset: undefined };
+    } catch (err) {
+      // A failed picture must not cost the scene, so it falls back to moving parts.
+      console.warn(`[GenerationJob] Image scene ${index + 1} failed, drawing it from parts:`, err);
+      return generateVideoSceneFile(project.storyboard, index);
+    }
+  };
+
   await mapWithConcurrency(isWorld ? [] : pending, PIPELINE_CONCURRENCY, async (index) => {
     const sceneId = project.storyboard.scenes[index].id;
     try {
-      setStage(sceneId, 'audio');
-      const audio = await generateSceneAudio(project.storyboard.scenes[index], {
-        fps: project.storyboard.fps,
-        projectId: project.id,
-        voice: project.storyboard.voice,
-      });
-      commit((current) => ({
-        storyboard: {
-          ...current.storyboard,
-          scenes: current.storyboard.scenes.map((scene) => (scene.id === sceneId ? { ...scene, ...audio } : scene)),
-        },
-      }));
+      const audioFailure = audioFailures.get(index);
+      if (audioFailure) throw new Error(audioFailure);
+      if (!usesMoments) await makeAudio(index);
 
       setStage(sceneId, 'animation');
-      const { code, simplified, asset: sceneAsset } = await generateVideoSceneFile(project.storyboard, index);
+      const { code, simplified, asset: sceneAsset } = await drawScene(index);
       commit((current) => {
         const sceneProgress = {
           ...current.sceneProgress,

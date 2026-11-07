@@ -67,6 +67,10 @@ Di Mode Dunia berbasis objek, Gemini hanya menyebut objek, ukuran, warna, dan "b
 | Mode Dunia di aplikasi, lift | 5 adegan, draf sekitar 30 detik, generate 238 detik, video 29,8 detik, export 23–25 detik. 1 objek disesuaikan otomatis |
 | Mode Dunia di aplikasi, baterai 80 persen | 6 adegan, generate 111 detik lewat tombol, video 35,7 detik, export 29 detik, tanpa perbaikan otomatis |
 | Story 2D setelah pilihan dikembalikan, langit biru | 5 adegan, draf 22 detik, generate 403 detik, video 54,3 detik, export 45 detik, tanpa versi sederhana |
+| Story 2D dengan model gambar, cuci tangan | 6 adegan, 6 gambar dalam 25 detik, video 68,3 detik, total 102 detik dari prompt sampai MP4. Tangan jelas dan gaya konsisten. Gambar tidak bisa digerakkan per bagian |
+| Story 2D campuran lewat tombol, jari keriput | 6 adegan, 3 gambar dan 3 SVG, 6 gambar, draf sekitar 30 detik, generate 288 detik, export 65 detik, video 61 detik, 0 bagian diam di atas 4 detik, tanpa kegagalan |
+| Uji campuran sabun | 5 adegan, 2 gambar dan 3 SVG, 5 gambar, total 263 detik, video 54,7 detik, 0 bagian diam di atas 4 detik. Keadaan dari gambar acuan berhasil menjelaskan proses. Satu percobaan sebelumnya jatuh ke SVG karena kuota |
+| Pemeriksaan diam, ambang 6 dan batas 4 detik | Cuci tangan gambar AI gagal, diam 63 dari 68,3 detik. Isometrik baterai diam 29,5 dari 35,7 detik, dan lift 23,5 dari 29,8 detik. SVG sabun lolos |
 | Dunia objek Gemini, 3 topik | Total untuk 2 permintaan: 11–12 ribu token masuk, 13–36 ribu token keluar, dan 83–240 detik. Video 30–33 detik, 7 beat, 17–20 objek. Render 12–13 detik dengan `angle` |
 
 Uji enam topik dihentikan user setelah jantung dan jet, jadi topik abstrak seperti inflasi dan sejarah belum terbukti di generator lama.
@@ -78,8 +82,28 @@ Uji enam topik dihentikan user setelah jantung dan jet, jadi topik abstrak seper
 - Kuota Opus user habis pada 7 November 2026, dan rute Claude sempat mengembalikan 503 serta 404 sementara.
 - `ag/gemini-3.1-pro-high` mengembalikan 503 dengan upstream 404 saat diuji.
 - TTS Gemini yang berfungsi adalah `gemini/gemini-2.5-flash-preview-tts`. Versi 3.8 gagal dengan error nama suara. Keluarannya WAV 24 kHz mono, dan model ini tidak tercantum di `/models`.
+- Model gambar bawaan adalah `gemini/gemini-3.1-flash-lite-image`, dan bisa diganti lewat `IMAGE_MODEL`. Harganya setengah dari `gemini-3.1-flash-image`, 4–6 detik per gambar, dan tangannya jelas. `gemini/gemini-nano-banana-2.1` juga berfungsi, tetapi 11–14 detik.
+- Jalur `gemini/` mengabaikan `size` dan `aspect_ratio`, dan mengembalikan gambar mendatar. Kanvas kosong sebagai gambar acuan memaksa bentuk vertikal sekaligus warna latar. Jalur `ag/` menghormati `size: 1024x1792`.
+- `gemini/gemini-3.1-flash-image` berfungsi saat jalur `ag/` kehabisan kuota, dan menerima gambar acuan lewat kolom `image` di `/images/generations`. Hasilnya mempertahankan bidikan dan gaya, jadi satu gambar bisa punya beberapa keadaan. Jalur `ag/` belum teruji untuk gambar acuan karena kuotanya habis, dan `/images/edits` tidak tersedia. Biaya kedua jalur belum diketahui.
+- Kuota `ag/gemini-3.1-flash-image` habis pada 7 November 2026 setelah sekitar 15 gambar dalam satu sesi uji, dengan HTTP 429 dan waktu pulih sekitar 4 jam 40 menit. Satu HTTP 500 muncul tepat sebelumnya. Untuk produksi, kuota ini lebih menentukan daripada kualitas.
+- Gemini menjawab kotak objek dengan skala 0–1000 walaupun diminta pecahan, jadi `normalizeBox` wajib dipakai.
+- Model gambar lain yang berfungsi adalah `gemini/gemini-2.5-flash-image` dan `gemini/gemini-3-pro-image-preview` lewat `/images/generations`, walaupun tidak tercantum di `/models` dan `imageOutput` semuanya false. `gemini-2.5-flash-image-preview`, `imagen-3.0-generate-002`, `imagen-4.0-generate-001`, dan `ag/gemini-3-pro-image` mengembalikan 404. Model `openai/gpt-image-*` dan `dall-e-3` menolak `response_format`, dan belum diuji tanpa parameter itu.
+- Pada uji tangan memegang HP dan menjepit sekrup, `gemini-2.5-flash-image` lebih baik dalam 9–10 detik. `gemini-3-pro-image-preview` butuh 15–17 detik, memotong objek, dan kehilangan sekrupnya. Keluarannya PNG tanpa alpha, dan respons tidak memuat `usage`, jadi biayanya belum diketahui.
 - Tidak ada model musik yang berfungsi. Lyria dan `mmf/music-*` gagal di `/audio/speech`, dan `/audio/generations` serta `/music/generations` tidak tersedia.
 - `OPENAI_BASE_URL` masih memakai HTTP tanpa TLS, jadi API key terkirim tanpa enkripsi. Ganti ke HTTPS sebelum produksi.
+
+## Perkiraan biaya
+
+Harga resmi Gemini API per 7 November 2026, dibaca dari [halaman harga](https://aistudio.google.com/docs/pricing). Router tidak mengirim data pemakaian, jadi tagihan nyata belum dicek.
+
+| Item | Harga |
+|---|---|
+| `gemini-3.8-flash` | $0,75 masuk dan $3,75 keluar per 1 juta token, menjadi $1,50 dan $7,50 mulai 1 Januari 2027 |
+| `gemini-3.1-flash-image` | $0,067 per gambar 1K |
+| `gemini-2.5-flash-image` | $0,039 per gambar, dihentikan 15 Maret 2027 |
+| `gemini-nano-banana-2.1` dan `gemini-3.1-flash-lite-image` | $0,0336 per gambar 1K, belum diuji di gmotion |
+
+Perkiraan per adegan: SVG sekitar $0,05 tanpa gambar ulang, $0,13 dengan satu gambar ulang, dan $0,25 pada kasus terburuk. Gambar AI bawaan $0,07 untuk batas 2 keadaan. Jalur `ag/` memakai kuota, jadi tidak bisa diandalkan untuk produksi.
 
 ## Jebakan teknis
 
@@ -107,6 +131,10 @@ Uji enam topik dihentikan user setelah jantung dan jet, jadi topik abstrak seper
 - **Setiap adegan Mode Dunia adalah satu beat.** Dunia disimpan sebagai data di dalam `MainVideo.tsx`, sehingga pratinjau dan export otomatis memakai kode yang sama. File `Scene*.tsx` tidak dipakai.
 - **Angka di panel dibatasi kode,** bukan hanya prompt, lewat `keepStatedNumbers`. Prompt saja tidak cukup untuk mencegah Gemini mengarang angka.
 - **Dua server dev dari satu folder berbagi `.next`.** Port 3000 dan 3100 sempat hidup bersamaan saat uji, dan port 3100 tidak merespons.
+- **Pemeriksaan diam harus mengukur jarak antar peristiwa.** Zoom pelan selalu menghasilkan perubahan kecil, jadi ambang rendah meloloskan video monoton. Alat ini mengukur monoton, bukan pemahaman penonton.
+- **Dua pose harus digambar dari gambar acuan.** Tanpa acuan, pose pertama penampang kulit dan pose kedua tangan utuh, jadi bukan kelanjutan gerakan.
+- **Gambar mendatar yang dipotong paksa membuat objek terlalu besar.** Semua gambar uji sabun ternyata 1408×768. `matchesAspect` kini menolak bentuk yang salah, dan adegan itu jatuh ke SVG.
+- **Gambar AI tidak mengikuti aturan ruang kosong,** jadi judul butuh pelat warna latar di `ImageStage`. Kotak objek dari Gemini kadang terlalu besar atau meleset, jadi kotak besar hanya dipakai untuk gerak kamera.
 - **`THREE.Clock` deprecated** muncul di log render dari `@react-three/fiber`. Peringatan ini tidak memengaruhi hasil.
 - **File audio dibagi dua:** pratinjau membaca `/audio/...`, sedangkan render membaca `staticFile`. Lihat `sharedAudio` di [VideoTimeline.tsx](../src/motion-kit/core/VideoTimeline.tsx).
 

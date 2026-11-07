@@ -146,6 +146,10 @@ Bagian ini berlaku untuk Story 2D dan Ads. Pilihan Isometrik memakai bagian Vide
 - [ ] Larang panel latar penuh yang kosong secara lebih efektif
 - [ ] Uji topik abstrak: inflasi dan sejarah
 - [ ] Adegan CTA dengan kualitas setara ilustrasi
+- [x] Story 2D campuran SVG dan gambar AI dengan rencana momen, maksimal 2 keadaan per adegan. Gambar gagal jatuh ke SVG. Batasan: baru 1 topik lewat tombol, rasio 4:5 dan 16:9 belum diuji, dan kualitas belum dinilai user
+- [ ] Cek tagihan nyata model gambar `gemini/gemini-3.1-flash-lite-image`
+- [ ] (uji coba) Pemeriksaan bagian video yang diam: terkalibrasi di `scripts/spike-mixed.ts`, belum masuk job generate
+- [ ] Tambah gerak pada Isometrik, karena satu bidikan diam sekitar 5 detik
 
 ## Audio
 

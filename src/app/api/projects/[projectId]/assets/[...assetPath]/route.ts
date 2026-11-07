@@ -7,6 +7,7 @@ const MEDIA_TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.mp4': 'video/mp4',
+  '.png': 'image/png',
 };
 
 export async function GET(

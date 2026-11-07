@@ -2,6 +2,7 @@ import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { ensureContrast } from '@/lib/pipeline/anti-slop';
+import type { ImageShot } from '@/motion-kit/explainer/image-camera';
 import type { ColorPalette, SceneSpec, Storyboard } from '@/types/studio';
 import { generateAsset, GeneratedAsset, parseAssetResponse, repairAsset, sceneAssetPrompt } from './asset-generator';
 
@@ -43,6 +44,25 @@ export const ${componentName} = () => (
     <KineticHeadline text={${JSON.stringify(scene.kineticHeadline)}} highlightColor={${JSON.stringify(palette.primary)}} textColor={${JSON.stringify(palette.text)}} />
     <SyncedCaptions text={${JSON.stringify(scene.voiceoverText)}} wordTimings={${JSON.stringify(scene.wordTimings)}} activeColor={${JSON.stringify(captionHighlight(palette))}} />
   </AssetStage>
+);
+
+export default ${componentName};
+`;
+}
+
+/** A scene drawn by an image model. The app serves the file, and export rewrites its path. */
+export function composeImageScene(storyboard: Storyboard, index: number, images: string[], shots: ImageShot[]): string {
+  const scene = storyboard.scenes[index];
+  const componentName = `Scene${index + 1}`;
+  const { palette } = storyboard;
+  const accent = ensureContrast(palette.primary, palette.background, 3);
+  return `import { ImageStage, KineticHeadline, SyncedCaptions } from '@/motion-kit';
+
+export const ${componentName} = () => (
+  <ImageStage images={${JSON.stringify(images)}} shots={${JSON.stringify(shots)}} backgroundColor={${JSON.stringify(palette.background)}} accent={${JSON.stringify(accent)}}>
+    <KineticHeadline text={${JSON.stringify(scene.kineticHeadline)}} highlightColor={${JSON.stringify(palette.primary)}} textColor={${JSON.stringify(palette.text)}} />
+    <SyncedCaptions text={${JSON.stringify(scene.voiceoverText)}} wordTimings={${JSON.stringify(scene.wordTimings)}} activeColor={${JSON.stringify(captionHighlight(palette))}} />
+  </ImageStage>
 );
 
 export default ${componentName};
