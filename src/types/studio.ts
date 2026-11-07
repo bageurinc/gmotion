@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AssetManifest } from '@/lib/explainer/asset-contract';
 
 export const StylePresetSchema = z.enum(['ads-ui', 'story-2d']);
 export type StylePreset = z.infer<typeof StylePresetSchema>;
@@ -89,6 +90,7 @@ export interface SceneProgress {
   stage: SceneStage;
   error?: string;
   simplified?: boolean;
+  score?: number;
 }
 
 export interface StudioProject {
@@ -103,6 +105,7 @@ export interface StudioProject {
   status: 'draft' | 'idle' | 'generating' | 'rendering' | 'ready' | 'error';
   sceneProgress?: Record<string, SceneProgress>;
   checkingScenes?: boolean;
+  sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
   generationError?: string;
   exportVideoUrl?: string;
 }

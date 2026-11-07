@@ -7,12 +7,12 @@ import type { ColorPalette } from '@/types/studio';
 export const VISUAL_ANTI_SLOP_RULES = `
 VISUAL QUALITY FILTER
 - Take colors from the subject's real materials, place, and mood. Two videos on different topics must not share a palette.
-- Choose brightness from the subject. Daylight, construction, nature, food, health, business, and everyday topics use a bright, well-lit look. Use a dark look only when the subject is dark, such as space, night, or deep sea.
-- Dark for no reason is forbidden. Slate, navy, and near-black backgrounds are not a default.
+- Choose dark or bright from what suits the topic and its mood. Both are welcome when the topic justifies them: space, night, the deep sea, horror, or a cinematic drama can be dark; daylight scenes, food, nature, and everyday subjects are usually bright.
+- Never pick a look out of habit. Slate or navy as an automatic default is forbidden, and every video needs its own colors.
 - Do not use blue-to-cyan, blue-to-purple, or purple-to-pink gradients, neon colors, or rainbow palettes as a default treatment.
 - Use one main color, one supporting color, and neutrals. Reserve the accent for the thing being explained.
 - Glow, blur, particles, and decorative shapes need a reason in the explanation. Never stack them for looks.
-- The subject must stay clearly lit, with visible light and shadow. Avoid large areas of near-black fill.
+- The subject must stay clearly readable, with visible light and shadow, in both dark and bright looks. Avoid murky images where the subject disappears into its background.
 - Motion must explain something: what moves, flows, opens, or changes. Remove motion that only decorates.
 `;
 
@@ -62,9 +62,10 @@ export function ensureContrast(color: string, background: string, minimum: numbe
 
 const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value);
 
-export function normalizePalette(palette: ColorPalette): ColorPalette {
+export function normalizePalette(palette: ColorPalette, look: 'dark' | 'bright' = 'bright'): ColorPalette {
   const isGenericDark =
-    !isHexColor(palette.background) || GENERIC_DARK_BACKGROUNDS.has(palette.background.toLowerCase());
+    !isHexColor(palette.background) ||
+    (look !== 'dark' && GENERIC_DARK_BACKGROUNDS.has(palette.background.toLowerCase()));
   const background = isGenericDark ? FALLBACK_LIGHT.background : palette.background;
   const surface = isGenericDark || !isHexColor(palette.surface) ? FALLBACK_LIGHT.surface : palette.surface;
   const usable = (color: string, fallback: string) => (isHexColor(color) ? color : fallback);

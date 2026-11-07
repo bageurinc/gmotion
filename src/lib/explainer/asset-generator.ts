@@ -92,13 +92,13 @@ Component rules:
 `;
 
 export const CRITIC_SYSTEM_PROMPT = `
-You are a strict art director reviewing a generated vertical explainer clip. The image is a contact sheet of 4 frames in order: close-up, wide shot, second view with a highlighted part, and zoom to another part.
+You are a strict art director reviewing a generated vertical explainer scene. The image is a contact sheet of frames in time order from one scene.
 Score each criterion from 1 to 10:
 - recognizability: the subject and topic are immediately understood.
-- illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, basic shapes, or a dark and murky image scores 4 or lower.
+- illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, or basic shapes scores 4 or lower. Dark images are fine when they suit the topic; penalize only murky images where the subject is hard to see.
 - viewConsistency: frames show the same subject with the same proportions.
 - labelAccuracy: labels point at the correct visible parts and facts are right.
-- composition: one large clear subject fills the frame, there are no big empty areas, nothing important is cut off, and text remains readable.
+- composition: one large clear subject fills the frame, there are no big empty areas or a nearly empty panel, nothing important is cut off, and text remains readable.
 Return only JSON: {"imageVisible":true,"scores":{"recognizability":0,"illustrationRichness":0,"viewConsistency":0,"labelAccuracy":0,"composition":0},"issues":["specific fix"]}.
 Set imageVisible to false if you cannot see the frames.
 List at most 8 issues, ordered by visual impact, and say exactly what to change.
@@ -281,7 +281,7 @@ export function reviseAsset(
   return requestAsset(model, [
     {
       type: 'text',
-      text: `User request: "${topicPrompt}"\n\nThe attached contact sheet shows the rendered clip: close-up, wide shot, second view, zoom to another part.\n\nArt director issues:\n${critique.issues.map((issue) => `- ${issue}`).join('\n')}\n\n${assetContext(asset)}\n\nImprove the illustration substantially and fix every issue. Return the complete json and tsx blocks.`,
+      text: `User request: "${topicPrompt}"\n\nThe attached contact sheet shows frames from the rendered scene in time order.\n\nArt director issues:\n${critique.issues.map((issue) => `- ${issue}`).join('\n')}\n\n${assetContext(asset)}\n\nImprove the illustration substantially and fix every issue. Return the complete json and tsx blocks.`,
     },
     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${sheetJpeg.toString('base64')}` } },
   ]);

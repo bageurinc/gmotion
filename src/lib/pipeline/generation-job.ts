@@ -2,6 +2,7 @@ import { saveProject } from '@/lib/storage/project-store';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
+import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
 import { findSceneCrashes, repairCrashedScenes } from '@/lib/render/scene-check';
 import { generateMainVideoCode, reviseSceneCode, simpleSceneCode } from './coder-agent';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
@@ -76,7 +77,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       }));
 
       setStage(sceneId, 'animation');
-      const { code, simplified } = await generateVideoSceneFile(project.storyboard, index);
+      const { code, simplified, asset: sceneAsset } = await generateVideoSceneFile(project.storyboard, index);
       commit((current) => {
         const sceneProgress = {
           ...current.sceneProgress,
@@ -85,6 +86,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
         const next = { ...current, sceneProgress };
         return {
           sceneProgress,
+          sceneAssets: sceneAsset ? { ...current.sceneAssets, [sceneId]: sceneAsset } : current.sceneAssets,
           files: {
             ...current.files,
             [`Scene${index + 1}.tsx`]: code,
@@ -100,6 +102,11 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
 
   if (isApiKeyConfigured() && !hasFailedScene(project)) {
     commit(() => ({ checkingScenes: true }));
+    try {
+      await improveWeakScenes(project, qualityTools(() => project, commit));
+    } catch (err) {
+      console.error(`[GenerationJob] Quality review failed for ${project.id}:`, err);
+    }
     try {
       await repairCrashedScenes(project, {
         findCrashes: findSceneCrashes,

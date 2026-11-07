@@ -46,6 +46,7 @@ ${COPY_ANTI_SLOP_RULES}
      "aspectRatio": "9:16",
      "fps": 30,
      "bgmTrack": "dark-tech-pulse",
+     "look": "dark or bright, whichever suits this topic",
      "palette": {
        "background": "<hex drawn from this subject>",
        "surface": "<hex>",
@@ -105,7 +106,7 @@ function parseStoryboardRaw(
             secondary: String(obj.palette?.secondary ?? ''),
             alert: String(obj.palette?.alert ?? ''),
             text: String(obj.palette?.text ?? ''),
-          }),
+          }, obj.look === 'dark' ? 'dark' : 'bright'),
           scenes: scenes.map((s: Record<string, unknown>, idx: number) => {
             const role = typeof s.role === 'string' && ['hook', 'problem', 'mechanism', 'proof', 'cta', 'narrative'].includes(s.role)
               ? (s.role as SceneSpec['role'])

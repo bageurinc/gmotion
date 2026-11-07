@@ -1,4 +1,5 @@
 import { openBrowser, renderStill, selectComposition } from '@remotion/renderer';
+import sharp from 'sharp';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import type { StudioProject } from '@/types/studio';
 import { bundleProject, COMPOSITION_ID } from './render-service';
@@ -50,6 +51,51 @@ export async function findSceneCrashes(project: StudioProject): Promise<SceneCra
     });
 
     return [...crashes].map(([index, message]) => ({ index, message }));
+  } finally {
+    await browser.close({ silent: true });
+  }
+}
+
+const SHEET_FRAME = { width: 405, height: 720 };
+
+/** Renders contact sheets per scene. A scene that crashes is simply left out. */
+export async function captureSceneSheets(project: StudioProject, indexes: number[]): Promise<Map<number, Buffer>> {
+  const serveUrl = await bundleProject(project);
+  const browser = await openBrowser('chrome');
+  try {
+    const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, puppeteerInstance: browser });
+    const samples = sampleSceneFrames(project.storyboard.scenes.map((scene) => scene.durationInFrames));
+    const sheets = new Map<number, Buffer>();
+
+    await mapWithConcurrency(indexes, PIPELINE_CONCURRENCY, async (index) => {
+      try {
+        const frames: Buffer[] = [];
+        for (const { frame } of samples.filter((sample) => sample.index === index)) {
+          const { buffer } = await renderStill({
+            composition,
+            serveUrl,
+            frame,
+            output: null,
+            imageFormat: 'jpeg',
+            puppeteerInstance: browser,
+          });
+          frames.push(await sharp(buffer as Buffer).resize(SHEET_FRAME).toBuffer());
+        }
+        sheets.set(
+          index,
+          await sharp({
+            create: { width: SHEET_FRAME.width * frames.length, height: SHEET_FRAME.height, channels: 3, background: '#000000' },
+          })
+            .composite(frames.map((input, position) => ({ input, left: position * SHEET_FRAME.width, top: 0 })))
+            .jpeg({ quality: 82 })
+            .toBuffer()
+        );
+      } catch (error) {
+        console.warn(`[SceneCheck] Could not capture scene ${index + 1}:`, error);
+      }
+    });
+
+    return sheets;
   } finally {
     await browser.close({ silent: true });
   }

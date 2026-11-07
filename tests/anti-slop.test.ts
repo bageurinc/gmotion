@@ -18,6 +18,11 @@ describe('normalizePalette', () => {
     expect(contrastRatio(result.text, result.background)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('keeps a generic dark background when the topic calls for a dark look', () => {
+    const result = normalizePalette({ ...palette, background: '#0F172A', surface: '#1E293B', text: '#F8FAFC' }, 'dark');
+    expect(result.background).toBe('#0F172A');
+  });
+
   it('keeps a dark background chosen for the subject', () => {
     const space = normalizePalette({ ...palette, background: '#1A1033', text: '#F4EFFF', primary: '#FFB703' });
     expect(space.background).toBe('#1A1033');
