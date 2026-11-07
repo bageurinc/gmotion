@@ -1,9 +1,11 @@
 import { saveProject } from '@/lib/storage/project-store';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { generateVideoSceneFile } from '@/lib/explainer/scene-generator';
-import { generateMainVideoCode } from './coder-agent';
+import { isApiKeyConfigured } from '@/lib/ai/llm-client';
+import { findSceneCrashes, repairCrashedScenes } from '@/lib/render/scene-check';
+import { generateMainVideoCode, reviseSceneCode, simpleSceneCode } from './coder-agent';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
-import { normalizeSceneOrder } from './draft';
+import { hasFailedScene, normalizeSceneOrder } from './draft';
 import { generateSceneAudio } from './tts-engine';
 
 const globalJobs = globalThis as typeof globalThis & { __gmotionGenerationJobs?: Set<string> };
@@ -95,6 +97,38 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       setStage(sceneId, 'failed', err instanceof Error ? err.message : 'Adegan gagal dibuat.');
     }
   });
+
+  if (isApiKeyConfigured() && !hasFailedScene(project)) {
+    commit(() => ({ checkingScenes: true }));
+    try {
+      await repairCrashedScenes(project, {
+        findCrashes: findSceneCrashes,
+        reviseScene: (current, crash) =>
+          reviseSceneCode(
+            current.files[`Scene${crash.index + 1}.tsx`],
+            current.storyboard.scenes[crash.index],
+            `Fix this runtime crash and keep the same visual: ${crash.message}`,
+            current.storyboard.palette
+          ),
+        replaceWithSimpleScene: (current, crash) =>
+          simpleSceneCode(current.storyboard, crash.index),
+        saveScene: (index, code, simplified) => {
+          const sceneId = project.storyboard.scenes[index].id;
+          commit((current) => ({
+            files: { ...current.files, [`Scene${index + 1}.tsx`]: code },
+            sceneProgress: simplified
+              ? { ...current.sceneProgress, [sceneId]: { stage: 'ready', simplified } }
+              : current.sceneProgress,
+          }));
+        },
+        current: () => project,
+      });
+    } catch (err) {
+      // A broken checker must not block a video that may be fine. Export still reports real crashes.
+      console.error(`[GenerationJob] Scene check failed for ${project.id}:`, err);
+    }
+    commit(() => ({ checkingScenes: undefined }));
+  }
 
   commit((current) => {
     const failed = Object.values(current.sceneProgress ?? {}).filter((scene) => scene.stage === 'failed').length;

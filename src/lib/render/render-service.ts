@@ -15,18 +15,15 @@ export interface VideoRenderProvider {
   ): Promise<{ outputPath: string; outputUrl: string }>;
 }
 
-export class LocalRemotionRenderProvider implements VideoRenderProvider {
-  async renderProject(
-    project: StudioProject,
-    onProgress?: RenderProgressCallback
-  ): Promise<{ outputPath: string; outputUrl: string }> {
+export const COMPOSITION_ID = 'MainVideo';
+
+/** Materializes a project and bundles it. Exports and scene checks share this code path. */
+export async function bundleProject(project: StudioProject): Promise<string> {
     const projectId = project.id;
     const projectDir = path.join(process.cwd(), 'storage', 'projects', projectId);
     const buildSrcDir = path.join(projectDir, 'build-src');
-    const exportsDir = path.join(projectDir, 'exports');
 
     if (!fs.existsSync(buildSrcDir)) fs.mkdirSync(buildSrcDir, { recursive: true });
-    if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
 
     // Copy any assets (like audio) into publicDir for Remotion bundler
     const publicDir = path.join(buildSrcDir, 'public');
@@ -91,7 +88,7 @@ export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
-        id="MainVideo"
+        id="${COMPOSITION_ID}"
         component={SafeMainVideo}
         durationInFrames={${totalDurationInFrames}}
         fps={${project.storyboard.fps || 30}}
@@ -115,7 +112,7 @@ export default RemotionRoot;
     const srcDir = path.join(process.cwd(), 'src');
 
     console.log(`[RenderService] Bundling project ${projectId}...`);
-    const bundleLocation = await bundle({
+    return bundle({
       entryPoint: rootPath,
       publicDir: publicDir,
       ignoreRegisterRootWarning: true,
@@ -134,11 +131,23 @@ export default RemotionRoot;
         };
       },
     });
+}
+
+export class LocalRemotionRenderProvider implements VideoRenderProvider {
+  async renderProject(
+    project: StudioProject,
+    onProgress?: RenderProgressCallback
+  ): Promise<{ outputPath: string; outputUrl: string }> {
+    const projectId = project.id;
+    const exportsDir = path.join(process.cwd(), 'storage', 'projects', projectId, 'exports');
+    if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
+
+    const bundleLocation = await bundleProject(project);
 
     // 4. Select Composition
     const composition = await selectComposition({
       serveUrl: bundleLocation,
-      id: 'MainVideo',
+      id: COMPOSITION_ID,
     });
 
     const outputFileName = 'video.mp4';

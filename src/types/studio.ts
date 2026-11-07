@@ -102,6 +102,7 @@ export interface StudioProject {
   chatHistory: ProjectChatMessage[];
   status: 'draft' | 'idle' | 'generating' | 'rendering' | 'ready' | 'error';
   sceneProgress?: Record<string, SceneProgress>;
+  checkingScenes?: boolean;
   generationError?: string;
   exportVideoUrl?: string;
 }

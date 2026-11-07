@@ -1023,6 +1023,13 @@ export default MainVideo;
 `;
 }
 
+export function simpleSceneCode(storyboard: Storyboard, index: number): string {
+  const scene = storyboard.scenes[index];
+  return storyboard.preset === 'ads-ui'
+    ? generateProceduralAdsSceneCode(scene, index)
+    : generateProceduralStorySceneCode(scene, index);
+}
+
 /**
  * Generate the TSX file for one scene
  */

@@ -36,7 +36,7 @@ export const GenerationProgress: React.FC<{
     <section aria-label="Progres pembuatan video" className="border-b border-slate-800 bg-slate-900 p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-bold text-white" aria-live="polite">
-          {readyCount} dari {scenes.length} adegan selesai
+          {project.checkingScenes ? 'Memeriksa semua adegan…' : `${readyCount} dari ${scenes.length} adegan selesai`}
         </h2>
         {canRetry && (
           <button
