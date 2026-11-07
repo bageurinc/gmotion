@@ -88,6 +88,14 @@ export async function generateSceneAudio(
   }
 
   if (!scene.voiceoverText.trim()) {
+    if (scene.fixedDurationSec && scene.fixedDurationSec > 0) {
+      const durationInFrames = Math.max(30, Math.round(scene.fixedDurationSec * fps));
+      return {
+        audioUrl: '',
+        durationInFrames,
+        wordTimings: [],
+      };
+    }
     throw new Error('Narasi kosong. Isi naskah suara sebelum membuat audio.');
   }
   const voiceName = options.voice || process.env.TTS_VOICE_ID || 'id-ID-ArdiNeural';
@@ -141,9 +149,7 @@ export async function generateSceneAudio(
   }
   // Only replace existing narration after a real audio response has been validated.
   fs.writeFileSync(audioFilePath, audioBuffer);
-  let wordTimings: WordTiming[];
-
-  wordTimings = estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
+  const wordTimings: WordTiming[] = estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
 
   // Audio-First Frame Lock Formula:
   // Math.max(90, Math.ceil((audioDurationSeconds + 0.35) * fps))

@@ -6,7 +6,7 @@ import { SafeOverlayHost, useSceneLayout } from './SafeOverlay';
 
 export interface CameraRigProps {
   children: React.ReactNode;
-  mode?: 'static' | 'macro-zoom-in' | 'slow-push' | 'pan-parallax' | 'tilt-3d';
+  mode?: 'static' | 'macro-zoom-in' | 'slow-push' | 'pan-parallax' | 'tilt-3d' | 'timelapse';
   fromScale?: number;
   toScale?: number;
   targetX?: number; // Target pan X in pixels or percent
@@ -73,6 +73,15 @@ export const CameraRig: React.FC<CameraRigProps> = ({
       scale = interpolate(springProgress, [0, 1], [fromScale, toScale]);
       rotateX = interpolate(linearProgress, [0, 1], [6, -4]);
       rotateY = interpolate(linearProgress, [0, 1], [-8, 6]);
+      break;
+    }
+    case 'timelapse': {
+      // Steady cinematic composition with gentle micro-scale so rapid visual timelapse remains grounded
+      scale = interpolate(linearProgress, [0, 1], [fromScale, Math.min(toScale, fromScale * 1.04)], {
+        easing: Easing.inOut(Easing.quad),
+      });
+      translateX = interpolate(linearProgress, [0, 1], [0, targetX * 0.2]);
+      translateY = interpolate(linearProgress, [0, 1], [0, targetY * 0.2]);
       break;
     }
     case 'static':

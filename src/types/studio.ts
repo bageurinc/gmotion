@@ -13,6 +13,17 @@ export const WordTimingSchema = z.object({
 });
 export type WordTiming = z.infer<typeof WordTimingSchema>;
 
+export const TimelapseKindSchema = z.enum(['day-night', 'clock', 'growth', 'crowd', 'weather']);
+export type TimelapseKind = z.infer<typeof TimelapseKindSchema>;
+
+export const TimelapseSpecSchema = z.object({
+  kind: TimelapseKindSchema,
+  fromLabel: z.string().optional(),
+  toLabel: z.string().optional(),
+  easing: z.enum(['linear', 'ease-in-out']).default('ease-in-out'),
+});
+export type TimelapseSpec = z.infer<typeof TimelapseSpecSchema>;
+
 export const SceneSpecSchema = z.object({
   id: z.string(), // e.g. "scene-1-hook"
   order: z.number(),
@@ -21,8 +32,10 @@ export const SceneSpecSchema = z.object({
   voiceoverText: z.string(),
   kineticHeadline: z.string(),
   visualPrompt: z.string(), // Detailed choreography & SVG instruction
-  cameraAction: z.enum(['static', 'macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d']),
+  cameraAction: z.enum(['static', 'macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d', 'timelapse']),
   sfxCue: z.enum(['none', 'pop', 'whoosh', 'notification', 'cash-register', 'success']),
+  timelapse: TimelapseSpecSchema.optional(),
+  fixedDurationSec: z.number().min(1).max(30).optional(),
   // Populated by Stage 2 (Audio-First TTS Engine):
   audioUrl: z.string().optional(),
   durationInFrames: z.number().default(120),

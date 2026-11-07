@@ -4,6 +4,7 @@ import {
   SceneSpec,
   StylePreset,
   AspectRatio,
+  TimelapseKind,
 } from '@/types/studio';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 
@@ -49,11 +50,16 @@ CRITICAL RULES:
          "voiceoverText": "Naskah narasi suara lengkap bahasa indonesia",
          "kineticHeadline": "TEKS HEADLINE BOLD",
          "visualPrompt": "Instruksi visual animasi",
-         "cameraAction": "macro-zoom-in",
-         "sfxCue": "pop"
+         "cameraAction": "macro-zoom-in (or slow-push, pan-parallax, tilt-3d, static, timelapse)",
+         "sfxCue": "pop",
+         "timelapse": { "kind": "day-night", "fromLabel": "06:00", "toLabel": "20:00" }
        }
      ]
    }
+
+4. TIMELAPSE SUPPORT:
+   - For scenes depicting the passage of time (e.g. sunrise to sunset, 24-hour cycle, plant growth, process progression), set cameraAction to "timelapse".
+   - Optionally specify "timelapse": { "kind": "day-night" | "clock" | "growth" | "crowd" | "weather", "fromLabel": "06:00", "toLabel": "20:00" }.
 `;
 
 /**
@@ -99,12 +105,25 @@ function parseStoryboardRaw(
               voiceoverText: typeof s.voiceoverText === 'string' ? s.voiceoverText : `Narasi adegan ${idx + 1}`,
               kineticHeadline: typeof s.kineticHeadline === 'string' ? s.kineticHeadline : `HEADLINE ${idx + 1}`,
               visualPrompt: typeof s.visualPrompt === 'string' ? s.visualPrompt : '',
-              cameraAction: (typeof s.cameraAction === 'string' && ['macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d', 'static'].includes(s.cameraAction)
+              cameraAction: (typeof s.cameraAction === 'string' && ['macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d', 'static', 'timelapse'].includes(s.cameraAction)
                 ? s.cameraAction
                 : 'macro-zoom-in') as SceneSpec['cameraAction'],
               sfxCue: (typeof s.sfxCue === 'string' && ['none', 'pop', 'whoosh', 'notification', 'cash-register', 'success'].includes(s.sfxCue)
                 ? s.sfxCue
                 : 'pop') as SceneSpec['sfxCue'],
+              timelapse: s.timelapse && typeof s.timelapse === 'object' ? {
+                kind: ['day-night', 'clock', 'growth', 'crowd', 'weather'].includes(String((s.timelapse as Record<string, unknown>).kind))
+                  ? ((s.timelapse as Record<string, unknown>).kind as TimelapseKind)
+                  : 'day-night',
+                fromLabel: typeof (s.timelapse as Record<string, unknown>).fromLabel === 'string'
+                  ? String((s.timelapse as Record<string, unknown>).fromLabel)
+                  : undefined,
+                toLabel: typeof (s.timelapse as Record<string, unknown>).toLabel === 'string'
+                  ? String((s.timelapse as Record<string, unknown>).toLabel)
+                  : undefined,
+                easing: (s.timelapse as Record<string, unknown>).easing === 'linear' ? 'linear' as const : 'ease-in-out' as const,
+              } : undefined,
+              fixedDurationSec: typeof s.fixedDurationSec === 'number' ? s.fixedDurationSec : undefined,
               durationInFrames: typeof s.durationInFrames === 'number' ? s.durationInFrames : 120,
               wordTimings: Array.isArray(s.wordTimings) ? s.wordTimings : [],
             };
@@ -126,6 +145,7 @@ function parseStoryboardRaw(
       'pan-parallax',
       'tilt-3d',
       'static',
+      'timelapse',
     ];
 
     const scenes: SceneSpec[] = [];
@@ -151,6 +171,8 @@ function parseStoryboardRaw(
         ? 'macro-zoom-in'
         : 'slow-push';
 
+      const isTimelapseBlock = cam === 'timelapse' || /timelapse|timelap|time-lapse/i.test(block);
+
       scenes.push({
         id: `scene-${idx + 1}-${roles[idx] || 'narrative'}`,
         order: idx + 1,
@@ -160,6 +182,12 @@ function parseStoryboardRaw(
         kineticHeadline: headline,
         visualPrompt: block.trim().slice(0, 300),
         cameraAction: cam,
+        timelapse: isTimelapseBlock ? {
+          kind: 'day-night',
+          fromLabel: '06:00',
+          toLabel: '20:00',
+          easing: 'ease-in-out',
+        } : undefined,
         sfxCue: idx === 0 ? 'pop' : idx === 3 ? 'success' : 'whoosh',
         durationInFrames: 120,
         wordTimings: [],
@@ -261,6 +289,245 @@ function generateProceduralStoryboardBase(
   preset: StylePreset,
   aspectRatio: AspectRatio
 ): Storyboard {
+  const isConstruction = /gedung|bangun|konstruksi|lantai|tower|arsitektur|building|skyscraper/i.test(userPrompt);
+  const isPlant = /tanaman|pohon|bunga|tumbuh|benih|plant|tree|flower|nature|sprout/i.test(userPrompt);
+  const isDayNight = /siang ke malam|fajar|senja|sunset|sunrise|langit|matahari|bintang/i.test(userPrompt);
+  const isTimelapse = /timelapse|timelap|time-lapse/i.test(userPrompt) || isDayNight;
+
+  if (isTimelapse && isConstruction) {
+    return {
+      title: 'Timelapse Pembangunan Gedung Bertingkat',
+      preset: preset === 'ads-ui' ? 'ads-ui' : 'story-2d',
+      aspectRatio,
+      fps: 30,
+      bgmTrack: 'dark-tech-pulse',
+      palette: {
+        background: '#0F172A',
+        surface: '#1E293B',
+        primary: '#38BDF8',
+        secondary: '#0284C7',
+        alert: '#EF4444',
+        text: '#F8FAFC',
+      },
+      scenes: [
+        {
+          id: 'scene-1-hook',
+          order: 1,
+          role: 'hook',
+          title: 'Fondasi Awal Proyek',
+          voiceoverText: 'Setiap karya arsitektur megah berawal dari pondasi kokoh yang ditanam jauh ke dalam bumi.',
+          kineticHeadline: 'Fondasi Kokoh Mahakarya Megah',
+          visualPrompt: 'Area proyek konstruksi dengan crane dan pondasi beton yang kokoh siap dibangun.',
+          cameraAction: 'slow-push',
+          sfxCue: 'whoosh',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-2-mechanism',
+          order: 2,
+          role: 'mechanism',
+          title: 'Konstruksi Bertingkat Cepat',
+          voiceoverText: 'Lantai demi lantai berdiri dengan presisi tinggi, membentuk siluet masa depan kota.',
+          kineticHeadline: 'Pembangunan Lantai Demi Lantai',
+          visualPrompt: 'Timelapse konstruksi gedung bertingkat menggunakan StagedReveal lantai naik, crane bergerak dengan PathMover, dan TimeHUD bar.',
+          cameraAction: 'timelapse',
+          timelapse: {
+            kind: 'growth',
+            fromLabel: 'Lantai 1',
+            toLabel: 'Lantai 24',
+            easing: 'ease-in-out',
+          },
+          sfxCue: 'pop',
+          durationInFrames: 140,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-3-proof',
+          order: 3,
+          role: 'proof',
+          title: 'Struktur Pencakar Langit',
+          voiceoverText: 'Menghadirkan efisiensi ruang dan estetika modern yang tahan uji lintas generasi.',
+          kineticHeadline: 'Pencakar Langit Berdiri Kokoh',
+          visualPrompt: 'Gedung modern berdiri megah dengan pantulan cahaya kaca biru dan penerangan arsitektural.',
+          cameraAction: 'slow-push',
+          sfxCue: 'notification',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-4-cta',
+          order: 4,
+          role: 'cta',
+          title: 'Masa Depan Konstruksi',
+          voiceoverText: 'Wujudkan pembangunan berkelas dengan standar rekayasa konstruksi terbaik hari ini.',
+          kineticHeadline: 'Membangun Masa Depan Bersama',
+          visualPrompt: 'Tampilan penutup sinematik dengan skyline gedung yang telah rampung dan badge penyelesaian.',
+          cameraAction: 'slow-push',
+          sfxCue: 'success',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+      ],
+    };
+  }
+
+  if (isTimelapse && isPlant) {
+    return {
+      title: 'Timelapse Pertumbuhan Tanaman',
+      preset: preset === 'ads-ui' ? 'ads-ui' : 'story-2d',
+      aspectRatio,
+      fps: 30,
+      bgmTrack: 'warm-acoustic',
+      palette: {
+        background: '#022C22',
+        surface: '#064E3B',
+        primary: '#10B981',
+        secondary: '#34D399',
+        alert: '#F59E0B',
+        text: '#ECFDF5',
+      },
+      scenes: [
+        {
+          id: 'scene-1-hook',
+          order: 1,
+          role: 'hook',
+          title: 'Awal Sebuah Kehidupan',
+          voiceoverText: 'Dari sebutir benih kecil di dalam tanah yang subur, keajaiban alam dimulai.',
+          kineticHeadline: 'Keajaiban Benih Kecil',
+          visualPrompt: 'Benih tertanam di dalam tanah hangat, siap untuk bertunas.',
+          cameraAction: 'slow-push',
+          sfxCue: 'whoosh',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-2-mechanism',
+          order: 2,
+          role: 'mechanism',
+          title: 'Pertumbuhan Menuju Cahaya',
+          voiceoverText: 'Tunas bertumbuh menembus bumi, daun bermekaran menyerap kehangatan mentari.',
+          kineticHeadline: 'Tumbuh Subur Menuju Cahaya',
+          visualPrompt: 'Timelapse tanaman menggunakan GrowAxis batang tumbuh, daun bermekaran via StagedReveal, dan TimeHUD progres.',
+          cameraAction: 'timelapse',
+          timelapse: {
+            kind: 'growth',
+            fromLabel: 'Hari 1',
+            toLabel: 'Hari 30',
+            easing: 'ease-in-out',
+          },
+          sfxCue: 'pop',
+          durationInFrames: 135,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-3-proof',
+          order: 3,
+          role: 'proof',
+          title: 'Bunga Bermekaran Sempurna',
+          voiceoverText: 'Kuncup bunga membuka kelopaknya perlahan, memancarkan pesona keindahan alami.',
+          kineticHeadline: 'Bunga Mekar Sempurna',
+          visualPrompt: 'Bunga mekar penuh dengan kelopak berwarna cerah dan dedaunan rimbun.',
+          cameraAction: 'macro-zoom-in',
+          sfxCue: 'notification',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-4-cta',
+          order: 4,
+          role: 'cta',
+          title: 'Harmoni Bersama Alam',
+          voiceoverText: 'Rawat setiap pertumbuhan dengan sabar, karena proses terbaik butuh waktu.',
+          kineticHeadline: 'Tumbuh Indah Bersama Waktu',
+          visualPrompt: 'Pemandangan alam asri yang damai dengan tanaman hijau yang tumbuh subur.',
+          cameraAction: 'slow-push',
+          sfxCue: 'success',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+      ],
+    };
+  }
+
+  if (isTimelapse) {
+    return {
+      title: 'Timelapse Perjalanan Dari Fajar Hingga Malam',
+      preset: preset === 'ads-ui' ? 'ads-ui' : 'story-2d',
+      aspectRatio,
+      fps: 30,
+      bgmTrack: preset === 'ads-ui' ? 'dark-tech-pulse' : 'cinematic-story',
+      palette: {
+        background: '#090D16',
+        surface: '#1E293B',
+        primary: '#F59E0B',
+        secondary: '#38BDF8',
+        alert: '#EF4444',
+        text: '#F8FAFC',
+      },
+      scenes: [
+        {
+          id: 'scene-1-hook',
+          order: 1,
+          role: 'hook',
+          title: 'Fajar Menyingsing',
+          voiceoverText: 'Ketika sang fajar menyingsing, dunia mulai bergerak menyambut hari yang baru.',
+          kineticHeadline: 'Fajar Menyingsing Penuh Harapan',
+          visualPrompt: 'DayNightSky dengan semburat fajar jingga keemasan dan matahari mulai terbit di cakrawala.',
+          cameraAction: 'slow-push',
+          sfxCue: 'whoosh',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-2-mechanism',
+          order: 2,
+          role: 'mechanism',
+          title: 'Timelapse Putaran Waktu',
+          voiceoverText: 'Waktu bergulir begitu cepat, dari terik siang hingga senja keemasan menghiasi langit.',
+          kineticHeadline: 'Siklus Waktu Terus Berputar',
+          visualPrompt: 'Timelapse siang ke malam menggunakan DayNightSky dan TimelapseClock berputar dari 06:00 hingga 20:00.',
+          cameraAction: 'timelapse',
+          timelapse: {
+            kind: 'day-night',
+            fromLabel: '06:00',
+            toLabel: '20:00',
+            easing: 'ease-in-out',
+          },
+          sfxCue: 'pop',
+          durationInFrames: 135,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-3-proof',
+          order: 3,
+          role: 'proof',
+          title: 'Malam Berbintang',
+          voiceoverText: 'Dan malam pun tiba, membawa ribuan bintang berkilau dan kedamaian tanpa batas.',
+          kineticHeadline: 'Malam Berbintang Penuh Makna',
+          visualPrompt: 'Langit malam dengan bulan purnama, gugusan bintang bersinar dan siluet gedung megah.',
+          cameraAction: 'slow-push',
+          sfxCue: 'notification',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+        {
+          id: 'scene-4-cta',
+          order: 4,
+          role: 'cta',
+          title: 'Renungan Waktu',
+          voiceoverText: 'Setiap detik adalah cerita berharga dalam perjalanan hidup kita.',
+          kineticHeadline: 'Hargai Setiap Detik Waktu',
+          visualPrompt: 'Penutup estetik dengan siluet pemandangan dan refleksi inspiratif tentang waktu.',
+          cameraAction: 'slow-push',
+          sfxCue: 'success',
+          durationInFrames: 120,
+          wordTimings: [],
+        },
+      ],
+    };
+  }
+
   const isAds = preset === 'ads-ui';
 
   if (isAds) {

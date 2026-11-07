@@ -17,8 +17,64 @@ import {
   Square,
   RefreshCw,
   FolderOpen,
+  Building2,
+  Sun,
+  Sprout,
+  TrendingUp,
+  Timer,
 } from 'lucide-react';
 import { StylePreset, AspectRatio, StudioProject } from '@/types/studio';
+
+const TIMELAPSE_PROMPTS = [
+  {
+    title: 'Konstruksi Gedung Pencakar Langit',
+    prompt:
+      'Buat animasi timelapse pembuatan gedung pencakar langit 24 lantai dari pondasi beton, lantai demi lantai naik bertingkat, hingga tower crane selesai.',
+    preset: 'story-2d' as StylePreset,
+    ratio: '9:16' as AspectRatio,
+    badge: 'Konstruksi & Arsitektur',
+    category: 'Konstruksi',
+    icon: Building2,
+    accent: '#38BDF8',
+    glow: 'shadow-cyan-500/10 border-cyan-500/30 hover:border-cyan-400/60',
+  },
+  {
+    title: 'Perjalanan Langit Fajar ke Malam',
+    prompt:
+      'Animasi timelapse perjalanan waktu dari fajar menyingsing, siang terik, senja keemasan, hingga malam bertabur bintang di cakrawala kota.',
+    preset: 'story-2d' as StylePreset,
+    ratio: '9:16' as AspectRatio,
+    badge: 'Siang ke Malam',
+    category: 'Siklus Waktu',
+    icon: Sun,
+    accent: '#F59E0B',
+    glow: 'shadow-amber-500/10 border-amber-500/30 hover:border-amber-400/60',
+  },
+  {
+    title: 'Pertumbuhan Benih & Tanaman Tropis',
+    prompt:
+      'Timelapse pertumbuhan tanaman dari sebutir biji di dalam tanah hangat, tumbuh bertunas, daun bermekaran, hingga bunga mekar sempurna.',
+    preset: 'story-2d' as StylePreset,
+    ratio: '9:16' as AspectRatio,
+    badge: 'Botani & Alam',
+    category: 'Pertumbuhan',
+    icon: Sprout,
+    accent: '#10B981',
+    glow: 'shadow-emerald-500/10 border-emerald-500/30 hover:border-emerald-400/60',
+  },
+  {
+    title: 'Evolusi Omzet & Sales 30 Hari',
+    prompt:
+      'Timelapse progres 30 hari pertumbuhan omzet bisnis dari awal merintis hingga closing ratusan juta per bulan secara otomatis.',
+    preset: 'ads-ui' as StylePreset,
+    ratio: '9:16' as AspectRatio,
+    badge: 'Pertumbuhan Bisnis',
+    category: 'Metrik & Sales',
+    icon: TrendingUp,
+    accent: '#EC4899',
+    glow: 'shadow-pink-500/10 border-pink-500/30 hover:border-pink-400/60',
+  },
+];
 
 const STARTER_PROMPTS = [
   {
@@ -306,6 +362,70 @@ export default function HomePage() {
                 <span>{generationStep}</span>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Supported Timelapse Prompts */}
+        <div className="w-full mt-12 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+                <Timer className="w-4 h-4 text-cyan-400" />
+                <span>Contoh Prompt Animasi Timelapse yang Didukung:</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  New Feature
+                </span>
+              </h3>
+              <p className="text-[12px] text-slate-400 mt-1">
+                Pilih topik timelapse untuk langsung dicoba: konstruksi gedung, siklus fajar-ke-malam, pertumbuhan tanaman, atau evolusi omzet.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {TIMELAPSE_PROMPTS.map((item, idx) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    setPrompt(item.prompt);
+                    setPreset(item.preset);
+                    setAspectRatio(item.ratio);
+                    window.scrollTo({ top: 120, behavior: 'smooth' });
+                  }}
+                  className={`group cursor-pointer bg-slate-900/60 hover:bg-slate-900 border rounded-2xl p-4 transition-all duration-200 flex flex-col justify-between space-y-3 hover:scale-[1.02] shadow-lg ${item.glow}`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center"
+                        style={{ backgroundColor: `${item.accent}15`, color: item.accent }}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 uppercase">
+                        {item.badge}
+                      </span>
+                    </div>
+                    <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition">
+                      {item.title}
+                    </h4>
+                    <p className="text-[11px] text-slate-400 line-clamp-3 mt-1.5 leading-relaxed">
+                      {item.prompt}
+                    </p>
+                  </div>
+
+                  <div
+                    className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-semibold"
+                    style={{ color: item.accent }}
+                  >
+                    <span>Gunakan Timelapse</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

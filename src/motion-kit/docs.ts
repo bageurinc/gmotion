@@ -41,6 +41,24 @@ You MUST compose scenes using these prebuilt components alongside custom clean S
 8. <SyncedCaptions text={voiceoverText} wordTimings={wordTimings} activeColor="#FBBF24" bottomOffset={260} />
    - Renders synced subtitles in safe zone. Always place at the end of the Scene.
 
+9. TIMELAPSE SUITE & COMPOSABLE PRIMITIVES:
+   - useTimelapseProgress({ easing: 'linear' | 'ease-in-out' }): Returns normalized 0.0 -> 1.0 progress.
+   - <StagedReveal count={N} from={0.1} to={0.9} renderItem={(i, prog) => ...} />:
+     Sequentially reveals N items (e.g. building floors rising, steps completing, trees sprouting).
+   - <GrowAxis axis="y"|"x"|"scale" origin="bottom center" from={0} to={1}>:
+     Scales/grows artwork along a single axis (e.g. tree trunk growing upwards, foundation pouring).
+   - <StateMorph states={[{ at: 0, color: '...', scale: 1 }, { at: 1, ... }]}>:
+     Multi-point color/scale/opacity interpolation (e.g. flower blooming, material phase change).
+   - <Repeat count={N} seed="key" renderItem={(i, rand) => ...} />:
+     Deterministic repetition with pseudorandom variance (windows, crowd, leaves).
+   - <PathMover from={{ x: 0, y: 0 }} to={{ x: 200, y: 100 }}>:
+     Smoothly translates objects (cranes, vehicles, clouds).
+   - <TimeHUD mode="bar"|"badge"|"clock" fromLabel="Lantai 1" toLabel="Lantai 12" label="Pembangunan Gedung" accentColor="#38BDF8" />:
+     Topic-neutral HUD progress indicator. Use mode="bar" or "badge" for non-clock topics.
+   - Specialized Day/Night Components (USE ONLY for day-to-night / celestial topics):
+     <DayNightSky />, <TimelapseClock />, <TimelapseShadow />. NEVER force DayNightSky onto construction or biological topics.
+   - CameraRig mode="timelapse" maintains steady grounding so rapid visual timelapse remains clear.
+
 RULES FOR SCENE CODE GENERATION:
 - Separate background from meaningful artwork: <SceneLayout><SceneBackground>{full-frame sky, gradients, scenery, particles}</SceneBackground><KineticHeadline .../><SceneStage>{main subject}</SceneStage><SyncedCaptions .../></SceneLayout>.
 - SceneBackground MUST be a direct child of SceneLayout, never inside SceneStage or CameraRig. Use width/height 100% and SVG preserveAspectRatio="xMidYMid slice" ONLY for decorative backgrounds so they cover the full canvas. Use unique SVG definition IDs for each layer. Never put the entire scene background inside the safe area or replace its outer areas with solid padding.
