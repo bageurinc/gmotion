@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Play, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import {
   estimateNarrationSeconds,
   firstSceneWithoutNarration,
   MAX_DRAFT_SCENES,
 } from '@/lib/pipeline/draft';
+import { DEFAULT_VOICE, VOICE_OPTIONS } from '@/lib/pipeline/voices';
 import { SceneSpec, StudioProject } from '@/types/studio';
 
 const FIELD_CLASS =
@@ -55,23 +56,25 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
   const project = initialProject;
   const [title, setTitle] = useState(initialProject.storyboard.title);
   const [scenes, setScenes] = useState(initialProject.storyboard.scenes);
+  const [voice, setVoice] = useState(initialProject.storyboard.voice ?? DEFAULT_VOICE);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(initialProject.generationError ?? '');
   const [removed, setRemoved] = useState<RemovedScene | null>(null);
   const hasEdited = useRef(false);
-  const contentRef = useRef({ title, scenes });
-  contentRef.current = { title, scenes };
+  const contentRef = useRef({ title, scenes, voice });
+  contentRef.current = { title, scenes, voice };
 
   const persist = useCallback(async () => {
     setSaveState('saving');
-    const { title: currentTitle, scenes: currentScenes } = contentRef.current;
+    const { title: currentTitle, scenes: currentScenes, voice: currentVoice } = contentRef.current;
     try {
       const res = await fetch(`/api/projects/${initialProject.id}/storyboard`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: currentTitle,
+          voice: currentVoice,
           scenes: currentScenes.map(({ id, title: sceneTitle, voiceoverText, kineticHeadline, visualPrompt }) => ({
             id,
             title: sceneTitle,
@@ -82,7 +85,11 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
         }),
       });
       if (!res.ok) throw new Error('save failed');
-      if (contentRef.current.scenes === currentScenes && contentRef.current.title === currentTitle) {
+      if (
+        contentRef.current.scenes === currentScenes &&
+        contentRef.current.title === currentTitle &&
+        contentRef.current.voice === currentVoice
+      ) {
         setSaveState('saved');
       }
       return true;
@@ -97,7 +104,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     setSaveState('pending');
     const timer = setTimeout(persist, 700);
     return () => clearTimeout(timer);
-  }, [title, scenes, isGenerating, persist]);
+  }, [title, scenes, voice, isGenerating, persist]);
 
   useEffect(() => {
     if (saveState !== 'error' || isGenerating) return;
@@ -210,6 +217,32 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
           <p className="mt-2 max-w-[65ch] text-sm text-slate-300">
             <span className="font-semibold text-slate-200">Prompt:</span> {project.userPrompt}
           </p>
+          <label htmlFor="draft-voice" className="mb-1.5 mt-4 block text-sm font-semibold text-slate-200">
+            Suara narasi
+          </label>
+          <div className="flex gap-2">
+            <select
+              id="draft-voice"
+              value={voice}
+              disabled={isGenerating}
+              onChange={(event) => edit(() => setVoice(event.target.value))}
+              className={`${FIELD_CLASS} sm:max-w-xs`}
+            >
+              {VOICE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label} · {option.style}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void new Audio(`/voices/${voice}.wav`).play().catch(() => undefined)}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors duration-150 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
+            >
+              <Play className="h-4 w-4" />
+              Dengar
+            </button>
+          </div>
         </div>
 
         <ol className="mt-8 divide-y divide-slate-800 border-y border-slate-800">

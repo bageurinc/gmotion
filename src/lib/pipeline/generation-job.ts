@@ -64,6 +64,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       const audio = await generateSceneAudio(project.storyboard.scenes[index], {
         fps: project.storyboard.fps,
         projectId: project.id,
+        voice: project.storyboard.voice,
       });
       commit((current) => ({
         storyboard: {

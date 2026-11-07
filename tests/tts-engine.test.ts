@@ -42,6 +42,39 @@ describe('Stage 2: Audio-First TTS Engine', () => {
     expect(timings[5].endMs).toBeLessThanOrEqual(duration * 1000);
   });
 
+  it('stores Gemini WAV speech and sends the chosen voice', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      new Uint8Array(createFallbackAudioBuffer(4)),
+      { headers: { 'Content-Type': 'audio/wav' } },
+    )));
+    const scene = {
+      id: 'wav-scene', order: 1, role: 'narrative', title: 'Suara', voiceoverText: 'Halo dari Gemini.',
+      kineticHeadline: 'Suara', visualPrompt: '', cameraAction: 'static', sfxCue: 'none',
+      durationInFrames: 0, wordTimings: [],
+    } as SceneSpec;
+    const result = await generateSceneAudio(scene, { fps: 30, projectId: 'test-wav-voice', voice: 'Puck' });
+    expect(result.audioUrl).toContain('wav-scene.wav');
+    expect(result.durationInFrames).toBe(Math.ceil((4 + 0.35) * 30));
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string).voice).toBe('Puck');
+    fs.rmSync('storage/projects/test-wav-voice', { recursive: true, force: true });
+  });
+
+  it('retries a rate-limited speech request', async () => {
+    vi.stubEnv('TTS_RETRY_DELAY_MS', '0');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('busy', { status: 502 }))
+      .mockResolvedValue(new Response(new Uint8Array(createFallbackAudioBuffer(1)))));
+    const scene = {
+      id: 'retry-scene', order: 1, role: 'narrative', title: 'Suara', voiceoverText: 'Halo.',
+      kineticHeadline: 'Suara', visualPrompt: '', cameraAction: 'static', sfxCue: 'none',
+      durationInFrames: 0, wordTimings: [],
+    } as SceneSpec;
+    await generateSceneAudio(scene, { fps: 30, projectId: 'test-retry-voice' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fs.rmSync('storage/projects/test-retry-voice', { recursive: true, force: true });
+  });
+
   it('calculates durationInFrames locked to audio length + 0.35s breath room', async () => {
     const dummyScene: SceneSpec = {
       id: 'test-scene-1',
@@ -70,7 +103,7 @@ describe('Stage 2: Audio-First TTS Engine', () => {
     expect(result.wordTimings.length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith('https://tts.example/v1/audio/speech', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ model: 'edge-tts/id-ID-ArdiNeural', input: dummyScene.voiceoverText, response_format: 'mp3' }),
+      body: JSON.stringify({ model: 'edge-tts/id-ID-ArdiNeural', voice: 'id-ID-ArdiNeural', input: dummyScene.voiceoverText, response_format: 'mp3' }),
     }));
   });
 

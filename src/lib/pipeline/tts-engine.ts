@@ -5,6 +5,9 @@ import { createHash } from 'node:crypto';
 import * as musicMetadata from 'music-metadata';
 import { SceneSpec, WordTiming, Storyboard } from '@/types/studio';
 
+const RATE_LIMIT_STATUS = new Set([429, 502]);
+const TTS_RATE_LIMIT_RETRIES = 4;
+
 export interface TTSOptions {
   voice?: string;
   fps?: number;
@@ -99,9 +102,7 @@ export async function generateSceneAudio(
     }
     throw new Error('Narasi kosong. Isi naskah suara sebelum membuat audio.');
   }
-  const voiceName = options.voice || process.env.TTS_VOICE_ID || 'id-ID-ArdiNeural';
-  const audioFileName = `${scene.id}.mp3`;
-  const audioFilePath = path.join(projectStorageDir, audioFileName);
+  const configuredVoice = process.env.TTS_VOICE_ID || 'id-ID-ArdiNeural';
   const provider = process.env.TTS_PROVIDER || 'msedge-tts';
   let audioBuffer: Buffer;
 
@@ -111,16 +112,26 @@ export async function generateSceneAudio(
     if (!baseUrl || !apiKey) {
       throw new Error('Konfigurasi TTS belum lengkap: isi TTS_BASE_URL dan TTS_API_KEY.');
     }
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/audio/speech`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: process.env.TTS_MODEL || `edge-tts/${voiceName}`,
-        input: scene.voiceoverText,
-        response_format: 'mp3',
-      }),
-      signal: AbortSignal.timeout(60000),
-    });
+    const voiceName = options.voice || configuredVoice;
+    const requestSpeech = () =>
+      fetch(`${baseUrl.replace(/\/+$/, '')}/audio/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: process.env.TTS_MODEL || `edge-tts/${voiceName}`,
+          voice: voiceName,
+          input: scene.voiceoverText,
+          response_format: 'mp3',
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+    let response = await requestSpeech();
+    for (let attempt = 0; attempt < TTS_RATE_LIMIT_RETRIES && RATE_LIMIT_STATUS.has(response.status); attempt += 1) {
+      await response.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, Number(process.env.TTS_RETRY_DELAY_MS ?? 35_000)));
+      response = await requestSpeech();
+    }
     if (!response.ok) {
       // Do not include upstream bodies: they may contain credentials or provider internals.
       throw new Error(`TTS ${provider} gagal (HTTP ${response.status}). Periksa koneksi dan provider suara.`);
@@ -131,7 +142,7 @@ export async function generateSceneAudio(
     const tts = new MsEdgeTTS();
     const tempDir = fs.mkdtempSync(path.join(projectStorageDir, '.tts-'));
     try {
-      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      await tts.setMetadata(configuredVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       // msedge-tts takes a directory and returns the generated file path.
       const result = await tts.toFile(tempDir, scene.voiceoverText);
       audioBuffer = fs.readFileSync(result.audioFilePath);
@@ -143,7 +154,14 @@ export async function generateSceneAudio(
     throw new Error(`TTS_PROVIDER tidak didukung: ${provider}`);
   }
 
-  const metadata = await musicMetadata.parseBuffer(audioBuffer, { mimeType: 'audio/mpeg', size: audioBuffer.length }, { duration: true });
+  const isWav = audioBuffer.subarray(0, 4).toString('ascii') === 'RIFF';
+  const audioFileName = `${scene.id}.${isWav ? 'wav' : 'mp3'}`;
+  const audioFilePath = path.join(projectStorageDir, audioFileName);
+  const metadata = await musicMetadata.parseBuffer(
+    audioBuffer,
+    { mimeType: isWav ? 'audio/wav' : 'audio/mpeg', size: audioBuffer.length },
+    { duration: true }
+  );
   const audioDurationSeconds = metadata.format.duration;
   if (!audioDurationSeconds || !Number.isFinite(audioDurationSeconds) || audioDurationSeconds <= 0) {
     throw new Error('Provider TTS tidak menghasilkan audio yang valid. Coba lagi.');

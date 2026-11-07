@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VOICE_OPTIONS } from './voices';
 import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
 
 export const MAX_DRAFT_SCENES = 12;
@@ -6,6 +7,7 @@ const WORDS_PER_SECOND = 2.4;
 
 export const DraftUpdateSchema = z.object({
   title: z.string().trim().min(1).max(120),
+  voice: z.enum(VOICE_OPTIONS.map((voice) => voice.id) as [string, ...string[]]).optional(),
   scenes: z
     .array(
       z.object({
@@ -39,7 +41,7 @@ export function applyDraftUpdate(storyboard: Storyboard, update: DraftUpdate): S
     };
     return { ...base, ...item, order: index + 1 };
   });
-  return { ...storyboard, title: update.title, scenes };
+  return { ...storyboard, title: update.title, voice: update.voice ?? storyboard.voice, scenes };
 }
 
 /** Scene ids drive file and audio names, so generation needs them to match the final order. */

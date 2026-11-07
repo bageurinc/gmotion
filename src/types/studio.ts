@@ -58,6 +58,7 @@ export const StoryboardSchema = z.object({
   preset: StylePresetSchema,
   aspectRatio: AspectRatioSchema,
   fps: z.number().default(30),
+  voice: z.string().optional(),
   bgmTrack: z.enum(['dark-tech-pulse', 'upbeat-saas', 'warm-acoustic', 'cinematic-story', 'none']),
   palette: ColorPaletteSchema,
   scenes: z.array(SceneSpecSchema),

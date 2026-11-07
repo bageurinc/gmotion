@@ -13,6 +13,7 @@ import { POST as projectRender } from '@/app/api/projects/[projectId]/render/rou
 import { PUT as updateProject } from '@/app/api/projects/[projectId]/route';
 import {
   applyDraftUpdate,
+  DraftUpdateSchema,
   estimateNarrationSeconds,
   firstSceneWithoutNarration,
   hasFailedScene,
@@ -62,6 +63,11 @@ describe('draft helpers', () => {
     expect(updated.scenes[0].id).toBe(storyboard.scenes[3].id);
     expect(updated.scenes[0].cameraAction).toBe(storyboard.scenes[3].cameraAction);
     expect(updated.scenes[0].order).toBe(1);
+  });
+
+  it('stores a supported voice and rejects an unknown one', () => {
+    expect(applyDraftUpdate(storyboard, { title: 'Baru', voice: 'Kore', scenes }).voice).toBe('Kore');
+    expect(DraftUpdateSchema.safeParse({ title: 'Baru', voice: 'Tidak Ada', scenes }).success).toBe(false);
   });
 
   it('gives new scenes safe defaults', () => {
