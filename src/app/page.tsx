@@ -109,7 +109,6 @@ export default function HomePage() {
   const [preset, setPreset] = useState<StylePreset>('ads-ui');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState<string>('');
   const [recentProjects, setRecentProjects] = useState<StudioProject[]>([]);
 
   useEffect(() => {
@@ -133,16 +132,6 @@ export default function HomePage() {
     if (!p.trim() || isGenerating) return;
 
     setIsGenerating(true);
-    setGenerationStep('Stage 1: AI Creative Director menyusun Master Storyboard...');
-
-    const stepTimer = setTimeout(() => {
-      setGenerationStep('Stage 2: Audio Engine merekam voiceover & sinkronisasi frame...');
-    }, 1200);
-
-    const stepTimer2 = setTimeout(() => {
-      setGenerationStep('Stage 3: Motion Coder menulis komponen TSX & koreografi SVG...');
-    }, 2800);
-
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
@@ -154,22 +143,16 @@ export default function HomePage() {
         }),
       });
 
-      clearTimeout(stepTimer);
-      clearTimeout(stepTimer2);
-
       const data = await res.json();
       if (data.project) {
-        setGenerationStep('Stage 4: Kompilasi selesai! Membuka Studio...');
         router.push(`/studio/${data.project.id}`);
       } else {
-        alert(data.error || 'Failed to generate video');
+        alert(data.error || 'Gagal menyusun draf');
         setIsGenerating(false);
       }
     } catch (err) {
-      clearTimeout(stepTimer);
-      clearTimeout(stepTimer2);
-      console.error('Generation failed:', err);
-      alert('Gagal membuat proyek video');
+      console.error('Draft failed:', err);
+      alert('Gagal menyusun draf');
       setIsGenerating(false);
     }
   };
@@ -345,23 +328,16 @@ export default function HomePage() {
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Sedang Menghasilkan Video Motion Graphic...</span>
+                  <span>AI sedang menyusun draf adegan...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Generate Motion Graphic Video</span>
+                  <span>Buat Draf Video</span>
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </>
               )}
             </button>
-
-            {isGenerating && (
-              <div className="mt-4 p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-center gap-2.5 text-xs text-emerald-400 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>{generationStep}</span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -506,7 +482,9 @@ export default function HomePage() {
                       <Clock className="w-3 h-3 text-cyan-400" />
                       {p.storyboard.scenes.length} Scenes
                     </span>
-                    <span className="text-emerald-400 font-bold group-hover:underline">Buka Studio →</span>
+                    <span className="text-emerald-400 font-bold group-hover:underline">
+                      {p.status === 'draft' ? 'Lanjutkan Draf →' : 'Buka Studio →'}
+                    </span>
                   </div>
                 </Link>
               ))}

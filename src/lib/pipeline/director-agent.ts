@@ -7,23 +7,32 @@ import {
   TimelapseKind,
 } from '@/types/studio';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
+import { MAX_DRAFT_SCENES } from './draft';
 
 const DIRECTOR_SYSTEM_PROMPT = `
-You are a Creative Video Director for short-form motion graphics, educational content, storytelling, and advertisements. Match the user's purpose; do not turn ordinary content into a sales pitch.
+You are a Creative Video Director and subject-matter researcher for short-form motion graphics, educational content, storytelling, and advertisements. Match the user's purpose; do not turn ordinary content into a sales pitch.
 
-Your task is to take a simple prompt from the user and generate a complete, structured 4-scene Motion Graphic Storyboard.
+Your task is to turn a simple prompt into a complete Motion Graphic Storyboard whose structure comes from the topic itself.
 
 CRITICAL RULES:
-1. NARRATIVE STRUCTURE (4 Scenes):
-   - Scene 1 (Hook): Stop the scroll in the first 2-3 seconds with high emotional stakes, problem resonance, or a shocking contrast.
-   - Scene 2 (Problem/Mechanism): Clearly visualize the pain point and introduce the core mechanism.
-   - Scene 3 (Result): Show the story outcome, insight, or transformation. Only use metrics when relevant and supplied; do not invent numerical claims for a story.
-   - Scene 4 (Resolution): End with the story outcome, takeaway, or moral. Use a CTA ONLY if the user explicitly requests one or asks for an advertisement/promotion. Content, educational, and storytelling videos must not invent buttons, links, free trials, offers, or sales copy.
+1. STRUCTURE FOLLOWS THE TOPIC:
+   - Choose between 3 and 12 scenes. Use as many as the subject needs to be truly understood.
+   - For a process, how-to, or explanation: give every real stage its own scene, in the correct real-world order. Do not skip or merge important stages.
+   - For a story or history: follow its real sequence of events.
+   - For an advertisement or promotion: use the structure that sells best, and end with a CTA.
+   - If the user lists scenes or stages, keep that exact list and order.
+   - If the user states a target duration, fit the scene count and narration length to it.
+   - Never use a fixed template such as hook, mechanism, proof, CTA.
+   - Each scene title names its actual content using correct domain terms, such as "Survei & Uji Tanah" or "Pengecoran Pondasi". Generic titles such as Hook, Mechanism, Proof, Result, or Resolution are forbidden.
+   - Each scene teaches something specific that the previous scene did not. State real terms, components, and steps. Do not invent statistics.
+   - Scene 1 opens with something that makes people keep watching, while already belonging to the topic.
+   - Use role "narrative" for every scene. Use role "cta" only for a final CTA scene, and only if the user explicitly requests one or asks for an advertisement or promotion.
 
 2. LANGUAGE & VOICE:
-   - Voiceover MUST be in natural, persuasive Bahasa Indonesia.
+   - Voiceover MUST be in natural Bahasa Indonesia, 1-3 sentences per scene.
    - Conversational, authoritative, yet approachable Indonesian.
    - Kinetic headline must be brief (3-6 punchy words).
+   - visualPrompt MUST be in plain Bahasa Indonesia that a non-technical user can review and edit. In 1-2 sentences, describe the concrete objects on screen and what moves. Prefer explanatory visuals such as cross-sections, cutaways, zoom-ins, and step-by-step assembly over abstract shapes.
 
 3. FORMAT REQUIREMENT:
    Output ONLY valid JSON matching this schema:
@@ -49,7 +58,7 @@ CRITICAL RULES:
          "title": "Scene 1: Hook Title",
          "voiceoverText": "Naskah narasi suara lengkap bahasa indonesia",
          "kineticHeadline": "TEKS HEADLINE BOLD",
-         "visualPrompt": "Instruksi visual animasi",
+         "visualPrompt": "Deskripsi visual yang mudah dipahami",
          "cameraAction": "macro-zoom-in (or slow-push, pan-parallax, tilt-3d, static, timelapse)",
          "sfxCue": "pop",
          "timelapse": { "kind": "day-night", "fromLabel": "06:00", "toLabel": "20:00" }
@@ -78,6 +87,7 @@ function parseStoryboardRaw(
     try {
       const obj = JSON.parse(jsonMatch[0]);
       if (obj.scenes && Array.isArray(obj.scenes) && obj.scenes.length >= 2) {
+        const scenes = obj.scenes.slice(0, MAX_DRAFT_SCENES);
         return {
           title: obj.title || userPrompt.slice(0, 40),
           preset: (obj.preset as StylePreset) || preset,
@@ -92,10 +102,10 @@ function parseStoryboardRaw(
             alert: obj.palette?.alert || '#EF4444',
             text: obj.palette?.text || '#F8FAFC',
           },
-          scenes: obj.scenes.map((s: Record<string, unknown>, idx: number) => {
+          scenes: scenes.map((s: Record<string, unknown>, idx: number) => {
             const role = typeof s.role === 'string' && ['hook', 'problem', 'mechanism', 'proof', 'cta', 'narrative'].includes(s.role)
               ? (s.role as SceneSpec['role'])
-              : (['hook', 'mechanism', 'proof', 'cta'][idx] as SceneSpec['role']) || 'hook';
+              : 'narrative';
 
             return {
               id: typeof s.id === 'string' ? s.id : `scene-${idx + 1}-${role}`,
@@ -136,7 +146,7 @@ function parseStoryboardRaw(
   }
 
   // 2. Parse Markdown structured output (e.g. SCENE 1: HOOK ... KineticHeadline: ... Voiceover: ...)
-  const sceneBlocks = text.split(/SCENE\s*\d+:/i).slice(1);
+  const sceneBlocks = text.split(/SCENE\s*\d+:/i).slice(1, MAX_DRAFT_SCENES + 1);
   if (sceneBlocks.length >= 2) {
     const roles: Array<SceneSpec['role']> = ['hook', 'mechanism', 'proof', 'cta'];
     const validCamActions: Array<SceneSpec['cameraAction']> = [
@@ -238,7 +248,8 @@ export function parseStoryboardFromLLMResponse(text: string, userPrompt: string,
 export async function generateStoryboard(
   userPrompt: string,
   preset: StylePreset = 'ads-ui',
-  aspectRatio: AspectRatio = '9:16'
+  aspectRatio: AspectRatio = '9:16',
+  options: { strict?: boolean } = {}
 ): Promise<Storyboard> {
   if (isApiKeyConfigured()) {
     try {
@@ -263,8 +274,10 @@ FPS: 30`,
       if (parsed) {
         return parsed;
       }
+      if (options.strict) throw new Error('AI belum berhasil menyusun draf. Coba lagi.');
       console.warn('[DirectorAgent] Could not parse LLM output, falling back to procedural storyboard generator.');
     } catch (error) {
+      if (options.strict) throw error;
       console.warn('[DirectorAgent] LLM generation failed, falling back to procedural storyboard generator:', error);
     }
   }

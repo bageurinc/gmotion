@@ -1,3 +1,4 @@
+import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'node:crypto';
@@ -171,21 +172,19 @@ export async function syncStoryboardWithAudio(
   storyboard: Storyboard,
   projectId: string
 ): Promise<Storyboard> {
-  const syncedScenes: SceneSpec[] = [];
-
-  for (const scene of storyboard.scenes) {
+  const syncedScenes = await mapWithConcurrency(storyboard.scenes, PIPELINE_CONCURRENCY, async (scene) => {
     const audioResult = await generateSceneAudio(scene, {
       fps: storyboard.fps,
       projectId,
     });
 
-    syncedScenes.push({
+    return {
       ...scene,
       audioUrl: audioResult.audioUrl,
       durationInFrames: audioResult.durationInFrames,
       wordTimings: audioResult.wordTimings,
-    });
-  }
+    };
+  });
 
   return {
     ...storyboard,

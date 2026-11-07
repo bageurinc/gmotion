@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
-import { syncStoryboardWithAudio } from '@/lib/pipeline/tts-engine';
-import { generateProjectVirtualFiles } from '@/lib/pipeline/coder-agent';
 import { saveProject, listProjects } from '@/lib/storage/project-store';
 import { StudioProject, StylePreset, AspectRatio } from '@/types/studio';
 
@@ -23,24 +21,17 @@ export async function POST(req: NextRequest) {
 
     const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    console.log(`[API /projects] Generating project ${projectId} for prompt: "${prompt}"...`);
+    console.log(`[API /projects] Drafting project ${projectId}...`);
 
-    // Stage 1: Director Agent creates Master Storyboard
-    const rawStoryboard = await generateStoryboard(prompt, preset, aspectRatio);
-
-    // Stage 2: Audio-First Frame Sync Engine
-    const syncedStoryboard = await syncStoryboardWithAudio(rawStoryboard, projectId);
-
-    // Stage 3 & 4: Coder Agent generates TSX scenes and AST validator verifies
-    const virtualFiles = await generateProjectVirtualFiles(syncedStoryboard);
+    const storyboard = await generateStoryboard(prompt, preset, aspectRatio, { strict: true });
 
     const project: StudioProject = {
       id: projectId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       userPrompt: prompt,
-      storyboard: syncedStoryboard,
-      files: virtualFiles,
+      storyboard,
+      files: {},
       chatHistory: [
         {
           id: `msg_${Date.now()}`,
@@ -49,15 +40,15 @@ export async function POST(req: NextRequest) {
           timestamp: Date.now(),
         },
       ],
-      status: 'ready',
+      status: 'draft',
     };
 
     saveProject(project);
 
     return NextResponse.json({ project });
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Failed to generate project';
-    console.error('[API /projects] Error generating project:', err);
+    const errorMsg = err instanceof Error ? err.message : 'Gagal menyusun draf';
+    console.error('[API /projects] Error drafting project:', err);
     return NextResponse.json(
       { error: errorMsg },
       { status: 500 }

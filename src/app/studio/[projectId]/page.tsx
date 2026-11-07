@@ -1,6 +1,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import { getProject } from '@/lib/storage/project-store';
+import { DraftReviewClient } from '@/components/studio/DraftReviewClient';
 import { StudioWorkspaceClient } from '@/components/studio/StudioWorkspaceClient';
 
 interface PageProps {
@@ -13,6 +14,10 @@ export default async function StudioPage({ params }: PageProps) {
 
   if (!project) {
     notFound();
+  }
+
+  if (project.status === 'draft' || project.status === 'generating') {
+    return <DraftReviewClient key={project.status} initialProject={project} />;
   }
 
   return <StudioWorkspaceClient initialProject={project} />;

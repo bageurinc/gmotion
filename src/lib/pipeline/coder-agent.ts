@@ -4,6 +4,7 @@ import { Storyboard, SceneSpec, VirtualFileMap, AspectRatioDimensions } from '@/
 import { MOTION_KIT_PROMPT_DOCS } from '@/motion-kit/docs';
 import { TIMELAPSE_FEW_SHOT_EXAMPLES } from '@/motion-kit/timelapse/examples';
 import { validateSceneCode } from './code-validator';
+import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 
 const CODER_SYSTEM_PROMPT = `
 You are an expert Remotion & React developer specializing in high-converting motion graphics and SVG animations.
@@ -1026,8 +1027,9 @@ export async function generateProjectVirtualFiles(storyboard: Storyboard): Promi
   const isAds = storyboard.preset === 'ads-ui';
   const { width, height } = AspectRatioDimensions[storyboard.aspectRatio];
 
-  for (let i = 0; i < storyboard.scenes.length; i++) {
-    const scene = storyboard.scenes[i];
+  const outline = storyboard.scenes.map((scene, index) => `${index + 1}. ${scene.title}`).join('\n');
+
+  const sceneCodes = await mapWithConcurrency(storyboard.scenes, PIPELINE_CONCURRENCY, async (scene, i) => {
     const fileName = `Scene${i + 1}.tsx`;
 
     let code = '';
@@ -1036,6 +1038,9 @@ export async function generateProjectVirtualFiles(storyboard: Storyboard): Promi
         const isTimelapseScene = scene.cameraAction === 'timelapse' || Boolean(scene.timelapse);
         let prompt = `Write Remotion scene component '${fileName}' for:
 Composition: ${width} x ${height} pixels (${storyboard.aspectRatio}). Use useVideoConfig() for responsive positions and sizes; do not assume a 1080x1920 canvas.
+Video outline, for continuity:
+${outline}
+This file is scene ${i + 1} of ${storyboard.scenes.length}. Show this stage specifically, using the Visual Prompt and accurate domain detail.
 Role: ${scene.role}
 CTA rule: ${scene.role === 'cta' ? 'CTA explicitly allowed for this scene.' : 'No CTA buttons, invented URLs, sales offers, or promotional calls to action. This is content, not an ad closing.'}
 Title: ${scene.title}
@@ -1126,8 +1131,12 @@ Fix all errors and return ONLY clean, working TypeScript/TSX code inside \`\`\`t
       }
     }
 
-    files[fileName] = code;
-  }
+    return code;
+  });
+
+  sceneCodes.forEach((code, index) => {
+    files[`Scene${index + 1}.tsx`] = code;
+  });
 
   // Generate MainVideo.tsx
   files['MainVideo.tsx'] = generateMainVideoCode(storyboard);

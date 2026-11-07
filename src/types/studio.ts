@@ -91,7 +91,9 @@ export interface StudioProject {
   storyboard: Storyboard;
   files: VirtualFileMap; // e.g. "Scene1.tsx", "Scene2.tsx", "MainVideo.tsx"
   chatHistory: ProjectChatMessage[];
-  status: 'idle' | 'generating' | 'rendering' | 'ready' | 'error';
+  status: 'draft' | 'idle' | 'generating' | 'rendering' | 'ready' | 'error';
+  generationStartedAt?: number;
+  generationError?: string;
   exportVideoUrl?: string;
 }
 
