@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { isGenerationActive } from '@/lib/pipeline/generation-job';
+import { requireProject } from '@/lib/auth/project-access';
 import { getProject } from '@/lib/storage/project-store';
 
 const POLL_INTERVAL_MS = 1000;
@@ -9,6 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
+  const access = await requireProject(projectId);
+  if ('response' in access) return access.response;
+
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | undefined;
   let lastUpdate = 0;

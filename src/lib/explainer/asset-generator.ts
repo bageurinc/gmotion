@@ -44,8 +44,11 @@ Aim for polished semi-realistic textbook illustration:
 - Use at least 60 meaningful shapes across the asset, and at least 25 in each view.
 - Compose one large, connected subject that fills the canvas from about 40 to 960 on both axes. Do not scatter small objects across empty space.
 - Every important object stays fully inside the canvas. Nothing meaningful may be cut off by the edge or placed outside it.
+- The 1000 by 1000 canvas only bounds the subject. The video frame is much larger, and the area beyond the canvas stays visible. Ground, soil layers, road, floor, water, and any other environment surface must run from x=-1000 to x=2000, and anything below the surface must continue down to y=2000. They must never stop at the canvas edge or form a box, card, or diorama slice. Detail may stay near the subject, but the surface colors must continue.
+- Every scene happens in a real place, so draw that place behind the subject and fill the whole frame, from x=-1000 to x=2000 and from y=-1000 to y=2000. A plain empty backdrop is a failure. Outdoors: sky with soft clouds, horizon, distant hills or buildings. Indoors: wall with wallpaper, panels, tiles, or brick, plus a window or shelf that fits the room. Other settings get their own: seabed water and light for the deep sea, stars for space, surrounding tissue inside a body. The setting must fit the topic and the moment in the narration.
+- The headline sits over the area above y=100, so keep it a calm, low-contrast tone close to the palette background: open sky or plain wall, with no clouds, objects, or strong patterns there. Keep the setting quieter and lower in contrast than the subject, so the subject stays the clear focus.
 - Each view must show a rich, finished picture on its own. A view that is mostly empty space, or only small icons, is a failure.
-- Do not paint a full-canvas background rectangle, because the stage paints the background. Do not draw UI cards floating around the subject unless the subject is a screen.
+- Do not draw UI cards floating around the subject unless the subject is a screen.
 - Keep the same silhouette, proportions, and light direction in all views. Later views reveal, cut open, or change state of the same subject.
 - Build shape loops from data arrays when repeating texture.
 
@@ -69,7 +72,15 @@ The json block is the manifest:
   "flows": [{ "id": "mainFlow", "view": "cutaway", "d": "M 300 200 C ...", "color": "#..." }]
 }
 
-Manifest rules:
+CHOREOGRAPHY MODE (when the request says FULL SVG CHOREOGRAPHY MODE):
+- This overrides the multi-view/idle-only rules below: use exactly ONE persistent view.
+- Add "choreography": [{"id":"actionName","description":"visible causal action","startWord":0,"endWord":4}]. Use only word indexes supplied in the request.
+- The component props ALSO include actionProgress: Record<string, number>. Destructure it and drive real geometry from actionProgress.actionName ?? 0, in [0,1]. The stage handles timing and easing; time is only for secondary motion.
+- No dissolving between before/after drawings. Draw each physical object once, animate its actual geometry/transform, retain the final state after each action. No automatic looping of the main action.
+- The request adds SHARED WORLD rules. Follow them exactly: the same world must carry across every scene of the video.
+- Parts still identify the visible structures and react to highlight. Flows must describe a real route in the one view. Keep 3-10 parts, 1-6 flows.
+
+Manifest rules (in choreography mode, the view count rule above replaces the view rules here):
 - All coordinates use the 1000 by 1000 SVG viewBox.
 - 2 to 4 views. The second view needs at least 2 parts and 1 flow.
 - 3 to 10 parts. Every anchor must sit visually on that part. Every focus must frame that part.
@@ -92,13 +103,16 @@ Component rules:
 `;
 
 export const CRITIC_SYSTEM_PROMPT = `
-You are a strict art director reviewing a generated vertical explainer scene. The image is a contact sheet of frames in time order from one scene.
+You are a strict art director reviewing a generated vertical explainer scene. The image is a contact sheet of frames from one scene, in time order from left to right and top to bottom.
 Score each criterion from 1 to 10:
 - recognizability: the subject and topic are immediately understood.
 - illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, or basic shapes scores 4 or lower. Dark images are fine when they suit the topic; penalize only murky images where the subject is hard to see.
 - viewConsistency: frames show the same subject with the same proportions.
 - labelAccuracy: labels point at the correct visible parts and facts are right.
-- composition: one large clear subject fills the frame, there are no big empty areas or a nearly empty panel, nothing important is cut off, and text remains readable.
+- For choreography mode, penalize static objects, repeated idle loops, ghosted duplicate states, unreadable cause/effect, and actions inconsistent with the narrated words. Judge progression across frames, not just decorative detail.
+- composition: one large clear subject fills the frame, there are no big empty areas or a nearly empty panel, nothing important is cut off, and text remains readable. Ground, water, or any environment surface that stops with a visible edge inside the frame instead of reaching the frame edges is a serious flaw: score composition 4 or lower and name it in issues. So is a plain backdrop with no setting: outdoor scenes need sky, clouds, or landscape, and indoor scenes need a wall surface. Score composition 4 or lower and name what to add.
+- When the request says the scene has no part labels, never ask for labels or callouts, and score labelAccuracy on factual correctness alone.
+- When the request says the first frame belongs to the previous scene, use it only as a reference and do not score it. Judge whether the second frame continues it: the same shared objects, in the same shape and place, in a matching pose. Lower viewConsistency for a visible jump and name it in issues.
 Return only JSON: {"imageVisible":true,"scores":{"recognizability":0,"illustrationRichness":0,"viewConsistency":0,"labelAccuracy":0,"composition":0},"issues":["specific fix"]}.
 Set imageVisible to false if you cannot see the frames.
 List at most 8 issues, ordered by visual impact, and say exactly what to change.
@@ -276,22 +290,32 @@ export function reviseAsset(
   topicPrompt: string,
   asset: GeneratedAsset,
   critique: AssetCritique,
-  sheetJpeg: Buffer
+  sheetJpeg: Buffer,
+  sheetNote = ''
 ) {
   return requestAsset(model, [
     {
       type: 'text',
-      text: `User request: "${topicPrompt}"\n\nThe attached contact sheet shows frames from the rendered scene in time order.\n\nArt director issues:\n${critique.issues.map((issue) => `- ${issue}`).join('\n')}\n\n${assetContext(asset)}\n\nImprove the illustration substantially and fix every issue. Return the complete json and tsx blocks.`,
+      text: `User request: "${topicPrompt}"\n\nThe attached contact sheet shows frames from the rendered scene in time order.${sheetNote && ` ${sheetNote}`}\n\nArt director issues:\n${critique.issues.map((issue) => `- ${issue}`).join('\n')}\n\n${assetContext(asset)}\n\nImprove the illustration substantially and fix every issue. Return the complete json and tsx blocks.`,
     },
     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${sheetJpeg.toString('base64')}` } },
   ]);
+}
+
+/** Choreography scenes show no part labels by design, so the critic must not expect any. */
+export function critiqueRequest(topicPrompt: string, asset: GeneratedAsset, sheetNote = ''): string {
+  const labels = asset.manifest.choreography
+    ? 'This scene has no part labels by design.'
+    : `Visible labels: ${asset.manifest.parts.map((part) => part.label).join(', ')}`;
+  return [`Topic request: "${topicPrompt}"`, labels, sheetNote].filter(Boolean).join('\n');
 }
 
 export async function critiqueAsset(
   model: string,
   topicPrompt: string,
   asset: GeneratedAsset,
-  sheetJpeg: Buffer
+  sheetJpeg: Buffer,
+  sheetNote = ''
 ): Promise<{ critique: AssetCritique; usage: LlmUsage }> {
   const { text, usage } = await callChat({
     model,
@@ -299,7 +323,7 @@ export async function critiqueAsset(
     maxTokens: 3_000,
     timeoutMs: 5 * 60_000,
     content: [
-      { type: 'text', text: `Topic request: "${topicPrompt}"\nVisible labels: ${asset.manifest.parts.map((part) => part.label).join(', ')}` },
+      { type: 'text', text: critiqueRequest(topicPrompt, asset, sheetNote) },
       { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${sheetJpeg.toString('base64')}` } },
     ],
   });

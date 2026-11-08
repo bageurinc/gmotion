@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { ProjectUpdateSchema } from '@/lib/security/project-input';
-import { getProject, saveProject } from '@/lib/storage/project-store';
+import { requireProject } from '@/lib/auth/project-access';
+import { saveProject } from '@/lib/storage/project-store';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const project = getProject(projectId);
+  const access = await requireProject(projectId);
+  if ('response' in access) return access.response;
 
-  if (!project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-  }
-
-  return NextResponse.json({ project });
+  return NextResponse.json({ project: access.project });
 }
 
 export async function PUT(
@@ -22,11 +20,9 @@ export async function PUT(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const existing = getProject(projectId);
-
-  if (!existing) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-  }
+  const access = await requireProject(projectId);
+  if ('response' in access) return access.response;
+  const existing = access.project;
 
   if (existing.status === 'generating') {
     return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
@@ -39,7 +35,7 @@ export async function PUT(
 
   const errors = Object.entries(input.data.files ?? {})
     .filter(([name, code]) => code !== existing.files[name])
-    .flatMap(([name, code]) => validateSceneCode(code, name).errors);
+    .flatMap(([name, code]) => validateSceneCode(code, name, { svgOnly: existing.storyboard.preset === 'story-svg' }).errors);
   if (errors.length) {
     return NextResponse.json({ error: errors[0], errors }, { status: 400 });
   }

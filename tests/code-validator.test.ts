@@ -84,3 +84,25 @@ export default Scene1;`;
     expect(result.errors.join(' ')).toMatch(/Export compilation error/);
   });
 });
+
+
+describe('Full SVG policy', () => {
+  it.each([
+    'export default () => <img src="/picture.png" />;',
+    'export default () => <svg><image href="/asset" /></svg>;',
+    "import { Img as Picture } from 'remotion'; export default () => <Picture src='/asset' />;",
+    "import { ImageStage as Stage } from '@/motion-kit'; export default () => <Stage />;",
+    'export default () => <div style={{backgroundImage: "url(/asset)"}} />;',
+  ])('rejects raster rendering in full SVG: %s', (code) => {
+    expect(validateSceneCode(code, 'Scene1.tsx', { svgOnly: true }).valid).toBe(false);
+  });
+
+  it('allows SVG gradients, filters, paths and audio', () => {
+    const code = `import { Audio } from 'remotion'; export default () => <><svg><path fill="url(#paint)" filter="url( '#shadow' )" d="M0 0 L20 20" /></svg><Audio src="/speech.wav" /></>`;
+    expect(validateSceneCode(code, 'Scene1.tsx', { svgOnly: true }).errors).toEqual([]);
+  });
+
+  it('keeps image scenes valid in mixed mode', () => {
+    expect(validateSceneCode('export default () => <img src="/picture.png" />;').valid).toBe(true);
+  });
+});

@@ -2,6 +2,7 @@
 
 export * from './core/CameraRig';
 export * from './core/KineticHeadline';
+export * from './core/DataCard';
 export * from './core/SyncedCaptions';
 export * from './core/VideoTimeline';
 export { SceneLayout, SceneStage, SceneBackground } from './core/SafeOverlay';
@@ -18,3 +19,4 @@ export * from './world/IsoVideo';
 export * from './timelapse/primitives';
 export * from './timelapse/examples';
 export * from './docs';
+export * from './world/IsoPicture';

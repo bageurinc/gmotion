@@ -5,12 +5,21 @@ import {
   StoredPreset,
   StylePreset,
   AspectRatio,
+  DataVisualSchema,
+  TextStyleSchema,
   TimelapseKind,
   usesWorldEngine,
 } from '@/types/studio';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { COPY_ANTI_SLOP_RULES, normalizePalette, VISUAL_ANTI_SLOP_RULES } from './anti-slop';
-import { MAX_DRAFT_SCENES } from './draft';
+import {
+  checkDurationFit,
+  durationBudget,
+  MAX_DRAFT_SCENES,
+  parseTargetDurationSeconds,
+  WORDS_PER_SECOND,
+  type DurationBudget,
+} from './draft';
 
 const DIRECTOR_SYSTEM_PROMPT = `
 You are a Creative Video Director and subject-matter researcher for short-form motion graphics, educational content, storytelling, and advertisements. Match the user's purpose; do not turn ordinary content into a sales pitch.
@@ -48,6 +57,7 @@ ${COPY_ANTI_SLOP_RULES}
      "fps": 30,
      "bgmTrack": "one of warm-acoustic, upbeat-saas, dark-tech-pulse, cinematic-story, none; choose the mood that suits this topic",
      "look": "dark or bright, whichever suits this topic",
+     "textStyle": "one of tegas, teknis, editorial, ramah; see TEXT AND DATA",
      "palette": {
        "background": "<hex drawn from this subject>",
        "surface": "<hex>",
@@ -64,6 +74,7 @@ ${COPY_ANTI_SLOP_RULES}
          "title": "Scene 1: Hook Title",
          "voiceoverText": "Naskah narasi suara lengkap bahasa indonesia",
          "kineticHeadline": "TEKS HEADLINE BOLD",
+         "headlineFocus": "the one word of kineticHeadline that carries the meaning",
          "visualPrompt": "Deskripsi visual yang mudah dipahami",
          "cameraAction": "macro-zoom-in (or slow-push, pan-parallax, tilt-3d, static, timelapse)",
          "sfxCue": "one of none, pop, whoosh, notification, cash-register, success; choose a sound that fits this scene's opening moment",
@@ -75,6 +86,12 @@ ${COPY_ANTI_SLOP_RULES}
 4. TIMELAPSE SUPPORT:
    - For scenes depicting the passage of time (e.g. sunrise to sunset, 24-hour cycle, plant growth, process progression), set cameraAction to "timelapse".
    - Optionally specify "timelapse": { "kind": "day-night" | "clock" | "growth" | "crowd" | "weather", "fromLabel": "06:00", "toLabel": "20:00" }.
+
+5. TEXT AND DATA:
+   - textStyle sets the typeface of the whole video, so choose what suits the topic: "tegas" for loud, urgent, or sporty topics; "teknis" for engineering, science, and how things work; "editorial" for history, culture, and calm storytelling; "ramah" for everyday life, food, children, and light topics.
+   - A scene MAY add "dataVisual" when it truly helps. It is optional, and most scenes should not have one. Leave it out rather than forcing it.
+   - Use one of: { "kind": "stat", "value": "28", "unit": "persen", "label": "short label" } for one number; { "kind": "compare", "unit": "meter", "items": [{ "label": "...", "value": "12" }] } for 2 to 4 comparable numbers; { "kind": "steps", "items": ["...", "..."] } for 2 to 4 short stages in order.
+   - Every number must be spoken in that scene's voiceoverText, written in digits, with the same unit. Never invent a number just to fill a card. A dataVisual with an unspoken number is thrown away.
 `;
 
 /**
@@ -102,6 +119,7 @@ function parseStoryboardRaw(
           bgmTrack: ['warm-acoustic', 'upbeat-saas', 'dark-tech-pulse', 'cinematic-story', 'none'].includes(obj.bgmTrack)
             ? obj.bgmTrack
             : isAdsPreset(preset) ? 'upbeat-saas' : 'warm-acoustic',
+          textStyle: TextStyleSchema.safeParse(obj.textStyle).data,
           palette: normalizePalette({
             background: String(obj.palette?.background ?? ''),
             surface: String(obj.palette?.surface ?? ''),
@@ -141,6 +159,8 @@ function parseStoryboardRaw(
                   : undefined,
                 easing: (s.timelapse as Record<string, unknown>).easing === 'linear' ? 'linear' as const : 'ease-in-out' as const,
               } : undefined,
+              headlineFocus: typeof s.headlineFocus === 'string' ? s.headlineFocus : undefined,
+              dataVisual: DataVisualSchema.safeParse(s.dataVisual).data,
               fixedDurationSec: typeof s.fixedDurationSec === 'number' ? s.fixedDurationSec : undefined,
               durationInFrames: typeof s.durationInFrames === 'number' ? s.durationInFrames : 120,
               wordTimings: Array.isArray(s.wordTimings) ? s.wordTimings : [],
@@ -260,6 +280,19 @@ const WORLD_DIRECTOR_NOTE = `
 This video happens inside ONE continuous 3D world while a camera travels across it. Every scene is one camera stop. A story that moves between places treats them as neighboring areas of that world.
 Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
 
+export function durationInstruction(budget: DurationBudget): string {
+  return `
+TARGET DURATION: ${budget.targetSeconds} seconds. The narration is read at about ${WORDS_PER_SECOND} words per second, and every scene adds a short pause.
+Write ${budget.minScenes} to ${budget.maxScenes} scenes, and keep the total words of all voiceoverText together between ${budget.minWords} and ${budget.maxWords}. Count the words before answering. This overrides any other scene count guidance.`;
+}
+
+function durationCorrection(budget: DurationBudget, words: number, estimatedSeconds: number): string {
+  const direction = estimatedSeconds > budget.targetSeconds ? 'Shorten' : 'Lengthen';
+  return `
+Your previous draft had ${words} narration words, about ${Math.round(estimatedSeconds)} seconds, but the user asked for ${budget.targetSeconds} seconds.
+${direction} it: rewrite the whole storyboard so all voiceoverText together has ${budget.minWords} to ${budget.maxWords} words in ${budget.minScenes} to ${budget.maxScenes} scenes. Keep the facts and order; ${direction === 'Shorten' ? 'merge or drop the least important scenes' : 'explain each stage more fully'}.`;
+}
+
 export async function generateStoryboard(
   userPrompt: string,
   preset: StylePreset = 'ads-ui',
@@ -268,23 +301,32 @@ export async function generateStoryboard(
 ): Promise<Storyboard> {
   if (isApiKeyConfigured()) {
     try {
-      const response = await generateText({
-        model: getDirectorModel(),
-        system: DIRECTOR_SYSTEM_PROMPT,
-        prompt: `Buat storyboard video motion graphic untuk:
+      const targetSeconds = parseTargetDurationSeconds(userPrompt);
+      const budget = targetSeconds ? durationBudget(targetSeconds) : null;
+      const basePrompt = `Buat storyboard video motion graphic untuk:
 Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
-FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}`,
-      });
+FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action.' : ''}${budget ? durationInstruction(budget) : ''}`;
+      const ask = async (extra = '') => {
+        const response = await generateText({ model: getDirectorModel(), system: DIRECTOR_SYSTEM_PROMPT, prompt: basePrompt + extra });
+        return parseStoryboardFromLLMResponse(response.text, userPrompt, preset, aspectRatio);
+      };
 
-      const parsed = parseStoryboardFromLLMResponse(
-        response.text,
-        userPrompt,
-        preset,
-        aspectRatio
-      );
+      let parsed = await ask();
+      if (parsed && budget) {
+        const fit = checkDurationFit(parsed.scenes, budget.targetSeconds);
+        if (!fit.onTarget) {
+          // One correction round only: it costs one more director call and roughly doubles draft time.
+          const retried = await ask(durationCorrection(budget, fit.words, fit.estimatedSeconds)).catch(() => null);
+          const retriedFit = retried ? checkDurationFit(retried.scenes, budget.targetSeconds) : null;
+          console.info(`[DirectorAgent] Duration target ${budget.targetSeconds}s: first draft ${fit.estimatedSeconds.toFixed(1)}s, correction ${retriedFit ? `${retriedFit.estimatedSeconds.toFixed(1)}s` : 'failed'}.`);
+          if (retried && retriedFit && Math.abs(retriedFit.estimatedSeconds - budget.targetSeconds) < Math.abs(fit.estimatedSeconds - budget.targetSeconds)) {
+            parsed = retried;
+          }
+        }
+      }
 
       if (parsed) return parsed;
       if (options.strict) throw new Error('AI belum berhasil menyusun draf. Coba lagi.');
@@ -308,7 +350,7 @@ export function generateProceduralStoryboard(
   preset: StoredPreset,
   aspectRatio: AspectRatio
 ): Storyboard {
-  return applyCtaPolicy(generateProceduralStoryboardBase(userPrompt, preset, aspectRatio), userPrompt);
+  return applyCtaPolicy({ ...generateProceduralStoryboardBase(userPrompt, preset, aspectRatio), preset }, userPrompt);
 }
 
 function generateProceduralStoryboardBase(

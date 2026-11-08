@@ -11,6 +11,8 @@ const params = { params: Promise.resolve({ projectId, assetPath: ['voice.mp3'] }
 beforeAll(() => {
   fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'assets', 'voice.mp3'), Buffer.from('0123456789'));
+  // Assets now require project access, so the fixture needs a project record.
+  fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify({ id: projectId }));
 });
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 

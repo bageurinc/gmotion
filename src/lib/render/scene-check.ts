@@ -1,7 +1,22 @@
-import { openBrowser, renderStill, selectComposition } from '@remotion/renderer';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { makeCancelSignal, openBrowser, renderFrames, renderStill, selectComposition } from '@remotion/renderer';
 import sharp from 'sharp';
+import { buildActionCues, narrationWords } from '@/lib/explainer/choreography';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import type { StudioProject } from '@/types/studio';
+import {
+  frameChanges,
+  LONGEST_STILL_SECONDS,
+  SCENE_FADE_FRAMES,
+  STILL_BAND,
+  STILL_SAMPLE_SIZE,
+  STILL_STEP_SECONDS,
+  STILL_THRESHOLD,
+  stillStretches,
+  type StillStretch,
+} from './motion-check';
 import { bundleProject, chromiumOptionsFor, COMPOSITION_ID } from './render-service';
 
 export interface SceneCrash {
@@ -10,6 +25,8 @@ export interface SceneCrash {
 }
 
 const MAX_MESSAGE_LENGTH = 600;
+const STILL_SCALE = 0.5;
+const STILL_TIMEOUT_MS = 3 * 60_000;
 
 /** Samples the start, middle, and end of each scene on the shared video timeline. */
 export function sampleSceneFrames(durations: number[]): Array<{ index: number; frame: number }> {
@@ -25,14 +42,15 @@ export function sampleSceneFrames(durations: number[]): Array<{ index: number; f
   });
 }
 
-export async function findSceneCrashes(project: StudioProject): Promise<SceneCrash[]> {
+export async function findSceneCrashes(project: StudioProject, onlyIndexes?: number[]): Promise<SceneCrash[]> {
   const serveUrl = await bundleProject(project);
   const chromiumOptions = chromiumOptionsFor(project);
   const browser = await openBrowser('chrome', { chromiumOptions });
   try {
     const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, puppeteerInstance: browser });
     const crashes = new Map<number, string>();
-    const samples = sampleSceneFrames(project.storyboard.scenes.map((scene) => scene.durationInFrames));
+    const samples = sampleSceneFrames(project.storyboard.scenes.map((scene) => scene.durationInFrames))
+      .filter(({ index }) => !onlyIndexes || onlyIndexes.includes(index));
 
     await mapWithConcurrency(samples, PIPELINE_CONCURRENCY, async ({ index, frame }) => {
       if (crashes.has(index)) return;
@@ -57,7 +75,76 @@ export async function findSceneCrashes(project: StudioProject): Promise<SceneCra
   }
 }
 
+/** Renders every half second at half size and finds long stretches where the picture barely changes. */
+export async function measureStillness(project: StudioProject, timeoutMs = STILL_TIMEOUT_MS): Promise<StillStretch[]> {
+  const serveUrl = await bundleProject(project);
+  const browser = await openBrowser('chrome', { chromiumOptions: chromiumOptionsFor(project) });
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gmotion-still-'));
+  // A stuck render must not freeze the whole job, and one was seen hanging during calibration.
+  const { cancelSignal, cancel } = makeCancelSignal();
+  const timeout = setTimeout(cancel, timeoutMs);
+  try {
+    const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, puppeteerInstance: browser });
+    // renderFrames rejects on a crashing frame. A burst of renderStill calls killed the process on an unhandled page error.
+    await renderFrames({
+      composition,
+      serveUrl,
+      inputProps: {},
+      outputDir,
+      imageFormat: 'jpeg',
+      scale: STILL_SCALE,
+      everyNthFrame: Math.max(1, Math.round(STILL_STEP_SECONDS * composition.fps)),
+      concurrency: PIPELINE_CONCURRENCY,
+      cancelSignal,
+      puppeteerInstance: browser,
+      onStart: () => undefined,
+      onFrameUpdate: () => undefined,
+    });
+    const band = {
+      left: 0,
+      top: Math.round(composition.height * STILL_BAND.top * STILL_SCALE),
+      width: Math.round(composition.width * STILL_SCALE),
+      height: Math.round(composition.height * STILL_BAND.height * STILL_SCALE),
+    };
+    const files = fs.readdirSync(outputDir).filter((file) => file.endsWith('.jpeg')).sort();
+    const samples = await mapWithConcurrency(files, PIPELINE_CONCURRENCY, (file) =>
+      sharp(path.join(outputDir, file)).extract(band).resize(STILL_SAMPLE_SIZE).greyscale().raw().toBuffer()
+    );
+    return stillStretches(frameChanges(samples), STILL_STEP_SECONDS, STILL_THRESHOLD, LONGEST_STILL_SECONDS);
+  } finally {
+    clearTimeout(timeout);
+    await browser.close({ silent: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
+}
+
 const SHEET_FRAME = { width: 405, height: 720 };
+const SHEET_COLUMNS = 4;
+const SHEET_MIN_GAP = 15;
+
+/** Keeps a story-svg scene's cut in view by leading its sheet with the previous scene's last clear frame. */
+export const opensWithPreviousScene = (project: StudioProject, index: number) =>
+  project.storyboard.preset === 'story-svg' && index > 0;
+
+/**
+ * Frames for the critic, all clear of the fades at a cut: the opening, middle, ending, and the
+ * finished pose of every narrated action. Frames nearly on top of each other are dropped.
+ */
+export function sheetFrames(project: StudioProject, index: number): number[] {
+  const { scenes, fps } = project.storyboard;
+  const scene = scenes[index];
+  const start = scenes.slice(0, index).reduce((sum, item) => sum + item.durationInFrames, 0);
+  const firstClear = index === 0 ? 2 : Math.min(SCENE_FADE_FRAMES, scene.durationInFrames - 1);
+  const lastClear = Math.max(firstClear, scene.durationInFrames - 1 - SCENE_FADE_FRAMES);
+  const clamp = (frame: number) => Math.min(lastClear, Math.max(firstClear, frame));
+
+  const actions = project.sceneAssets?.[scene.id]?.manifest.choreography ?? [];
+  const poses = buildActionCues(actions, narrationWords(scene, fps), scene.durationInFrames, fps).map((cue) => clamp(cue.to));
+  const own = [firstClear, clamp(Math.floor(scene.durationInFrames / 2)), lastClear, ...poses].sort((a, b) => a - b);
+  const spaced = own.filter((frame, position) => position === 0 || frame - own[position - 1] >= SHEET_MIN_GAP);
+  const frames = spaced.map((frame) => start + frame);
+  return opensWithPreviousScene(project, index) ? [start - 1 - SCENE_FADE_FRAMES, ...frames] : frames;
+}
 
 /** Renders contact sheets per scene. A scene that crashes is simply left out. */
 export async function captureSceneSheets(project: StudioProject, indexes: number[]): Promise<Map<number, Buffer>> {
@@ -65,13 +152,12 @@ export async function captureSceneSheets(project: StudioProject, indexes: number
   const browser = await openBrowser('chrome');
   try {
     const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, puppeteerInstance: browser });
-    const samples = sampleSceneFrames(project.storyboard.scenes.map((scene) => scene.durationInFrames));
     const sheets = new Map<number, Buffer>();
 
     await mapWithConcurrency(indexes, PIPELINE_CONCURRENCY, async (index) => {
       try {
         const frames: Buffer[] = [];
-        for (const { frame } of samples.filter((sample) => sample.index === index)) {
+        for (const frame of sheetFrames(project, index)) {
           const { buffer } = await renderStill({
             composition,
             serveUrl,
@@ -82,12 +168,20 @@ export async function captureSceneSheets(project: StudioProject, indexes: number
           });
           frames.push(await sharp(buffer as Buffer).resize(SHEET_FRAME).toBuffer());
         }
+        const columns = Math.min(frames.length, SHEET_COLUMNS);
+        const rows = Math.ceil(frames.length / columns);
         sheets.set(
           index,
           await sharp({
-            create: { width: SHEET_FRAME.width * frames.length, height: SHEET_FRAME.height, channels: 3, background: '#000000' },
+            create: { width: SHEET_FRAME.width * columns, height: SHEET_FRAME.height * rows, channels: 3, background: '#000000' },
           })
-            .composite(frames.map((input, position) => ({ input, left: position * SHEET_FRAME.width, top: 0 })))
+            .composite(
+              frames.map((input, position) => ({
+                input,
+                left: (position % columns) * SHEET_FRAME.width,
+                top: Math.floor(position / columns) * SHEET_FRAME.height,
+              }))
+            )
             .jpeg({ quality: 82 })
             .toBuffer()
         );
@@ -122,4 +216,49 @@ export async function repairCrashedScenes(project: StudioProject, tools: CrashRe
   for (const crash of await tools.findCrashes(tools.current())) {
     tools.saveScene(crash.index, tools.replaceWithSimpleScene(tools.current(), crash), true);
   }
+}
+
+export type RevisionCheckOutcome = 'ok' | 'repaired' | 'reverted' | 'unchecked';
+
+export interface RevisionCheckTools {
+  findCrashes: (project: StudioProject, onlyIndexes: number[]) => Promise<SceneCrash[]>;
+  repair: (project: StudioProject, crash: SceneCrash) => Promise<string>;
+}
+
+const withSceneCode = (project: StudioProject, index: number, code: string): StudioProject => ({
+  ...project,
+  files: { ...project.files, [`Scene${index + 1}.tsx`]: code },
+});
+
+/**
+ * Renders a chat-revised scene before it is kept. A crash gets one AI repair; if that still
+ * crashes, the scene goes back to the code it had before the revision, which already rendered.
+ */
+export async function guardRevisedScene(
+  project: StudioProject,
+  index: number,
+  previousCode: string,
+  tools: RevisionCheckTools
+): Promise<{ code: string; outcome: RevisionCheckOutcome; crash?: string }> {
+  const revisedCode = project.files[`Scene${index + 1}.tsx`];
+  let crash: SceneCrash | undefined;
+  try {
+    [crash] = await tools.findCrashes(project, [index]);
+  } catch (error) {
+    // A broken checker must not throw away the user's revision. Export still reports real crashes.
+    console.error('[SceneCheck] Revision check could not run:', error);
+    return { code: revisedCode, outcome: 'unchecked' };
+  }
+  if (!crash) return { code: revisedCode, outcome: 'ok' };
+
+  try {
+    const repairedCode = await tools.repair(project, crash);
+    if (repairedCode !== revisedCode) {
+      const [stillCrashing] = await tools.findCrashes(withSceneCode(project, index, repairedCode), [index]);
+      if (!stillCrashing) return { code: repairedCode, outcome: 'repaired', crash: crash.message };
+    }
+  } catch (error) {
+    console.error('[SceneCheck] Revision repair failed:', error);
+  }
+  return { code: previousCode, outcome: 'reverted', crash: crash.message };
 }

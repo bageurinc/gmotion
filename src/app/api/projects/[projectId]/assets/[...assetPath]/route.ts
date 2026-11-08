@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { requireProject } from '@/lib/auth/project-access';
 import { isValidProjectId } from '@/lib/security/project-input';
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -18,8 +19,10 @@ export async function GET(
   if (!isValidProjectId(projectId)) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
   }
+  const access = await requireProject(projectId);
+  if ('response' in access) return access.response;
 
-  // Only generated media is public. project.json and build sources stay private.
+  // Only generated media is served. project.json and build sources stay private.
   const projectDir = path.join(process.cwd(), 'storage', 'projects', projectId);
   const [root, relativePath] =
     assetPath[0] === 'exports'

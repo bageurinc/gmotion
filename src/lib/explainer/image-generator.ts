@@ -40,7 +40,7 @@ export async function matchesAspect(image: Buffer, aspectRatio: AspectRatio): Pr
 export function sceneImagePrompt(storyboard: Storyboard, index: number, show?: string): string {
   const scene = storyboard.scenes[index];
   const { palette }: { palette: ColorPalette } = storyboard;
-  return `Draw on this blank canvas, keeping its exact shape and background color.
+  return `Paint over this entire canvas, keeping its exact shape. Its color is only a tone reference, and no blank area may remain.
 
 Flat editorial vector illustration for scene ${index + 1} of ${storyboard.scenes.length} of an explainer video titled "${storyboard.title}".
 
@@ -50,11 +50,13 @@ Narration for context: ${scene.voiceoverText}
 STYLE, identical in every scene of this video
 - Clean flat vector shapes with thick, even, dark outlines and two or three flat tones per surface. No gradients, glow, photo textures, or 3D rendering.
 - Anatomy must be correct. Any hand has exactly five clearly separated fingers.
-- The background is one plain flat color, exactly ${palette.background}, reaching every edge.
+- The scene happens in a real place that fits the topic, painted from edge to edge on all four sides. Outdoors: sky with soft clouds, with the ground reaching the bottom edge. Indoors: a wall with wallpaper, tiles, or panels, with the floor reaching the bottom edge. Never leave a plain backdrop, an empty band, or a picture that fades into a flat color.
 - Main colors come from ${palette.primary} and ${palette.secondary}, plus natural colors for skin and real materials.
 
 LAYOUT
-- One large, clear subject in the middle of the frame. Keep the top 28 percent and the bottom 30 percent of the image empty background.
+- One large, clear subject in the middle of the frame.
+- The top 28 percent continues the place as a calm, light area in tones close to ${palette.background}, such as open sky or a plain wall, with no objects, because the headline sits there.
+- The ground, floor, plants, and objects of the place continue down to the bottom edge with the same detail as the rest of the picture. Never end the picture with a flat strip of color, because captions have their own box and need no empty space.
 - Absolutely no text, letters, numbers, labels, logos, or watermarks.`;
 }
 

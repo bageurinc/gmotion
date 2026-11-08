@@ -168,6 +168,10 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     try {
       const res = await fetch(`/api/projects/${initialProject.id}/generate`, { method: 'POST' });
       const data = await res.json();
+      if (data.code === 'insufficient_credits') {
+        router.push('/billing');
+        return;
+      }
       if (!res.ok) throw new Error(data.error);
       router.refresh();
     } catch (err) {

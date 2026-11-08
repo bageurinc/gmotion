@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateMainVideoCode, generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
+import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,7 +11,9 @@ import { POST as generateProject } from '@/app/api/projects/[projectId]/generate
 import { PATCH as updateDraft } from '@/app/api/projects/[projectId]/storyboard/route';
 import { GET as projectEvents } from '@/app/api/projects/[projectId]/events/route';
 import { POST as projectRender } from '@/app/api/projects/[projectId]/render/route';
+import { readExportStream } from '@/lib/render/export-stream';
 import { PUT as updateProject } from '@/app/api/projects/[projectId]/route';
+import { POST as reviseProject } from '@/app/api/projects/[projectId]/revise/route';
 import {
   applyDraftUpdate,
   DraftUpdateSchema,
@@ -24,14 +27,22 @@ import { generateProceduralStoryboard, parseStoryboardFromLLMResponse } from '@/
 import { getProject, saveProject } from '@/lib/storage/project-store';
 import type { StudioProject } from '@/types/studio';
 
+const measureStillness = vi.hoisted(() => vi.fn());
+const findSceneCrashes = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/render/scene-check', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/render/scene-check')>()),
+  measureStillness,
+  findSceneCrashes,
+}));
+
 const created: string[] = [];
 const speech = fs.readFileSync(new URL('./fixtures/tts-indonesian.mp3', import.meta.url));
 const context = (projectId: string) => ({ params: Promise.resolve({ projectId }) });
 const request = (body?: unknown) =>
   new NextRequest('http://localhost/api', { method: 'POST', body: body ? JSON.stringify(body) : undefined });
 
-async function createDraft(): Promise<StudioProject> {
-  const res = await createProject(request({ prompt: 'Ceritakan perjalanan biji kopi', preset: 'story-2d', aspectRatio: '9:16' }));
+async function createDraft(preset: 'story-2d' | 'story-svg' = 'story-2d'): Promise<StudioProject> {
+  const res = await createProject(request({ prompt: 'Ceritakan perjalanan biji kopi', preset, aspectRatio: '9:16' }));
   const { project } = await res.json();
   created.push(project.id);
   return project;
@@ -90,7 +101,7 @@ describe('draft helpers', () => {
   it('estimates narration time from word count', () => {
     expect(estimateNarrationSeconds('')).toBe(0);
     expect(estimateNarrationSeconds('satu')).toBe(3);
-    expect(estimateNarrationSeconds(Array(24).fill('kata').join(' '))).toBeCloseTo(10.35);
+    expect(estimateNarrationSeconds(Array(24).fill('kata').join(' '))).toBeCloseTo(24 / 2.1 + 0.35);
   });
 
   it('previews only finished scenes', () => {
@@ -191,6 +202,24 @@ describe('draft review flow', () => {
     expect(result.chatHistory).toHaveLength(1);
   });
 
+  it('preserves the full SVG preset through draft, generation, and manual edits', async () => {
+    const project = await createDraft('story-svg');
+    expect(project.storyboard.preset).toBe('story-svg');
+    await generateProject(request(), context(project.id));
+    const result = await finished(project.id);
+    expect(result.storyboard.preset).toBe('story-svg');
+    expect(Object.values(result.sceneProgress ?? {}).every(scene => scene.stage === 'ready')).toBe(true);
+    for (const [name, code] of Object.entries(result.files)) {
+      expect(validateSceneCode(code, name, { svgOnly: true }).errors).toEqual([]);
+    }
+    expect(Object.values(result.files).join('')).not.toContain('ImageStage');
+    const res = await updateProject(new NextRequest('http://localhost/api', {
+      method: 'PUT', body: JSON.stringify({ files: { 'Scene1.tsx': 'export default () => <img src="/image.png" />;' } }),
+    }), context(project.id));
+    expect(res.status).toBe(400);
+    expect(getProject(project.id)?.files['Scene1.tsx']).toBe(result.files['Scene1.tsx']);
+  });
+
   it('streams scene progress until the job finishes', async () => {
     const project = await createDraft();
     await generateProject(request(), context(project.id));
@@ -201,6 +230,39 @@ describe('draft review flow', () => {
     const last = JSON.parse(events.at(-1)!.slice(5));
     expect(last.project.status).toBe('ready');
     expect(last.interrupted).toBe(false);
+  });
+
+  const generateToEnd = async (preset: 'story-2d' | 'story-svg' = 'story-2d') => {
+    const project = await createDraft(preset);
+    await generateProject(request(), context(project.id));
+    return vi.waitFor(() => {
+      const saved = getProject(project.id)!;
+      if (saved.status !== 'ready') throw new Error('still running');
+      return saved;
+    });
+  };
+
+  it('reports long still stretches in the editor chat', async () => {
+    measureStillness.mockResolvedValueOnce([{ from: 12, to: 18.5, seconds: 6.5 }]);
+    const finished = await generateToEnd();
+    expect(finished.stillStretches).toEqual([{ from: 12, to: 18.5, seconds: 6.5 }]);
+    expect(finished.chatHistory.at(-1)?.content).toContain('detik 12,0–18,5');
+  });
+
+  it('finishes the video when the stillness check breaks, without claiming a result', async () => {
+    measureStillness.mockRejectedValueOnce(new Error('browser gone'));
+    const finished = await generateToEnd();
+    expect(finished.generationError).toBeUndefined();
+    expect(finished.stillStretches).toBeUndefined();
+    expect(finished.checkingScenes).toBeUndefined();
+    expect(finished.chatHistory.at(-1)?.content).not.toContain('hampir diam');
+  });
+
+  it('leaves Full SVG unmeasured, since its small actions read as still', async () => {
+    measureStillness.mockClear();
+    const finished = await generateToEnd('story-svg');
+    expect(measureStillness).not.toHaveBeenCalled();
+    expect(finished.stillStretches).toBeUndefined();
   });
 
   it('marks every scene failed when a 3D world cannot be made, then allows a retry', async () => {
@@ -277,7 +339,7 @@ describe('draft review flow', () => {
     const project = await createDraft();
     saveProject({ ...project, status: 'ready', files: { 'Scene1.tsx': 'bad <<<' } });
     const res = await projectRender(request({ safeAreaPlatform: 'tiktok' }), context(project.id));
-    expect(res.status).toBe(500);
+    await expect(readExportStream(res, () => undefined)).rejects.toThrow();
     expect(getProject(project.id)?.status).toBe('ready');
   }, 60_000);
 
@@ -286,6 +348,46 @@ describe('draft review flow', () => {
     saveProject({ ...project, status: 'generating' });
     const res = await updateProject(new NextRequest('http://localhost/api', { method: 'PUT', body: '{}' }), context(project.id));
     expect(res.status).toBe(409);
+  });
+
+  describe('chat revision render check', () => {
+    const sceneCode = 'export default function Scene1() { return <div style={{ color: "#38BDF8" }}>Halo</div>; }';
+    async function readyProject() {
+      const project = await createDraft();
+      saveProject({ ...project, status: 'ready', files: { ...project.files, 'Scene1.tsx': sceneCode } });
+      return project;
+    }
+    const revise = (project: StudioProject, userMessage: string) =>
+      reviseProject(request({ userMessage, sceneId: project.storyboard.scenes[0].id }), context(project.id));
+    const lastReply = (projectId: string) => getProject(projectId)?.chatHistory.at(-1)?.content ?? '';
+
+    beforeEach(() => findSceneCrashes.mockReset().mockResolvedValue([]));
+
+    it('keeps a revision that renders and checks only that scene', async () => {
+      const project = await readyProject();
+      const res = await revise(project, 'ganti warna jadi emas');
+      expect((await res.json()).revisionOutcome).toBe('ok');
+      expect(findSceneCrashes).toHaveBeenCalledWith(expect.anything(), [0]);
+      expect(getProject(project.id)?.files['Scene1.tsx']).toContain('#F59E0B');
+      expect(lastReply(project.id)).toContain('lolos cek render');
+    });
+
+    it('restores the previous scene when the revision crashes and cannot be repaired', async () => {
+      const project = await readyProject();
+      findSceneCrashes.mockResolvedValue([{ index: 0, message: 'boom' }]);
+      const res = await revise(project, 'ganti warna jadi emas');
+      expect((await res.json()).revisionOutcome).toBe('reverted');
+      expect(getProject(project.id)?.files['Scene1.tsx']).toBe(sceneCode);
+      expect(lastReply(project.id)).toContain('dikembalikan ke versi sebelumnya');
+    });
+
+    it('says so when the AI changed nothing', async () => {
+      const project = await readyProject();
+      const res = await revise(project, 'buat lebih dramatis');
+      expect((await res.json()).revisionOutcome).toBe('unchanged');
+      expect(findSceneCrashes).not.toHaveBeenCalled();
+      expect(lastReply(project.id)).toContain('belum berhasil');
+    });
   });
 
   it('rejects draft edits after generation', async () => {

@@ -3,10 +3,12 @@ import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { buildImageScene } from '@/lib/explainer/image-scene';
 import { planSceneMoments, ScenePlan } from '@/lib/explainer/scene-moments';
+import { continuityFor } from '@/lib/explainer/continuity';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
-import { findSceneCrashes, repairCrashedScenes } from '@/lib/render/scene-check';
+import { describeStillStretches } from '@/lib/render/motion-check';
+import { findSceneCrashes, measureStillness, repairCrashedScenes } from '@/lib/render/scene-check';
 import { generateMainVideoCode, reviseSceneCode, simpleSceneCode } from './coder-agent';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import { hasFailedScene, normalizeSceneOrder } from './draft';
@@ -38,11 +40,12 @@ export function prepareGeneration(project: StudioProject): StudioProject {
     sceneProgress,
     status: 'generating',
     generationError: undefined,
+    stillStretches: undefined,
     updatedAt: Date.now(),
   };
 }
 
-function completionMessage(project: StudioProject): string {
+function finishedMessage(project: StudioProject): string {
   if (!usesWorldEngine(project.storyboard.preset)) {
     return 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.';
   }
@@ -50,6 +53,10 @@ function completionMessage(project: StudioProject): string {
   return repairs
     ? `Dunia selesai dibuat. Ada ${repairs} objek yang disesuaikan otomatis karena tidak muat. Tonton hasilnya di player.`
     : 'Dunia selesai dibuat. Tonton hasilnya di player.';
+}
+
+export function completionMessage(project: StudioProject): string {
+  return [finishedMessage(project), describeStillStretches(project.stillStretches ?? [])].filter(Boolean).join(' ');
 }
 
 interface WorldJobTools {
@@ -89,7 +96,7 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
     for (const scene of current().storyboard.scenes) setStage(scene.id, 'failed', message);
   };
   try {
-    const { code, repairs } = await buildWorldFiles(assetModel(), current());
+    const { code, repairs } = await buildWorldFiles(assetModel(current().drawingModel), current());
     commit((project) => ({
       files: { ...project.files, 'MainVideo.tsx': code },
       worldRepairs: repairs,
@@ -154,18 +161,24 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
 
   // Story 2D plans all scenes together, and that plan needs the real narration timing.
   const usesMoments = project.storyboard.preset === 'story-2d' && isApiKeyConfigured();
+  // Full SVG scenes build on each other, so they are drawn in order.
+  const chained = project.storyboard.preset === 'story-svg';
+  const audioFirst = usesMoments || chained;
   const audioFailures = new Map<number, string>();
   let plans: ScenePlan[] | null = null;
-  if (usesMoments) {
+  if (audioFirst) {
     await mapWithConcurrency(pending, PIPELINE_CONCURRENCY, async (index) => {
       try {
         await makeAudio(index);
+        setStage(project.storyboard.scenes[index].id, 'queued');
       } catch (err: unknown) {
         audioFailures.set(index, err instanceof Error ? err.message : 'Audio adegan gagal dibuat.');
       }
     });
+  }
+  if (usesMoments) {
     try {
-      plans = await planSceneMoments(assetModel(), project.storyboard);
+      plans = await planSceneMoments(assetModel(project.drawingModel), project.storyboard);
     } catch (err) {
       console.warn(`[GenerationJob] Moment plan failed for ${project.id}, drawing every scene from parts:`, err);
     }
@@ -173,22 +186,27 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
 
   const drawScene = async (index: number) => {
     const plan = plans?.[index];
-    if (plan?.kind !== 'image') return generateVideoSceneFile(project.storyboard, index);
+    const { drawingModel } = project;
+    if (chained) {
+      const continuity = continuityFor(project.storyboard.scenes, project.sceneAssets, index);
+      return generateVideoSceneFile(project.storyboard, index, { drawingModel, continuity });
+    }
+    if (plan?.kind !== 'image') return generateVideoSceneFile(project.storyboard, index, { drawingModel });
     try {
       return { code: await buildImageScene(project.id, project.storyboard, plan, index), simplified: false, asset: undefined };
     } catch (err) {
       // A failed picture must not cost the scene, so it falls back to moving parts.
       console.warn(`[GenerationJob] Image scene ${index + 1} failed, drawing it from parts:`, err);
-      return generateVideoSceneFile(project.storyboard, index);
+      return generateVideoSceneFile(project.storyboard, index, { drawingModel });
     }
   };
 
-  await mapWithConcurrency(isWorld ? [] : pending, PIPELINE_CONCURRENCY, async (index) => {
+  await mapWithConcurrency(isWorld ? [] : pending, chained ? 1 : PIPELINE_CONCURRENCY, async (index) => {
     const sceneId = project.storyboard.scenes[index].id;
     try {
       const audioFailure = audioFailures.get(index);
       if (audioFailure) throw new Error(audioFailure);
-      if (!usesMoments) await makeAudio(index);
+      if (!audioFirst) await makeAudio(index);
 
       setStage(sceneId, 'animation');
       const { code, simplified, asset: sceneAsset } = await drawScene(index);
@@ -231,7 +249,8 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
             current.files[`Scene${crash.index + 1}.tsx`],
             current.storyboard.scenes[crash.index],
             `Fix this runtime crash and keep the same visual: ${crash.message}`,
-            current.storyboard.palette
+            current.storyboard.palette,
+            { svgOnly: current.storyboard.preset === 'story-svg' }
           ),
         replaceWithSimpleScene: (current, crash) =>
           simpleSceneCode(current.storyboard, crash.index),
@@ -249,6 +268,19 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     } catch (err) {
       // A broken checker must not block a video that may be fine. Export still reports real crashes.
       console.error(`[GenerationJob] Scene check failed for ${project.id}:`, err);
+    }
+    commit(() => ({ checkingScenes: undefined }));
+  }
+
+  // Full SVG moves small objects under a fixed camera, which this measure reads as still.
+  if (project.storyboard.preset !== 'story-svg' && !hasFailedScene(project)) {
+    commit(() => ({ checkingScenes: true }));
+    try {
+      const stillStretches = await measureStillness(project);
+      commit(() => ({ stillStretches }));
+    } catch (err) {
+      // The check only informs the user, so a broken measurement must not cost the video.
+      console.error(`[GenerationJob] Stillness check failed for ${project.id}:`, err);
     }
     commit(() => ({ checkingScenes: undefined }));
   }

@@ -2,8 +2,9 @@
 
 import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import { WordTiming } from '@/types/studio';
+import { TextStyleId, WordTiming } from '@/types/studio';
 import { SafeOverlay, useSafeOverlay } from './SafeOverlay';
+import { TEXT_STYLES } from './text-style';
 
 export interface SyncedCaptionsProps {
   text: string;
@@ -13,6 +14,7 @@ export interface SyncedCaptionsProps {
   fontSize?: number;
   bottomOffset?: number; // Legacy inline placement; the safe overlay owns caption position.
   style?: React.CSSProperties;
+  textStyle?: TextStyleId;
 }
 
 export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
@@ -23,6 +25,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
   fontSize = 32,
   bottomOffset = 260,
   style,
+  textStyle,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -86,7 +89,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
           padding: '12px 24px',
           borderRadius: 20,
           border: '1px solid rgba(255, 255, 255, 0.12)',
-          fontFamily: 'Arial, sans-serif',
+          fontFamily: textStyle ? TEXT_STYLES[textStyle].bodyFont() : 'Arial, sans-serif',
           fontSize,
           lineHeight: 1.5,
           textAlign: 'center',

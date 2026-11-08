@@ -1045,6 +1045,7 @@ export function simpleSceneCode(storyboard: Storyboard, index: number): string {
  */
 export async function generateSceneFile(storyboard: Storyboard, i: number): Promise<string> {
   const isAds = storyboard.preset === 'ads-ui';
+  const svgOnly = storyboard.preset === 'story-svg';
   const { width, height } = AspectRatioDimensions[storyboard.aspectRatio];
   const outline = storyboard.scenes.map((scene, index) => `${index + 1}. ${scene.title}`).join('\n');
   const scene = storyboard.scenes[i];
@@ -1071,6 +1072,7 @@ Locked DurationInFrames: ${scene.durationInFrames}
 WordTimings: ${JSON.stringify(scene.wordTimings)}
 Color Palette: ${JSON.stringify(storyboard.palette)}
 
+${svgOnly ? 'FULL SVG: Use vector objects only. No images, ImageStage, Img, video, or CSS image URLs. Animate object actions following narration with frame-based timing.' : ''}
 Ensure you import components from '@/motion-kit' and write high-converting clean TSX.`;
 
         if (isTimelapseScene) {
@@ -1091,7 +1093,7 @@ ${TIMELAPSE_FEW_SHOT_EXAMPLES}`;
         code = extracted ? extracted[1].trim() : response.text.trim();
 
         // Validate
-        const val = validateSceneCode(code, fileName);
+        const val = validateSceneCode(code, fileName, { svgOnly });
         if (!val.valid || (scene.role !== 'cta' && /<PulseCTAButton\b/.test(code))) {
           console.warn(`[CoderAgent] Generated code for ${fileName} had errors, attempting 1-step repair:`, val.errors);
           try {
@@ -1116,7 +1118,7 @@ Fix all errors and return ONLY clean, working TypeScript/TSX code inside \`\`\`t
             });
             const repExtracted = repairResponse.text.match(/```(?:tsx|typescript)?\s*([\s\S]*?)```/);
             const repairedCode = repExtracted ? repExtracted[1].trim() : repairResponse.text.trim();
-            const repVal = validateSceneCode(repairedCode, fileName);
+            const repVal = validateSceneCode(repairedCode, fileName, { svgOnly });
             if (repVal.valid && !(scene.role !== 'cta' && /<PulseCTAButton\b/.test(repairedCode))) {
               code = repairedCode;
             } else {
@@ -1176,7 +1178,8 @@ export async function reviseSceneCode(
   currentCode: string,
   scene: SceneSpec,
   revisionInstruction: string,
-  palette: Storyboard['palette']
+  palette: Storyboard['palette'],
+  options: { svgOnly?: boolean } = {}
 ): Promise<string> {
   if (isApiKeyConfigured()) {
     try {
@@ -1186,6 +1189,7 @@ ${currentCode}
 \`\`\`
 
 User revision instruction: "${revisionInstruction}"
+${options.svgOnly ? 'FULL SVG must be preserved: no image assets, ImageStage, Img, video, or CSS image URLs. Use animated vector objects only.' : ''}
 Scene Spec:
 Kinetic Headline: "${scene.kineticHeadline}"
 DurationInFrames: ${scene.durationInFrames}
@@ -1202,7 +1206,7 @@ Modify the code according to user request. Maintain all '@/motion-kit' imports a
       const extracted = response.text.match(/```(?:tsx|typescript)?\s*([\s\S]*?)```/);
       const newCode = extracted ? extracted[1].trim() : response.text.trim();
 
-      const val = validateSceneCode(newCode, `${scene.id}.tsx`);
+      const val = validateSceneCode(newCode, `${scene.id}.tsx`, options);
       if (val.valid) {
         let finalRev = newCode;
         const match = scene.id.match(/\d+/);

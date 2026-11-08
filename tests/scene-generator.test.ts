@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateVideoSceneFile } from '@/lib/explainer/scene-generator';
+import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
 
 const mocks = vi.hoisted(() => ({
@@ -47,6 +47,93 @@ describe('generateVideoSceneFile', () => {
     expect(result.simplified).toBe(false);
     expect(result.code).toContain('AssetStage');
     expect(mocks.generateSceneFile).not.toHaveBeenCalled();
+  });
+
+  describe('Full SVG', () => {
+    const storyboard = generateProceduralStoryboard('Topik uji', 'story-svg', '9:16');
+    const choreographed = {
+      ...manifest,
+      views: [{ id: 'world', label: 'Dunia', description: 'Satu dunia' }],
+      choreography: [{ id: 'pour', description: 'Air mengalir', startWord: 0, endWord: 0 }],
+    };
+    const world = (fill: string) => `// SHARED-WORLD:START
+const WorldBase = () => <rect fill="${fill}" />;
+// SHARED-WORLD:END`;
+    const animated = `import React from 'react';
+${world('#111111')}
+export const Asset = ({ actionProgress }) => <svg><WorldBase /><rect x={(actionProgress.pour ?? 0) * 100} /></svg>;
+export default Asset;`;
+
+    it('passes spoken action timing to the stage', async () => {
+      mocks.parseAssetResponse.mockReturnValue({ manifest: choreographed, code: animated });
+      const result = await generateVideoSceneFile(storyboard, 0);
+      expect(result.simplified).toBe(false);
+      expect(result.code).toContain('actionCues={[{"id":"pour"');
+      expect(mocks.repairAsset).not.toHaveBeenCalled();
+    });
+
+    it('sends the chosen model and forces the shared world', async () => {
+      mocks.parseAssetResponse.mockReturnValue({ manifest: choreographed, code: animated });
+      const result = await generateVideoSceneFile(storyboard, 1, {
+        drawingModel: 'deepseek-flash',
+        continuity: { sharedWorld: world('#222222') },
+      });
+      expect(mocks.generateAsset.mock.calls[0][0]).toBe('ds/deepseek-v4.1-flash');
+      expect(mocks.generateAsset.mock.calls[0][1]).toContain(world('#222222'));
+      expect(result.asset?.code).toContain('#222222');
+      expect(result.asset?.code).not.toContain('#111111');
+    });
+
+    it('asks for a repair when the shared world is missing', async () => {
+      mocks.repairAsset.mockResolvedValue({ text: 'asset' });
+      mocks.parseAssetResponse
+        .mockReturnValueOnce({ manifest: choreographed, code: animated.replace(world('#111111'), '') })
+        .mockReturnValue({ manifest: choreographed, code: animated });
+      const result = await generateVideoSceneFile(storyboard, 0);
+      expect(result.simplified).toBe(false);
+      expect(mocks.repairAsset.mock.calls[0][3]).toContain('SHARED-WORLD');
+    });
+
+    it('falls back when an asset still uses a raster image', async () => {
+      mocks.repairAsset.mockResolvedValue({ text: 'asset' });
+      mocks.parseAssetResponse.mockReturnValue({
+        manifest: choreographed,
+        code: animated.replace('<rect', "<image href='/picture.png' /><rect"),
+      });
+      const result = await generateVideoSceneFile(storyboard, 0);
+      expect(result.simplified).toBe(true);
+      expect(mocks.generateAsset).toHaveBeenCalledTimes(2);
+      expect(mocks.generateSceneFile).toHaveBeenCalledWith(storyboard, 0);
+    });
+
+    it('recovers on the second full attempt', async () => {
+      mocks.repairAsset.mockResolvedValue({ text: 'asset' });
+      mocks.parseAssetResponse
+        .mockReturnValueOnce({ manifest: choreographed, code: assetCode })
+        .mockReturnValueOnce({ manifest: choreographed, code: assetCode })
+        .mockReturnValue({ manifest: choreographed, code: animated });
+      const result = await generateVideoSceneFile(storyboard, 0);
+      expect(result.simplified).toBe(false);
+      expect(mocks.generateSceneFile).not.toHaveBeenCalled();
+    });
+
+    it('asks for a repair when an action never moves anything', async () => {
+      mocks.repairAsset.mockResolvedValue({ text: 'asset' });
+      mocks.parseAssetResponse
+        .mockReturnValueOnce({ manifest: choreographed, code: assetCode })
+        .mockReturnValue({ manifest: choreographed, code: animated });
+      const result = await generateVideoSceneFile(storyboard, 0);
+      expect(result.simplified).toBe(false);
+      expect(mocks.repairAsset.mock.calls[0][3]).toContain('pour');
+    });
+  });
+
+  it('uses Gemini unless DeepSeek Flash is chosen', () => {
+    vi.stubEnv('ASSET_MODEL', '');
+    vi.stubEnv('CODER_MODEL', 'gemini-uji');
+    expect(assetModel()).toBe('gemini-uji');
+    expect(assetModel('gemini')).toBe('gemini-uji');
+    expect(assetModel('deepseek-flash')).toBe('ds/deepseek-v4.1-flash');
   });
 
   it('keeps the CTA scene on the button-capable generator', async () => {

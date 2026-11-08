@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { ghostAt, ISO_DIRECTION, ISO_RIGHT, ISO_UP, isoCameraAt, offsetAt, pointAlong, polylineLength, projectIso, shadeForNormal } from './iso-math';
+import { ghostAt, ISO_DIRECTION, ISO_RIGHT, ISO_UP, isoCameraAt, offsetAt, pointAlong, polylineLength, projectIso, pulseAt, shadeForNormal } from './iso-math';
 
 const view = { width: 1000, height: 2000, centerY: 0.5 };
+
+describe('pulseAt', () => {
+  it('starts at rest, so the focus does not jump', () => {
+    expect(pulseAt(100, 100, 30)).toBe(1);
+  });
+
+  it('swells and returns within one cycle', () => {
+    expect(pulseAt(115, 100, 30)).toBeGreaterThan(1.02);
+    expect(pulseAt(130, 100, 30)).toBeCloseTo(1, 5);
+  });
+
+  it('is the same for the same frame', () => {
+    expect(pulseAt(117, 100, 30)).toBe(pulseAt(117, 100, 30));
+  });
+});
 
 describe('shadeForNormal', () => {
   it('gives the top, left, and right faces three descending tones', () => {

@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { AbsoluteFill, Audio, getRemotionEnvironment, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { SCENE_FADE_FRAMES as FADE_FRAMES } from '../../lib/render/motion-check';
 
-const FADE_FRAMES = 9;
 const MUSIC_UNDER_VOICE = 0.13;
 const MUSIC_BETWEEN_SCENES = 0.3;
 

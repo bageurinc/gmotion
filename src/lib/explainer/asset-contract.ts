@@ -29,6 +29,12 @@ export const AssetManifestSchema = z
       text: HexColor,
     }),
     heroFocus: FocusSchema,
+    choreography: z.array(z.object({
+      id: IdSchema,
+      description: z.string().min(1),
+      startWord: z.number().int().min(0),
+      endWord: z.number().int().min(0),
+    })).min(1).max(4).optional(),
     views: z
       .array(
         z.object({
@@ -37,7 +43,7 @@ export const AssetManifestSchema = z
           description: z.string().min(1),
         })
       )
-      .min(2)
+      .min(1)
       .max(4),
     parts: z
       .array(
@@ -77,6 +83,20 @@ export const AssetManifestSchema = z
         ctx.addIssue({ code: 'custom', message: `Flow ${flow.id} references unknown view ${flow.view}` });
       }
     }
+    if (manifest.choreography) {
+      if (manifest.views.length !== 1) ctx.addIssue({ code: 'custom', message: 'Choreography uses one persistent view, not crossfaded drawings' });
+      const ids = new Set<string>();
+      let previousEnd = -1;
+      for (const action of manifest.choreography) {
+        if (ids.has(action.id) || action.endWord < action.startWord || action.startWord <= previousEnd) {
+          ctx.addIssue({ code: 'custom', message: 'Actions need unique ids and ordered, non-overlapping word ranges' });
+        }
+        ids.add(action.id);
+        previousEnd = action.endWord;
+      }
+      return;
+    }
+    if (manifest.views.length < 2) ctx.addIssue({ code: 'custom', message: 'Legacy illustrations need at least two views' });
     const secondView = manifest.views[1]?.id;
     if (manifest.parts.filter((part) => part.views.includes(secondView)).length < 2) {
       ctx.addIssue({ code: 'custom', message: 'The second view needs at least two parts' });
@@ -94,7 +114,9 @@ export interface GeneratedAssetProps {
   viewOpacity: Record<string, number>;
   /** Highlight strength from 0 to 1 for every manifest part. */
   highlight: Record<string, number>;
-  /** Scene time in seconds, for deterministic idle motion. */
+  /** Narration-timed action progress. Completed actions stay at 1. */
+  actionProgress: Record<string, number>;
+  /** Scene time in seconds, for deterministic secondary motion. */
   time: number;
 }
 

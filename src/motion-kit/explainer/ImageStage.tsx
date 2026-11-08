@@ -1,18 +1,19 @@
 import React from 'react';
 import { Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { SceneBackground, SceneLayout } from '../core/SafeOverlay';
-import { activeShot, imageCameraAt, imageOffset, ImageShot } from './image-camera';
+import { TEXT_STYLES } from '../core/text-style';
+import type { TextStyleId } from '@/types/studio';
+import { activeShot, imageCameraAt, imageOffset, ImageShot, markFade, spotlightGradient } from './image-camera';
 
 const CENTER_Y = 0.48;
 const POSE_FADE_FRAMES = 10;
-const MARK_DELAY_FRAMES = 14;
-const MARK_FADE_FRAMES = 8;
 const FONT = '"Helvetica Neue", Arial, sans-serif';
-/** A mark around most of the picture points at nothing, so large boxes only get the camera move. */
+/** A spotlight on most of the picture points at nothing, so large boxes only get the camera move. */
 const MAX_MARKED_AREA = 0.14;
 const LABEL_BACKGROUND = '#111827';
 const LABEL_TEXT = '#FFFFFF';
-const HEADLINE_PLATE = 0.27;
+const HEADLINE_PLATE = 0.2;
+const HEADLINE_PLATE_END = 0.32;
 
 /** Full-frame pictures that change on spoken words: new poses, camera moves, and marked objects. */
 export const ImageStage: React.FC<React.PropsWithChildren<{
@@ -20,7 +21,11 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
   shots: ImageShot[];
   backgroundColor: string;
   accent: string;
-}>> = ({ images, shots, backgroundColor, accent, children }) => {
+  /** Older scenes pass none of these and keep their original label. */
+  textStyle?: TextStyleId;
+  labelBackground?: string;
+  labelText?: string;
+}>> = ({ images, shots, backgroundColor, accent, textStyle, labelBackground = LABEL_BACKGROUND, labelText = LABEL_TEXT, children }) => {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const camera = imageCameraAt(frame, shots, fps);
@@ -32,7 +37,7 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
     return current + ((item.pose === pose ? 1 : 0) - current) * progress;
   }, shots[0].pose === pose ? 1 : 0));
 
-  const markOpacity = interpolate(frame, [shot.from + MARK_DELAY_FRAMES, shot.from + MARK_DELAY_FRAMES + MARK_FADE_FRAMES], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const markOpacity = markFade(frame, shot, shots);
   const { box } = shot;
 
   return (
@@ -43,14 +48,15 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
             <Img key={src} src={src} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: poseOpacity[pose] }} />
           ))}
           {box && box.w * box.h <= MAX_MARKED_AREA && (
-            <div style={{ position: 'absolute', left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%`, boxSizing: 'border-box', border: `${9 / camera.scale}px solid ${accent}`, borderRadius: 18 / camera.scale, opacity: markOpacity }} />
+            <div style={{ position: 'absolute', inset: 0, background: spotlightGradient(box, width, height), opacity: markOpacity }} />
           )}
         </div>
-        {/* Pictures fill the frame, so the headline gets its own plate instead of hoping for empty space. */}
-        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to bottom, ${backgroundColor} 0%, ${backgroundColor} ${HEADLINE_PLATE * 100}%, transparent ${(HEADLINE_PLATE + 0.04) * 100}%)` }} />
+        {/* A soft veil keeps the headline readable while the picture still shows through to the top edge. */}
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to bottom, ${backgroundColor}D9 0%, ${backgroundColor}B3 ${HEADLINE_PLATE * 100}%, transparent ${HEADLINE_PLATE_END * 100}%)` }} />
       </SceneBackground>
       {box && shot.label && (
-        <div style={{ position: 'absolute', left: Math.min(width * 0.72, Math.max(width * 0.24, (box.x + box.w / 2) * width * camera.scale + offset.x)), top: Math.max(height * 0.3, box.y * height * camera.scale + offset.y - 18), transform: 'translate(-50%, -100%)', opacity: markOpacity, background: LABEL_BACKGROUND, color: LABEL_TEXT, borderRadius: 999, padding: '10px 26px', fontFamily: FONT, fontSize: width * 0.034, fontWeight: 800, whiteSpace: 'nowrap', zIndex: 5 }}>
+        <div style={{ position: 'absolute', left: Math.min(width * 0.72, Math.max(width * 0.24, (box.x + box.w / 2) * width * camera.scale + offset.x)), top: Math.max(height * 0.3, box.y * height * camera.scale + offset.y - 18), transform: 'translate(-50%, -100%)', opacity: markOpacity, background: labelBackground, color: labelText, borderRadius: 999, padding: '10px 26px', display: 'flex', alignItems: 'center', gap: 12, fontFamily: textStyle ? TEXT_STYLES[textStyle].bodyFont() : FONT, fontSize: width * 0.034, fontWeight: 800, whiteSpace: 'nowrap', zIndex: 5 }}>
+          <span style={{ width: 14, height: 14, borderRadius: '50%', background: accent }} />
           {shot.label}
         </div>
       )}

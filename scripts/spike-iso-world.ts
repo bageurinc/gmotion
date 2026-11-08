@@ -23,7 +23,8 @@ const sheetOnly = process.argv.includes('--sheet-only');
 const directory = path.join(process.cwd(), 'storage', 'spike', 'iso-world', run);
 const projectId = `iso-${run}`;
 const FPS = 30;
-const VIEW = { width: 1080, height: 1920, centerY: 0.55 };
+const look: 'flat' | 'lit' = process.argv.includes('--lit') ? 'lit' : 'flat';
+const VIEW = { width: 1080, height: 1920, centerY: 0.55, look };
 
 const rootCode = `import React from 'react';
 import { Composition, registerRoot } from 'remotion';

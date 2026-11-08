@@ -17,49 +17,36 @@ import {
   Square,
   RefreshCw,
   FolderOpen,
+  Cpu,
 } from 'lucide-react';
-import { StylePreset, AspectRatio, StudioProject, PRESET_LABELS } from '@/types/studio';
+import { StylePreset, AspectRatio, DrawingModel, StudioProject, DRAWING_MODEL_LABELS, PRESET_LABELS } from '@/types/studio';
+import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 const PRESET_OPTIONS: Array<{ id: StylePreset; label: string; description: string }> = [
-  { id: 'story-2d', label: 'Story 2D', description: 'Cerita dan penjelasan topik dengan ilustrasi per adegan.' },
+  { id: 'story-2d', label: PRESET_LABELS['story-2d'], description: 'Cerita dengan kombinasi gambar ilustrasi dan animasi SVG.' },
+  { id: 'story-svg', label: PRESET_LABELS['story-svg'], description: 'Ilustrasi vektor dan gerakan objek mengikuti cerita, tanpa gambar raster.' },
   { id: 'ads-ui', label: 'Ads', description: 'Iklan produk dengan mockup, grafik, dan tombol ajakan.' },
   { id: 'world', label: 'Isometrik', description: 'Satu dunia 3D dengan kamera menyambung. Cocok untuk benda, mesin, dan alur proses.' },
 ];
 
-const STARTER_PROMPTS = [
-  {
-    title: 'WhatsApp AI Anti-Ghosting Ads (15s)',
-    prompt:
-      'Buat iklan FB Ads 15 detik untuk aplikasi WhatsApp AI Chatbot anti-ghosting agar tim sales fast response dan closing omzet naik 320%.',
-    preset: 'ads-ui' as StylePreset,
-    ratio: '9:16' as AspectRatio,
-    badge: 'Ads',
-  },
-  {
-    title: 'Perjalanan Biji Kopi Pegunungan (15s)',
-    prompt:
-      'Ceritakan perjalanan biji kopi nusantara dari pucuk daun di kebun pegunungan berkabut hingga diseduh hangat dengan aroma memikat.',
-    preset: 'story-2d' as StylePreset,
-    ratio: '9:16' as AspectRatio,
-    badge: 'Story 2D',
-  },
-  {
-    title: 'SaaS Invoice & Auto Reminder WA (15s)',
-    prompt:
-      'Iklan motion graphic SaaS otomatisasi tagihan invoice dan reminder WhatsApp pembayaran tepat waktu untuk pemilik bisnis UMKM.',
-    preset: 'ads-ui' as StylePreset,
-    ratio: '9:16' as AspectRatio,
-    badge: 'Ads',
-  },
+const DRAWING_MODEL_OPTIONS: Array<{ id: DrawingModel; description: string }> = [
+  { id: 'gemini', description: 'Model bawaan dengan biaya lebih tinggi.' },
+  { id: 'deepseek-flash', description: 'Biaya pembuatan video lebih rendah.' },
 ];
+
+const STARTER_FILTERS: Array<StylePreset | 'all'> = ['all', 'story-2d', 'story-svg', 'world', 'ads-ui'];
 
 export default function HomePage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState('');
+  const [starterFilter, setStarterFilter] = useState<StylePreset | 'all'>('all');
   const [preset, setPreset] = useState<StylePreset>('ads-ui');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
+  const [drawingModel, setDrawingModel] = useState<DrawingModel>('gemini');
+  const starters = STARTER_PROMPTS.filter((item) => starterFilter === 'all' || item.preset === starterFilter);
   const [isGenerating, setIsGenerating] = useState(false);
   const [recentProjects, setRecentProjects] = useState<StudioProject[]>([]);
+  const [credits, setCredits] = useState<number | null>(null);
 
   useEffect(() => {
     fetch('/api/projects')
@@ -67,6 +54,10 @@ export default function HomePage() {
       .then((data) => {
         if (data.projects) setRecentProjects(data.projects);
       })
+      .catch(() => {});
+    fetch('/api/me')
+      .then((res) => res.json())
+      .then((data) => setCredits(data.user?.credits ?? null))
       .catch(() => {});
   }, []);
 
@@ -90,10 +81,15 @@ export default function HomePage() {
           prompt: p,
           preset: pr,
           aspectRatio: r,
+          drawingModel,
         }),
       });
 
       const data = await res.json();
+      if (data.code === 'insufficient_credits') {
+        router.push('/billing');
+        return;
+      }
       if (data.project) {
         router.push(`/studio/${data.project.id}`);
       } else {
@@ -133,6 +129,11 @@ export default function HomePage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {credits !== null && (
+            <Link href="/billing" className="text-xs font-semibold text-emerald-300 transition hover:text-emerald-200">
+              {credits} kredit
+            </Link>
+          )}
           <a
             href="https://github.com/bageurinc/gmotion"
             target="_blank"
@@ -190,7 +191,7 @@ export default function HomePage() {
                 <Layers className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Style Preset:</span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {PRESET_OPTIONS.map((option) => (
                   <button
                     key={option.id}
@@ -203,9 +204,9 @@ export default function HomePage() {
                         : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full mb-1">
+                    <div className="flex items-center justify-between gap-2 w-full mb-1">
                       <span className="text-xs font-bold text-white">{option.label}</span>
-                      {preset === option.id && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                      {preset === option.id && <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />}
                     </div>
                     <p className="text-[11px] text-slate-400 leading-tight">{option.description}</p>
                   </button>
@@ -213,6 +214,7 @@ export default function HomePage() {
               </div>
             </div>
 
+            <div className="space-y-6">
             {/* Aspect Ratio Selector */}
             <div className="space-y-2.5">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -246,6 +248,36 @@ export default function HomePage() {
                 })}
               </div>
             </div>
+
+            {/* Drawing Model Selector */}
+            <div className="space-y-2.5">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-violet-400" />
+                <span>Model AI:</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {DRAWING_MODEL_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={drawingModel === option.id}
+                    onClick={() => setDrawingModel(option.id)}
+                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col ${
+                      drawingModel === option.id
+                        ? 'bg-emerald-500/10 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 w-full mb-1">
+                      <span className="text-xs font-bold text-white">{DRAWING_MODEL_LABELS[option.id]}</span>
+                      {drawingModel === option.id && <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />}
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-tight">{option.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            </div>
           </div>
 
           {/* Action Button & Loading Progress */}
@@ -273,17 +305,33 @@ export default function HomePage() {
 
         {/* 1-Click Starter Prompts */}
         <div className="w-full mt-12 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Contoh Prompt Siap Pakai (1-Click Starters):</span>
+              <span>Contoh Prompt Siap Pakai ({starters.length}):</span>
             </h3>
+            <div className="flex flex-wrap gap-2">
+              {STARTER_FILTERS.map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setStarterFilter(filter)}
+                  className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition ${
+                    starterFilter === filter
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {filter === 'all' ? 'Semua' : PRESET_LABELS[filter]}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {STARTER_PROMPTS.map((item, idx) => (
+            {starters.map((item) => (
               <div
-                key={idx}
+                key={item.title}
                 onClick={() => {
                   setPrompt(item.prompt);
                   setPreset(item.preset);
@@ -294,7 +342,7 @@ export default function HomePage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 uppercase">
-                      {item.badge}
+                      {PRESET_LABELS[item.preset]}
                     </span>
                     <span className="text-[10px] font-mono text-slate-500">{item.ratio}</span>
                   </div>
@@ -335,7 +383,7 @@ export default function HomePage() {
                         {PRESET_LABELS[p.storyboard.preset]}
                       </span>
                       <span className="text-[10px] font-mono text-slate-500">
-                        {p.storyboard.aspectRatio}
+                        {DRAWING_MODEL_LABELS[p.drawingModel ?? 'gemini']} · {p.storyboard.aspectRatio}
                       </span>
                     </div>
                     <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition truncate">

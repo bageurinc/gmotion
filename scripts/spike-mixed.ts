@@ -11,8 +11,9 @@ import { generateMainVideoCode } from '../src/lib/pipeline/coder-agent';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '../src/lib/pipeline/concurrency';
 import { generateStoryboard } from '../src/lib/pipeline/director-agent';
 import { generateSceneAudio } from '../src/lib/pipeline/tts-engine';
-import { stillStretches } from '../src/lib/render/motion-check';
+import { frameChanges, LONGEST_STILL_SECONDS as LONGEST_ALLOWED_SECONDS, STILL_STEP_SECONDS as STEP_SECONDS, STILL_THRESHOLD, stillStretches } from '../src/lib/render/motion-check';
 import { renderProvider } from '../src/lib/render/render-service';
+import { measureStillness } from '../src/lib/render/scene-check';
 import { saveProject } from '../src/lib/storage/project-store';
 import type { StudioProject } from '../src/types/studio';
 
@@ -26,13 +27,10 @@ const voice = argument('voice', 'Puck');
 const checkOnly = argument('check', '');
 const seconds = (startedAt: number) => Math.round((Date.now() - startedAt) / 1000) + 's';
 
-const STEP_SECONDS = 0.5;
-const STILL_THRESHOLD = 6;
-const LONGEST_ALLOWED_SECONDS = 4;
 const COMPOSITOR = path.join(process.cwd(), 'node_modules', '@remotion', 'compositor-darwin-arm64');
 
 /** Compares sampled frames with the headline and captions cropped out, since text changes constantly. */
-async function measureStillness(video: string, durationSeconds: number) {
+async function measureVideoStillness(video: string, durationSeconds: number) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gmotion-check-'));
   const samples: Buffer[] = [];
   for (let time = 0; time < durationSeconds - 0.1; time += STEP_SECONDS) {
@@ -41,7 +39,7 @@ async function measureStillness(video: string, durationSeconds: number) {
     samples.push(await sharp(file).extract({ left: 0, top: 520, width: 1080, height: 720 }).resize(120, 80).greyscale().raw().toBuffer());
   }
   fs.rmSync(dir, { recursive: true });
-  const changes = samples.slice(1).map((sample, index) => sample.reduce((sum, value, position) => sum + Math.abs(value - samples[index][position]), 0) / sample.length);
+  const changes = frameChanges(samples);
   const sorted = [...changes].sort((a, b) => a - b);
   const quantile = (share: number) => sorted[Math.floor((sorted.length - 1) * share)].toFixed(2);
   console.log('MIXED change', `p10 ${quantile(0.1)}`, `p25 ${quantile(0.25)}`, `p50 ${quantile(0.5)}`, `p75 ${quantile(0.75)}`, `p90 ${quantile(0.9)}`);
@@ -51,19 +49,28 @@ async function measureStillness(video: string, durationSeconds: number) {
 }
 
 async function main() {
+  const measure = argument('measure', '');
+  if (measure) {
+    const project = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'storage', 'projects', measure, 'project.json'), 'utf8')) as StudioProject;
+    const startedAt = Date.now();
+    const stretches = await measureStillness(project);
+    const total = stretches.reduce((sum, item) => sum + item.seconds, 0);
+    console.log('MIXED measure', measure, project.storyboard.preset, seconds(startedAt), `${total.toFixed(1)}s still`, stretches.map((item) => `${item.from.toFixed(1)}-${item.to.toFixed(1)}`).join(' '));
+    return;
+  }
   const rerender = argument('rerender', '');
   if (rerender) {
     const project = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'storage', 'projects', rerender, 'project.json'), 'utf8')) as StudioProject;
     const renderedAt = Date.now();
     const { outputPath } = await renderProvider.renderProject(project);
     console.log('MIXED render', seconds(renderedAt));
-    await measureStillness(outputPath, project.storyboard.scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0) / project.storyboard.fps);
+    await measureVideoStillness(outputPath, project.storyboard.scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0) / project.storyboard.fps);
     return;
   }
   if (checkOnly) {
     const video = path.join(process.cwd(), 'storage', 'projects', checkOnly, 'exports', 'video.mp4');
     const project = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'storage', 'projects', checkOnly, 'project.json'), 'utf8')) as StudioProject;
-    await measureStillness(video, project.storyboard.scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0) / project.storyboard.fps);
+    await measureVideoStillness(video, project.storyboard.scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0) / project.storyboard.fps);
     return;
   }
 
@@ -126,7 +133,7 @@ async function main() {
   const { outputPath } = await renderProvider.renderProject(project);
   const duration = storyboard.scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0) / storyboard.fps;
   console.log('MIXED render', seconds(renderedAt), 'total', seconds(startedAt), 'video', `${duration.toFixed(1)}s`, projectId);
-  await measureStillness(outputPath, duration);
+  await measureVideoStillness(outputPath, duration);
 }
 
 main().catch((error) => {

@@ -38,6 +38,13 @@ describe('sceneImagePrompt', () => {
     expect(prompt).toContain(storyboard.scenes[0].visualPrompt);
     expect(prompt).toContain('no text');
   });
+
+  it('asks for a real place from edge to edge instead of empty bands', () => {
+    const prompt = sceneImagePrompt(storyboard, 0);
+    expect(prompt).toContain('from edge to edge');
+    expect(prompt).toContain('Never end the picture with a flat strip');
+    expect(prompt).not.toContain('empty background');
+  });
 });
 
 describe('blankCanvas', () => {

@@ -98,13 +98,27 @@ function isAllowedImport(source: string): boolean {
   return ALLOWED_IMPORTS.has(source) || source.startsWith('./') || source.startsWith('../');
 }
 
-function inspectAst(ast: AstNode, fileName: string, errors: string[]) {
+function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: boolean) {
   const declared = declaredNames(ast);
   const report = (message: string) => {
     if (!errors.includes(message)) errors.push(message);
   };
 
   walk(ast, (node, parent) => {
+    if (svgOnly && node.type === 'ImportSpecifier') {
+      const imported = node.imported as AstNode;
+      if (['Img', 'Image', 'ImageStage', 'Video', 'OffthreadVideo', 'AnimatedImage'].includes(String(imported.name ?? imported.value))) {
+        report(`Full SVG does not allow image or video imports in ${fileName}.`);
+      }
+    }
+    if (svgOnly && node.type === 'Literal' && typeof node.value === 'string') {
+      const imageUrl = [...node.value.matchAll(/url\s*\(([^)]*)\)/gi)]
+        .some((match) => !match[1].trim().replace(/^["']/, '').startsWith('#'));
+      if (imageUrl || /(?:\.(?:png|jpe?g|webp|gif|avif|bmp)(?:[?#]|$)|data:image)/i.test(node.value)) {
+        report(`Full SVG does not allow image assets or CSS image URLs in ${fileName}.`);
+      }
+    }
+
     if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
       const source = (node.source as AstNode | null)?.value;
       if (typeof source === 'string' && !isAllowedImport(source)) {
@@ -137,7 +151,7 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[]) {
 
     if (node.type === 'CallExpression' && isElementFactory(node)) {
       const element = (node.arguments as AstNode[])[0];
-      if (element?.type === 'Literal' && FORBIDDEN_ELEMENTS.has(element.value as string)) {
+      if (element?.type === 'Literal' && (FORBIDDEN_ELEMENTS.has(element.value as string) || (svgOnly && ['img', 'image', 'video', 'canvas', 'feImage'].includes(String(element.value))))) {
         report(`Forbidden element <${element.value}> in ${fileName}.`);
       }
     }
@@ -154,7 +168,7 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[]) {
   });
 }
 
-export function validateSceneCode(code: string, fileName = 'Scene.tsx'): ValidationResult {
+export function validateSceneCode(code: string, fileName = 'Scene.tsx', options: { svgOnly?: boolean } = {}): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -173,7 +187,7 @@ export function validateSceneCode(code: string, fileName = 'Scene.tsx'): Validat
       logLevel: 'silent',
       tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
     });
-    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors);
+    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false);
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     errors.push(`Export compilation error in ${fileName}: ${errorMsg}`);

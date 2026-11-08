@@ -40,7 +40,11 @@ npx tsx --env-file=.env scripts/spike-world.ts --run hp --topic "Aman nggak sih 
 | `src/lib/explainer/` | Dunia 3D untuk gaya Isometrik, dan pipeline ilustrasi untuk Story 2D dan Ads |
 | `src/lib/render/` | Bundling, export MP4, cek crash |
 | `src/lib/audio/` | Sintesis musik dan SFX, timing subtitle |
+| `src/lib/auth/` | Login Google, sesi, dan akses project |
+| `src/lib/billing/` | Paket kredit, QRIS Xendit, dan saldo |
+| `src/lib/db/` | Klien D1 dan SQLite lokal |
 | `src/lib/security/` | Skema input dan validasi nama |
 | `src/motion-kit/` | Komponen video yang boleh dipakai adegan |
 | `src/components/studio/` | Layar draf, editor, progres |
-| `storage/` | Project dan hasil uji lokal, tidak masuk git |
+| `migrations/` | Skema D1 |
+| `storage/` | Project, database dev, dan hasil uji lokal, tidak masuk git |

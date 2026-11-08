@@ -265,7 +265,7 @@ export const WorldVideo: React.FC<{ world: WorldVideoProps; Asset: React.Compone
     <AbsoluteFill style={{ background: script.palette.ground, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', left: 0, top: 0, width: 1000, height: 1000, transformOrigin: '0 0', transform: `translate(${translateX}px, ${translateY}px) scale(${unit})` }}>
         <div ref={artRef} style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})` }}>
-          <Asset viewOpacity={viewOpacity} highlight={highlight} time={frame / fps} />
+          <Asset viewOpacity={viewOpacity} highlight={highlight} actionProgress={{}} time={frame / fps} />
           <svg data-flow viewBox="0 0 1000 1000" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
             {manifest.flows.filter((flow) => flow.view === beat.view).map((flow) => (
               <Flow key={flow.id} d={flow.d} color={script.palette.accent} frame={frame} />

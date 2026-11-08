@@ -70,6 +70,16 @@ export function ghostAt(frame: number, windows: Array<{ from: number; to: number
   )), 0);
 }
 
+const PULSE_SECONDS = 1;
+const PULSE_SIZE = 0.035;
+const PULSE_FADE_FRAMES = 12;
+
+/** Scale of a soft body in focus. A slow beat points at what the line is about. */
+export function pulseAt(frame: number, from: number, fps: number): number {
+  const fade = interpolate(frame, [from, from + PULSE_FADE_FRAMES], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return 1 + PULSE_SIZE * fade * Math.sin((Math.PI * (frame - from)) / (fps * PULSE_SECONDS)) ** 2;
+}
+
 /** Pure projection, so DOM labels can follow 3D points without reading the WebGL camera. */
 export function projectIso(
   point: Vec3,

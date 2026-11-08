@@ -3,7 +3,12 @@ import { VOICE_OPTIONS } from './voices';
 import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
 
 export const MAX_DRAFT_SCENES = 12;
-const WORDS_PER_SECOND = 2.4;
+// Measured from 283 narrated scenes in storage (Gemini TTS, Bahasa Indonesia): about 2.08 words/sec.
+export const WORDS_PER_SECOND = 2.1;
+const SCENE_PADDING_SECONDS = 0.35;
+const MIN_SCENE_SECONDS = 3;
+/** A draft within this fraction of the requested duration counts as on target. */
+export const DURATION_TOLERANCE = 0.15;
 
 export const DraftUpdateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -62,7 +67,78 @@ export function firstSceneWithoutNarration(scenes: Pick<SceneSpec, 'voiceoverTex
 
 export function estimateNarrationSeconds(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return words === 0 ? 0 : Math.max(3, words / WORDS_PER_SECOND + 0.35);
+  return words === 0 ? 0 : Math.max(MIN_SCENE_SECONDS, words / WORDS_PER_SECOND + SCENE_PADDING_SECONDS);
+}
+
+export function estimateStoryboardSeconds(scenes: Pick<SceneSpec, 'voiceoverText'>[]): number {
+  return scenes.reduce((sum, scene) => sum + estimateNarrationSeconds(scene.voiceoverText), 0);
+}
+
+const countWords = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+const DURATION_UNIT = String.raw`(\d+(?:[.,]\d+)?)\s*(detik|dtk|seconds?|secs?|s|menit|mnt|minutes?|min)\b`;
+// A length counts only when it is about the video, so "rebus telur 7 menit" is not a target.
+const DURATION_PATTERNS = [
+  new RegExp(String.raw`(?:video|durasi(?:nya)?|berdurasi|panjang(?:nya)?|total|maks(?:imal)?|max|target|reels?|tiktok|shorts?|klip|clip|iklan|promo|konten|animasi|explainer)\D{0,20}?` + DURATION_UNIT, 'i'),
+  new RegExp(String.raw`^\s*` + DURATION_UNIT, 'i'),
+  new RegExp(DURATION_UNIT + String.raw`\s*(?:video|reels?|klip|clip)\b`, 'i'),
+];
+
+/**
+ * Reads an explicit video length from the prompt, such as "video 30 detik" or "durasi 1,5 menit".
+ * Returns null when the prompt states no length for the video or an implausible one.
+ */
+export function parseTargetDurationSeconds(prompt: string): number | null {
+  for (const pattern of DURATION_PATTERNS) {
+    const match = prompt.match(pattern);
+    if (!match) continue;
+    const value = Number(match[1].replace(',', '.'));
+    const seconds = /^m/i.test(match[2]) ? value * 60 : value;
+    return seconds >= 8 && seconds <= 300 ? Math.round(seconds) : null;
+  }
+  return null;
+}
+
+export interface DurationBudget {
+  targetSeconds: number;
+  minWords: number;
+  maxWords: number;
+  minScenes: number;
+  maxScenes: number;
+}
+
+/** Converts a target length into the narration word count and scene range that produce it. */
+export function durationBudget(targetSeconds: number): DurationBudget {
+  const scenesFor = (secondsPerScene: number) =>
+    Math.min(MAX_DRAFT_SCENES, Math.max(3, Math.round(targetSeconds / secondsPerScene)));
+  const minScenes = scenesFor(9);
+  const maxScenes = Math.max(minScenes, scenesFor(5));
+  // Each scene adds padding, so the spoken words get what is left of the target.
+  const wordsFor = (seconds: number, scenes: number) =>
+    Math.max(scenes * 3, Math.round((seconds - scenes * SCENE_PADDING_SECONDS) * WORDS_PER_SECOND));
+  const midScenes = Math.round((minScenes + maxScenes) / 2);
+  return {
+    targetSeconds,
+    minWords: wordsFor(targetSeconds * (1 - DURATION_TOLERANCE * 0.6), midScenes),
+    maxWords: wordsFor(targetSeconds * (1 + DURATION_TOLERANCE * 0.6), midScenes),
+    minScenes,
+    maxScenes,
+  };
+}
+
+export interface DurationFit {
+  estimatedSeconds: number;
+  words: number;
+  onTarget: boolean;
+}
+
+export function checkDurationFit(scenes: Pick<SceneSpec, 'voiceoverText'>[], targetSeconds: number): DurationFit {
+  const estimatedSeconds = estimateStoryboardSeconds(scenes);
+  return {
+    estimatedSeconds,
+    words: scenes.reduce((sum, scene) => sum + countWords(scene.voiceoverText), 0),
+    onTarget: Math.abs(estimatedSeconds - targetSeconds) <= targetSeconds * DURATION_TOLERANCE,
+  };
 }
 
 export function readyScenes(project: Pick<StudioProject, 'storyboard' | 'sceneProgress'>): SceneSpec[] {

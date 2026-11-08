@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IsoObject, IsoPlan } from '@/lib/explainer/iso-world';
 import { resolveIsoPlan } from '@/lib/explainer/iso-world';
-import { applyStory, keepStatedNumbers } from '@/lib/explainer/iso-plan';
+import { applyStory, clampLobes, keepStatedNumbers } from '@/lib/explainer/iso-plan';
 import { StoredPresetSchema, StylePresetSchema, usesWorldEngine } from '@/types/studio';
 import type { Storyboard } from '@/types/studio';
 import { validateSceneCode } from './code-validator';
-import { worldMainVideoCode } from './world-video';
+import { worldMainVideoCode, worldPictureVideoCode } from './world-video';
 
 vi.mock('@/lib/explainer/asset-generator', () => ({ callChat: vi.fn() }));
 
@@ -88,7 +88,44 @@ describe('applyStory', () => {
   });
 });
 
+describe('clampLobes', () => {
+  it('pulls a stray lobe back into the unit box', () => {
+    const raw = { objects: [{ lobes: [{ at: [0, 1.2, 0], to: [-1.1, 0, 0.5], r: 0.2 }] }] };
+    expect(clampLobes(raw)).toEqual({ objects: [{ lobes: [{ at: [0, 1, 0], to: [-1, 0, 0.5], r: 0.2 }] }] });
+  });
+
+  it('leaves unusable input for the schema to reject', () => {
+    expect(clampLobes(null)).toBeNull();
+    expect(clampLobes({ objects: [{ lobes: [{ at: 'x' }] }] })).toEqual({ objects: [{ lobes: [{ at: 'x' }] }] });
+  });
+});
+
 describe('keepStatedNumbers', () => {
+  it('drops screen lines with an unstated number, and keeps the ones the narration said', () => {
+    const screen = {
+      face: 'left' as const, background: '#FFFFFF', ink: '#111111', accent: '#117A4B',
+      states: [{
+        fromBeat: 0,
+        title: 'Promo 50%',
+        items: [
+          { kind: 'stat' as const, text: 'Total', value: 'Rp 99.000' },
+          { kind: 'stat' as const, text: 'Terisi', value: '80%' },
+          { kind: 'row' as const, text: 'Kopi', value: 'Rp 5.000' },
+          { kind: 'row' as const, text: '3 item terjual', value: null },
+          { kind: 'button' as const, text: 'Bayar', value: null },
+        ],
+      }],
+    };
+    const objects = [{ id: 'hp', label: 'HP', shape: 'box' as const, size: [2, 4, 1] as [number, number, number], color: '#222222', on: null, x: 0, z: 0, screen }];
+    const [state] = keepStatedNumbers({ ...plan, objects, beats: [beat('Terisi 80 persen')] }, 'Topik').objects[0].screen!.states;
+    expect(state.title).toBe('Layar');
+    expect(state.items).toEqual([
+      { kind: 'stat', text: 'Terisi', value: '80%' },
+      { kind: 'row', text: 'Kopi', value: null },
+      { kind: 'button', text: 'Bayar', value: null },
+    ]);
+  });
+
   it('removes a whole unstated token and keeps stated numbers', () => {
     const headline = (text: string, topic: string) =>
       keepStatedNumbers({ ...plan, beats: [{ ...beat('Terisi'), headline: text }] }, topic).beats[0].headline;
@@ -125,12 +162,41 @@ describe('presets', () => {
     expect(usesWorldEngine('ads')).toBe(true);
     expect(usesWorldEngine('world')).toBe(true);
     expect(usesWorldEngine('story-2d')).toBe(false);
+    expect(usesWorldEngine('story-svg')).toBe(false);
     expect(usesWorldEngine('ads-ui')).toBe(false);
   });
 
   it('refuses the old names for new projects but still reads them from saved ones', () => {
-    expect(StylePresetSchema.options).toEqual(['story-2d', 'ads-ui', 'world']);
+    expect(StylePresetSchema.options).toEqual(['story-2d', 'story-svg', 'ads-ui', 'world']);
     expect(StylePresetSchema.safeParse('story').success).toBe(false);
     expect(StoredPresetSchema.safeParse('story').success).toBe(true);
+  });
+});
+
+describe('painted world composition', () => {
+  it('writes code the validator accepts, with the pictures as plain data', () => {
+    const picturePlan = {
+      look: 'bright' as const,
+      unit: '%',
+      palette: { ground: '#F4EEE2', hud: '#1F4D3A', hudText: '#FFFFFF', accent: '#F2542D', ink: '#1F2A37' },
+      setting: 'A small shop counter seen in isometric view, with a phone on a stand.',
+      parts: [{ id: 'hp', label: 'HP', find: 'the phone on the counter' }],
+      details: [],
+      flows: [],
+      beats: [beat('Satu'), beat('Dua'), beat('Tiga')],
+    };
+    const picture = {
+      images: ['/api/projects/proj_1/assets/iso-world.png'],
+      tops: [0.28],
+      shots: [{ from: 0, pose: 0, box: null, label: null }],
+      flows: [],
+      background: '#F4EEE2',
+      accent: '#F2542D',
+      ink: '#1F2A37',
+    };
+    const code = worldPictureVideoCode(storyboard, picturePlan, picture);
+    expect(validateSceneCode(code, 'MainVideo.tsx').valid).toBe(true);
+    expect(code).toContain('IsoPictureVideo');
+    expect(code).toContain('iso-world.png');
   });
 });

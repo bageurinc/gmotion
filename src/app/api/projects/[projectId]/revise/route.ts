@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RevisionInputSchema } from '@/lib/security/project-input';
-import { getProject, saveProject } from '@/lib/storage/project-store';
+import { requireProject } from '@/lib/auth/project-access';
+import { saveProject } from '@/lib/storage/project-store';
 import { reviseSceneCode } from '@/lib/pipeline/coder-agent';
+import { findSceneCrashes, type RevisionCheckOutcome } from '@/lib/render/scene-check';
+import { planSceneRevision, reviseScene } from '@/lib/pipeline/scene-revision';
+import { generateSceneAudio } from '@/lib/pipeline/tts-engine';
 import { ProjectChatMessage, usesWorldEngine } from '@/types/studio';
+
+function revisionReply(title: string, fileName: string, outcome: RevisionCheckOutcome | 'unchanged'): string {
+  switch (outcome) {
+    case 'unchanged':
+      return `AI belum berhasil mengubah **${title}** (${fileName}). Kode tidak berubah, coba tulis permintaannya dengan cara lain.`;
+    case 'ok':
+      return `Perubahan pada **${title}** (${fileName}) sudah diterapkan dan lolos cek render.`;
+    case 'repaired':
+      return `Perubahan pada **${title}** (${fileName}) sempat membuat adegan error saat dirender, lalu diperbaiki otomatis dan lolos cek render. Periksa lagi hasilnya di pratinjau.`;
+    case 'reverted':
+      return `Perubahan pada **${title}** (${fileName}) membuat adegan error saat dirender dan gagal diperbaiki, jadi adegan dikembalikan ke versi sebelumnya. Coba permintaan yang lebih sederhana.`;
+    case 'unchecked':
+      return `Perubahan pada **${title}** (${fileName}) sudah diterapkan, tetapi cek render tidak bisa dijalankan. Error, jika ada, akan terlihat saat export.`;
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -10,11 +29,9 @@ export async function POST(
 ) {
   try {
     const { projectId } = await params;
-    const project = getProject(projectId);
-
-    if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-    }
+    const access = await requireProject(projectId);
+    if ('response' in access) return access.response;
+    const { project } = access;
 
     if (project.status === 'generating') {
       return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
@@ -47,22 +64,39 @@ export async function POST(
       }
     }
 
-    const sceneIndex = project.storyboard.scenes.findIndex((s) => s.id === targetSceneId);
-    const sceneSpec = project.storyboard.scenes[sceneIndex >= 0 ? sceneIndex : 0];
-    const fileName = `Scene${(sceneIndex >= 0 ? sceneIndex : 0) + 1}.tsx`;
-    const currentCode = project.files[fileName] || '';
+    const index = Math.max(0, project.storyboard.scenes.findIndex((s) => s.id === targetSceneId));
+    const sceneSpec = project.storyboard.scenes[index];
+    const fileName = `Scene${index + 1}.tsx`;
+    const svgOnly = project.storyboard.preset === 'story-svg';
 
-    console.log(`[API /revise] Revising ${fileName} for project ${projectId}... Instruction: "${userMessage}"`);
+    console.log(`[API /revise] Revising ${fileName} for project ${projectId}...`);
 
-    const updatedCode = await reviseSceneCode(
-      currentCode,
-      sceneSpec,
-      userMessage,
-      project.storyboard.palette
-    );
-
-    // Update virtual files
-    project.files[fileName] = updatedCode;
+    const revision = await reviseScene(project, index, userMessage, {
+      plan: planSceneRevision,
+      speak: generateSceneAudio,
+      reviseCode: (code, scene, instruction) =>
+        reviseSceneCode(code, scene, instruction, project.storyboard.palette, { svgOnly }),
+      check: {
+        findCrashes: findSceneCrashes,
+        repair: (current, crash) =>
+          reviseSceneCode(
+            current.files[fileName],
+            current.storyboard.scenes[index],
+            `Fix this runtime crash and keep the same visual: ${crash.message}`,
+            current.storyboard.palette,
+            { svgOnly }
+          ),
+      },
+    });
+    const { outcome } = revision;
+    const revised = revision.project;
+    const revisedScene = revised.storyboard.scenes[index];
+    const notes = [
+      revision.narrationChanged
+        ? `Narasi diganti dan suaranya dibuat ulang, durasi adegan kini ${(revisedScene.durationInFrames / (revised.storyboard.fps || 30)).toFixed(1)} detik.`
+        : '',
+      revision.headlineChanged ? `Judul adegan menjadi "${revisedScene.kineticHeadline}".` : '',
+    ].filter(Boolean).join(' ');
 
     // Append to chat history
     const userChat: ProjectChatMessage = {
@@ -76,20 +110,20 @@ export async function POST(
     const assistantChat: ProjectChatMessage = {
       id: `msg_ai_${Date.now()}`,
       sender: 'assistant',
-      content: `Perubahan pada **${sceneSpec.title}** (${fileName}) telah diterapkan! Kode telah diperbarui dan langsung tayang di Live Player.`,
+      content: [revisionReply(sceneSpec.title, fileName, outcome), notes].filter(Boolean).join(' '),
       timestamp: Date.now(),
       targetedSceneId: targetSceneId,
     };
 
-    project.chatHistory.push(userChat, assistantChat);
-    project.updatedAt = Date.now();
+    revised.chatHistory = [...project.chatHistory, userChat, assistantChat];
+    revised.updatedAt = Date.now();
 
-    saveProject(project);
+    saveProject(revised);
 
     return NextResponse.json({
-      project,
+      project: revised,
       updatedFileName: fileName,
-      message: `Scene ${fileName} revised successfully`,
+      revisionOutcome: outcome,
     });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Failed to revise scene';

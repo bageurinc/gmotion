@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { applyDraftUpdate, DraftUpdateSchema } from '@/lib/pipeline/draft';
-import { getProject, saveProject } from '@/lib/storage/project-store';
+import { requireProject } from '@/lib/auth/project-access';
+import { saveProject } from '@/lib/storage/project-store';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const project = getProject(projectId);
-  if (!project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-  }
+  const access = await requireProject(projectId);
+  if ('response' in access) return access.response;
+  const { project } = access;
   if (project.status !== 'draft') {
     return NextResponse.json({ error: 'Draf ini sudah diproses dan tidak bisa diubah lagi.' }, { status: 409 });
   }

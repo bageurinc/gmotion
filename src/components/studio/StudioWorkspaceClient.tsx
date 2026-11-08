@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
-import { PRESET_LABELS, StudioProject, usesWorldEngine } from '@/types/studio';
+import { DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, usesWorldEngine } from '@/types/studio';
+import { readExportStream } from '@/lib/render/export-stream';
 import { GenerationProgress } from './GenerationProgress';
 
 const RemotionPreviewPlayer = dynamic(
@@ -147,31 +148,28 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   const handleStartExport = async () => {
     setIsExporting(true);
     setShowExportModal(true);
-    setExportProgress(10);
+    setExportProgress(0);
 
     try {
-      const progressTimer = setInterval(() => {
-        setExportProgress((prev) => (prev < 90 ? prev + 15 : prev));
-      }, 1200);
-
       const res = await fetch(`/api/projects/${project.id}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ safeAreaPlatform: project.safeAreaPlatform || 'tiktok' }),
       });
-      clearInterval(progressTimer);
-
-      const data = await res.json();
-      if (data.exportVideoUrl) {
-        setExportProgress(100);
-        setExportUrl(data.exportVideoUrl);
-        setProject((prev) => ({ ...prev, exportVideoUrl: data.exportVideoUrl }));
-      } else {
-        alert(data.error || 'Export failed');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Export gagal');
       }
+      // 100 is reserved for a finished file, because the last frames still need encoding.
+      const result = await readExportStream(res, (progress) => setExportProgress(Math.min(progress, 99)));
+      const exportVideoUrl = result.exportVideoUrl as string;
+      setExportProgress(100);
+      setExportUrl(exportVideoUrl);
+      setProject((prev) => ({ ...prev, exportVideoUrl }));
     } catch (err) {
       console.error('Export error:', err);
-      alert('Gagal mengekspor video');
+      setShowExportModal(false);
+      alert(err instanceof Error ? err.message : 'Gagal mengekspor video');
     } finally {
       setIsExporting(false);
     }
@@ -199,6 +197,9 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
             </span>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
               {project.storyboard.aspectRatio}
+            </span>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              {DRAWING_MODEL_LABELS[project.drawingModel ?? 'gemini']}
             </span>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 flex items-center gap-1">
               <Clock className="w-3 h-3" />
@@ -515,7 +516,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                   />
                 </div>
                 <span className="text-xs font-mono text-emerald-400 font-bold">
-                  {exportProgress}% Selesai
+                  {exportProgress === 0 ? 'Menyiapkan video...' : `${exportProgress}% Selesai`}
                 </span>
               </>
             ) : (

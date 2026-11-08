@@ -1,3 +1,4 @@
+import { ASSET_SYSTEM_PROMPT, CRITIC_SYSTEM_PROMPT } from '@/lib/explainer/asset-generator';
 import { describe, expect, it } from 'vitest';
 import { composeAssetScene } from '@/lib/explainer/scene-generator';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
@@ -40,6 +41,14 @@ export const Asset = ({ viewOpacity, highlight }) => (
 export default Asset;`;
 
 const response = `\`\`\`json\n${JSON.stringify(manifest)}\n\`\`\`\n\`\`\`tsx\n${code}\n\`\`\``;
+
+describe('bleed and setting rules', () => {
+  it('asks for a real setting that reaches the frame edges', () => {
+    expect(ASSET_SYSTEM_PROMPT).toContain('x=-1000 to x=2000');
+    expect(ASSET_SYSTEM_PROMPT).toContain('A plain empty backdrop is a failure');
+    expect(CRITIC_SYSTEM_PROMPT).toContain('plain backdrop with no setting');
+  });
+});
 
 describe('explainer asset contract', () => {
   it('accepts a topic-neutral manifest', () => {
@@ -97,8 +106,11 @@ describe('artwork fit', () => {
     expect((200 + 160) * fit.scale + fit.offsetY).toBeCloseTo(500);
   });
 
-  it('limits how far oversized artwork shrinks', () => {
-    expect(fitArtwork({ x: -2000, y: 0, width: 5000, height: 900 }).scale).toBe(0.75);
+  it('fits only the part on the canvas, so bleeding ground does not shrink the subject', () => {
+    const fit = fitArtwork({ x: -1000, y: 40, width: 3000, height: 1960 });
+    expect(fit.scale).toBeCloseTo(0.96);
+    expect(fit.offsetX).toBeCloseTo(20);
+    expect(fit.offsetY).toBeCloseTo(0.8);
   });
 
   it('keeps a zoomed view inside the artwork', () => {

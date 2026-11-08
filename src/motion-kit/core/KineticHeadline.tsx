@@ -3,7 +3,9 @@
 import React from 'react';
 import { contrastRatio } from '../../lib/pipeline/anti-slop';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
+import type { TextStyleId } from '@/types/studio';
 import { SafeOverlay } from './SafeOverlay';
+import { TEXT_STYLES, toSentenceCase, wordMotion } from './text-style';
 
 export interface KineticHeadlineProps {
   text: string;
@@ -17,6 +19,8 @@ export interface KineticHeadlineProps {
   align?: 'left' | 'center' | 'right';
   className?: string;
   style?: React.CSSProperties;
+  /** The video's type style. Without it the headline keeps the original plain look. */
+  textStyle?: TextStyleId;
 }
 
 export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
@@ -24,19 +28,21 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
   highlightWords = [],
   highlightColor = '#38BDF8',
   textColor = '#FFFFFF',
-  fontSize = 54,
+  fontSize,
   badgeText,
   badgeBgColor = 'rgba(56, 189, 248, 0.15)',
   badgeTextColor = '#38BDF8',
   align = 'center',
   className = '',
   style,
+  textStyle,
 }) => {
+  const look = textStyle ? TEXT_STYLES[textStyle] : null;
   const hasDarkText = /^#[0-9a-fA-F]{6}$/.test(textColor) && contrastRatio(textColor, '#000000') < 7;
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const words = text.split(' ');
+  const words = (look?.sentenceCase ? toSentenceCase(text) : text).split(' ');
 
   // Badge spring entrance
   const badgeSpring = spring({
@@ -101,8 +107,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
 
       <h1
         style={{
-          fontSize,
-          fontWeight: 900,
+          fontSize: fontSize ?? look?.headlineSize ?? 54,
+          fontFamily: look?.headlineFont(),
+          fontWeight: look?.headlineWeight ?? 900,
           lineHeight: 1.15,
           color: textColor,
           margin: 0,
@@ -113,7 +120,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
           flexWrap: 'wrap',
           justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
           gap: '0.28em',
-          letterSpacing: '-0.02em',
+          letterSpacing: look?.letterSpacing ?? '-0.02em',
         }}
       >
         {words.map((word, i) => {
@@ -142,8 +149,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
                 maxWidth: '100%',
                 minWidth: 0,
                 overflowWrap: 'anywhere',
-                transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`,
-                opacity,
+                ...(look ? wordMotion(look.entrance, Math.min(wordSpring, 1)) : { transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`, opacity }),
                 color: isHighlighted ? highlightColor : textColor,
                 textShadow: hasDarkText ? 'none' : isHighlighted ? `0 0 28px ${highlightColor}60` : '0 4px 16px rgba(0,0,0,0.4)',
               }}

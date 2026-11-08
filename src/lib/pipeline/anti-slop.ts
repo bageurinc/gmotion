@@ -11,7 +11,7 @@ VISUAL QUALITY FILTER
 - Never pick a look out of habit. Slate or navy as an automatic default is forbidden, and every video needs its own colors.
 - Do not use blue-to-cyan, blue-to-purple, or purple-to-pink gradients, neon colors, or rainbow palettes as a default treatment.
 - Use one main color, one supporting color, and neutrals. Reserve the accent for the thing being explained.
-- Glow, blur, particles, and decorative shapes need a reason in the explanation. Never stack them for looks.
+- Glow, blur, particles, and decorative shapes need a reason in the explanation. Never stack them for looks. The real setting of a scene, such as sky, clouds, walls, or landscape, is not decoration and belongs in the picture.
 - The subject must stay clearly readable, with visible light and shadow, in both dark and bright looks. Avoid murky images where the subject disappears into its background.
 - Motion must explain something: what moves, flows, opens, or changes. Remove motion that only decorates.
 `;

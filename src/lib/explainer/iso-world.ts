@@ -1,15 +1,46 @@
 import { z } from 'zod';
 import { contrastRatio } from '../pipeline/anti-slop';
-import { ISO_RIGHT, ISO_UP, roundPolyline, type Vec3 } from '../../motion-kit/world/iso-geometry';
+import { blobMesh, blobSurfaceY, ISO_RIGHT, ISO_UP, roundPolyline, type BlobLobe, type BlobMesh, type Vec3 } from '../../motion-kit/world/iso-geometry';
 import type { IsoSolid, IsoWorld } from '../../motion-kit/world/IsoStage';
 
 const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const Size = z.tuple([z.number().min(0.1).max(30), z.number().min(0.05).max(30), z.number().min(0.1).max(30)]);
 
+const Unit = z.number().min(-1).max(1);
+const UnitPoint = z.tuple([Unit, Unit, Unit]);
+
+export const IsoLobeSchema = z.object({
+  /** Names a region the story can focus on or link to, without splitting the body. */
+  id: z.string().regex(/^[a-z0-9-]{1,32}$/).nullish(),
+  at: UnitPoint,
+  r: z.number().min(0.05).max(1),
+  to: UnitPoint.nullish(),
+  toR: z.number().min(0.03).max(1).nullish(),
+  color: HexColor.nullish(),
+});
+
+export const IsoScreenItemSchema = z.object({
+  kind: z.enum(['stat', 'row', 'button']),
+  text: z.string().min(1).max(32),
+  value: z.string().max(20).nullish(),
+});
+
+export const IsoScreenSchema = z.object({
+  face: z.enum(['top', 'left', 'right']),
+  background: HexColor,
+  ink: HexColor,
+  accent: HexColor,
+  states: z.array(z.object({
+    fromBeat: z.number().int().min(0),
+    title: z.string().min(1).max(32),
+    items: z.array(IsoScreenItemSchema).max(6),
+  })).min(1).max(4),
+});
+
 export const IsoObjectSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]{1,32}$/),
   label: z.string().min(1).max(24),
-  shape: z.enum(['box', 'plate', 'cylinder', 'cone', 'wedge']),
+  shape: z.enum(['box', 'plate', 'cylinder', 'cone', 'wedge', 'blob']),
   size: Size,
   color: HexColor,
   on: z.string().nullable(),
@@ -20,6 +51,8 @@ export const IsoObjectSchema = z.object({
   wall: z.number().min(0.05).max(3).nullish(),
   lid: z.boolean().nullish(),
   liftAtBeat: z.number().int().min(0).nullish(),
+  lobes: z.array(IsoLobeSchema).min(1).max(24).nullish(),
+  screen: IsoScreenSchema.nullish(),
 });
 
 export const IsoLinkSchema = z.object({
@@ -46,7 +79,7 @@ export const IsoPlanSchema = z.object({
   look: z.enum(['bright', 'dark']),
   unit: z.string().max(6),
   palette: z.object({ ground: HexColor, surface: HexColor, hud: HexColor, hudText: HexColor, accent: HexColor, ink: HexColor }),
-  objects: z.array(IsoObjectSchema).min(6).max(48),
+  objects: z.array(IsoObjectSchema).min(1).max(48),
   links: z.array(IsoLinkSchema).max(8),
   beats: z.array(IsoBeatSchema).min(3).max(12),
 });
@@ -63,8 +96,21 @@ interface Placement {
   rest: number;
   /** Footprint available to children. */
   inner: [number, number];
+  /** Where a link attaches, which on a blob is the curve and not the bounding box. */
+  top: number;
+  /** Coarse copy of a blob's surface, for resting children on it. */
+  surface?: BlobMesh;
   parent: string | null;
   lifts: Array<{ beat: number; offset: Vec3 }>;
+}
+
+/** A named part of a blob, with its own box for the camera and for links. */
+export interface BlobRegion {
+  owner: string;
+  lobe: number;
+  center: Vec3;
+  size: Vec3;
+  top: number;
 }
 
 export interface ResolvedLink {
@@ -78,6 +124,7 @@ export interface ResolvedLink {
 export interface ResolvedIso {
   plan: IsoPlan;
   placements: Placement[];
+  regions: Map<string, BlobRegion>;
   links: ResolvedLink[];
   /** Beat focus ids after dropped objects are removed. */
   focus: Array<string | null>;
@@ -95,6 +142,13 @@ const FLOOR_INSET = 0.05;
 const LINK_CLEARANCE = 0.25;
 const LINK_CORNER = 0.45;
 const DEFAULT_LINK_RADIUS = 0.14;
+/** Coarse grid for layout. The drawn blob uses the fine one. */
+const BLOB_LAYOUT_RESOLUTION = 28;
+/** How far a child sinks into a curve, so no gap shows under its edge. */
+const BLOB_REST_SINK = 0.08;
+const SCREEN_SHAPES = new Set(['box', 'plate']);
+/** Part of its peak share a vertex needs to count toward a named region. */
+const REGION_SHARE = 0.5;
 /** Smallest share of the world's footprint the biggest ground object must cover. */
 const MIN_SUBJECT_SHARE = 0.25;
 /** Contrast a ground must keep against the opposite extreme to count as bright or dark. */
@@ -118,16 +172,17 @@ function isInside(id: string, ancestor: string, byId: Map<string, Placement>): b
 }
 
 /** Elbow route that climbs over anything between two objects. */
-function routeLink(ids: string[], placements: Placement[], byId: Map<string, Placement>): Vec3[] {
+function routeLink(ids: string[], placements: Placement[], byId: Map<string, Placement>, regions: Map<string, BlobRegion>): Vec3[] {
   const route: Vec3[] = [];
   for (let index = 1; index < ids.length; index += 1) {
-    const from = byId.get(ids[index - 1])!;
-    const to = byId.get(ids[index])!;
-    const start: Vec3 = [from.center[0], from.center[1] + from.size[1], from.center[2]];
-    const end: Vec3 = [to.center[0], to.center[1] + to.size[1], to.center[2]];
+    const ends = [ids[index - 1], ids[index]].map((id) => (byId.get(id) ?? regions.get(id)) as Placement | BlobRegion);
+    const [from, to] = ends;
+    const owners = [ids[index - 1], ids[index]].map((id) => byId.get(regions.get(id)?.owner ?? id));
+    const start: Vec3 = [from.center[0], from.top, from.center[2]];
+    const end: Vec3 = [to.center[0], to.top, to.center[2]];
     const corner: Vec3 = [end[0], 0, start[2]];
     const crossed = placements.filter((item) => {
-      if (item === from || item === to || item.lifts.length) return false;
+      if (owners.includes(item) || item.lifts.length) return false;
       const halfX = item.size[0] / 2;
       const halfZ = item.size[2] / 2;
       const onFirstLeg = Math.abs(item.center[2] - start[2]) < halfZ
@@ -143,6 +198,26 @@ function routeLink(ids: string[], placements: Placement[], byId: Map<string, Pla
     const previous = route[index - 1];
     return !previous || Math.hypot(point[0] - previous[0], point[1] - previous[1], point[2] - previous[2]) > 1e-3;
   }), LINK_CORNER);
+}
+
+function regionsOf(placement: Placement): BlobRegion[] {
+  const { surface, object, center } = placement;
+  if (!surface) return [];
+  return (object.lobes ?? []).flatMap((lobe, index) => {
+    if (!lobe.id) return [];
+    const count = surface.positions.length / 3;
+    const shareOf = (vertex: number) => surface.weights[vertex * surface.lobeCount + index];
+    const peak = Math.max(...Array.from({ length: count }, (_, vertex) => shareOf(vertex)));
+    // Read against the peak, so a lobe buried inside the body still maps to the skin above it.
+    const points: Vec3[] = [];
+    for (let vertex = 0; vertex < count; vertex += 1) {
+      if (shareOf(vertex) >= peak * REGION_SHARE) points.push([0, 1, 2].map((axis) => surface.positions[vertex * 3 + axis] + center[axis]) as Vec3);
+    }
+    const low = [0, 1, 2].map((axis) => Math.min(...points.map((point) => point[axis])));
+    const high = [0, 1, 2].map((axis) => Math.max(...points.map((point) => point[axis])));
+    const size: Vec3 = [high[0] - low[0], high[1] - low[1], high[2] - low[2]];
+    return [{ owner: object.id, lobe: index, center: [(low[0] + high[0]) / 2, low[1], (low[2] + high[2]) / 2], size, top: high[1] }];
+  });
 }
 
 /**
@@ -178,7 +253,25 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
   const placements: Placement[] = [];
   const dropped = new Set<string>();
 
-  for (const object of plan.objects) {
+  const fixObject = (object: IsoObject): IsoObject => {
+    let fixed = object;
+    if (object.shape === 'blob' && !object.lobes?.length) {
+      const message = `Blob "${object.id}" needs lobes`;
+      if (options.repair) warnings.push(`${message}, drawn as one ball`);
+      else errors.push(message);
+      fixed = { ...fixed, lobes: [{ at: [0, 0, 0], r: 1 }] };
+    }
+    if (object.screen && !SCREEN_SHAPES.has(object.shape)) {
+      const message = `"${object.id}" is a ${object.shape}, and only box or plate can hold a screen`;
+      if (options.repair) warnings.push(`${message}, screen removed`);
+      else errors.push(message);
+      fixed = { ...fixed, screen: null };
+    }
+    return fixed;
+  };
+
+  for (const source of plan.objects) {
+    const object = fixObject(source);
     if (byId.has(object.id)) continue;
     if (object.on && !byId.has(object.on)) {
       if (dropped.has(object.on)) {
@@ -208,23 +301,28 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
       if (lidded.has(parent.object.id) && parent.object.wall) {
         size[1] = Math.min(size[1], parent.size[1] - TRAY_FLOOR - EDGE_MARGIN);
       }
-      center = [
-        parent.center[0] + clamp(object.x, -(fitX - size[0]) / 2, (fitX - size[0]) / 2),
-        parent.rest,
-        parent.center[2] + clamp(object.z, -(fitZ - size[2]) / 2, (fitZ - size[2]) / 2),
-      ];
+      const offsetX = clamp(object.x, -(fitX - size[0]) / 2, (fitX - size[0]) / 2);
+      const offsetZ = clamp(object.z, -(fitZ - size[2]) / 2, (fitZ - size[2]) / 2);
+      const rest = parent.surface
+        ? parent.center[1] + blobSurfaceY(parent.surface, offsetX, offsetZ, Math.max(parent.size[0], parent.size[2]) / BLOB_LAYOUT_RESOLUTION) - Math.min(BLOB_REST_SINK, size[1] / 4)
+        : parent.rest;
+      center = [parent.center[0] + offsetX, rest, parent.center[2] + offsetZ];
     } else {
       center = [object.x, BASE_HEIGHT, object.z];
     }
 
-    const isTray = Boolean(object.wall);
-    const wall = object.wall ?? 0;
+    const isBlob = object.shape === 'blob';
+    const isTray = Boolean(object.wall) && !isBlob;
+    const wall = isTray ? object.wall ?? 0 : 0;
+    const surface = isBlob ? blobMesh(object.lobes as BlobLobe[], size, BLOB_LAYOUT_RESOLUTION) : undefined;
     const placement: Placement = {
       object,
       center,
       size,
       rest: center[1] + (isTray ? TRAY_FLOOR : size[1]),
       inner: isTray ? [size[0] - wall * 2, size[2] - wall * 2] : [size[0], size[2]],
+      top: center[1] + (surface ? blobSurfaceY(surface, 0, 0, Math.max(size[0], size[2]) / BLOB_LAYOUT_RESOLUTION) : size[1]),
+      surface,
       parent: parent?.object.id ?? null,
       lifts: [...(parent?.lifts ?? [])],
     };
@@ -232,6 +330,8 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
     if (!object.lid) {
       const siblings = placements.filter((item) => item.parent === placement.parent && !item.object.lid);
       for (const sibling of siblings) {
+        // A blob's box is far bigger than its curve, and curved forms may press into each other.
+        if (isBlob || sibling.object.shape === 'blob') continue;
         const overlap = overlapOf(sibling, placement);
         if (!overlap.hit) continue;
         if (!options.repair) {
@@ -246,7 +346,7 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
           placement.center[axis] = clamp(placement.center[axis], parent.center[axis] - half, parent.center[axis] + half);
         }
       }
-      const stillHit = options.repair ? siblings.find((sibling) => overlapOf(sibling, placement).hit) : undefined;
+      const stillHit = options.repair && !isBlob ? siblings.find((sibling) => sibling.object.shape !== 'blob' && overlapOf(sibling, placement).hit) : undefined;
       if (stillHit) {
         warnings.push(`"${object.id}" dropped, no room beside "${stillHit.object.id}"`);
         dropped.add(object.id);
@@ -256,6 +356,15 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
 
     placements.push(placement);
     byId.set(object.id, placement);
+  }
+
+  const regions = new Map<string, BlobRegion>();
+  for (const placement of placements) {
+    for (const region of regionsOf(placement)) {
+      const lobeId = placement.object.lobes?.[region.lobe].id as string;
+      if (byId.has(lobeId) || regions.has(lobeId)) errors.push(`Lobe id "${lobeId}" is already used`);
+      else regions.set(lobeId, region);
+    }
   }
 
   const roots = placements.filter((item) => !item.parent);
@@ -272,7 +381,7 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
 
   const focus = plan.beats.map((beat, index) => {
     if (beat.focus === null) return null;
-    if (byId.has(beat.focus)) return beat.focus;
+    if (byId.has(beat.focus) || regions.has(beat.focus)) return beat.focus;
     if (dropped.has(beat.focus)) warnings.push(`Beat ${index} lost its focus "${beat.focus}"`);
     else if (options.repair) warnings.push(`Beat ${index} focus "${beat.focus}" is unknown`);
     else errors.push(`Beat ${index} focus "${beat.focus}" is unknown`);
@@ -300,9 +409,9 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
 
   const links: ResolvedLink[] = [];
   for (const link of plan.links) {
-    const known = link.through.filter((id) => byId.has(id));
+    const known = link.through.filter((id) => byId.has(id) || regions.has(id));
     if (known.length < link.through.length) {
-      const missing = link.through.filter((id) => !byId.has(id)).join(', ');
+      const missing = link.through.filter((id) => !known.includes(id)).join(', ');
       if (options.repair) warnings.push(`Link "${link.id}" lost ${missing}`);
       else errors.push(`Link "${link.id}" uses unknown objects: ${missing}`);
     }
@@ -311,12 +420,12 @@ export function resolveIsoPlan(input: IsoPlan, options: { repair?: boolean } = {
       id: link.id,
       color: link.color,
       radius: link.radius ?? DEFAULT_LINK_RADIUS,
-      points: routeLink(known, placements, byId),
+      points: routeLink(known, placements, byId, regions),
       activeBeats: link.activeBeats.filter((beat) => beat < plan.beats.length),
     });
   }
 
-  return { plan, placements, links, focus, errors, warnings };
+  return { plan, placements, regions, links, focus, errors, warnings };
 }
 
 function corners(center: Vec3, size: Vec3): Vec3[] {
@@ -343,57 +452,105 @@ function frameOf(points: Vec3[]) {
   };
 }
 
-function screenBox(placement: Placement) {
-  const points = corners(placement.center, placement.size);
+export interface IsoView {
+  width: number;
+  height: number;
+  centerY: number;
+  /** "lit" renders with lights and shadows on a desk that runs past the frame instead of a floating base. */
+  look?: 'flat' | 'lit';
+}
+
+/** The lit desk reaches this many world spans past the objects, so its edge never shows. */
+const DESK_REACH = 2;
+
+const WIDE_FILL = { x: 0.92, y: 0.46 };
+const FOCUS_FILL = { x: 0.7, y: 0.32 };
+/** A big focus may not be pushed past this, or a close-up crops its own subject. */
+const FOCUS_LIMIT = { x: 0.92, y: 0.42 };
+const MAX_FOCUS_ZOOM = 5;
+const MIN_FOCUS_ZOOM = 1.35;
+const CAMERA_FRAMES = 26;
+/** Zoom gained while a shot holds, so no beat is a frozen picture. */
+const HOLD_PUSH = 1.08;
+const LIFT_FRAMES = 36;
+const HIGHLIGHT_DELAY = 10;
+
+interface Shot {
+  target: Vec3;
+  zoom: number;
+}
+
+interface ScreenBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+function boxOf(points: Vec3[]): ScreenBox {
   const across = points.map((point) => point[0] * ISO_RIGHT[0] + point[1] * ISO_RIGHT[1] + point[2] * ISO_RIGHT[2]);
   const up = points.map((point) => point[0] * ISO_UP[0] + point[1] * ISO_UP[1] + point[2] * ISO_UP[2]);
   return { minX: Math.min(...across), maxX: Math.max(...across), minY: Math.min(...up), maxY: Math.max(...up) };
 }
 
-/** Objects standing between the camera and a focus, by screen overlap and depth. */
-function occludersOf(focus: Placement, placements: Placement[], beat: number): Placement[] {
+const crosses = (a: ScreenBox, b: ScreenBox) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+
+/** What the camera sees in a shot, in the same units as boxOf. */
+function shotBox(shot: Shot, view: IsoView): ScreenBox {
+  const center = boxOf([shot.target]);
+  const halfX = view.width / 2 / shot.zoom;
+  const halfY = view.height / 2 / shot.zoom;
+  return { minX: center.minX - halfX, maxX: center.minX + halfX, minY: center.minY - halfY, maxY: center.minY + halfY };
+}
+
+/**
+ * Everything in a close-up that the focus does not depend on. It fades, so one subject carries the
+ * shot. The focus keeps what it rests on, what rests on it, and the links that reach it.
+ */
+function clutterOf(focus: Placement, placements: Placement[], links: ResolvedLink[], linkEnds: Map<string, string[]>, shot: Shot, view: IsoView, beat: number): string[] {
   const byId = new Map(placements.map((item) => [item.object.id, item]));
-  const box = screenBox(focus);
-  const area = (box.maxX - box.minX) * (box.maxY - box.minY);
-  const low = (item: Placement, axis: 0 | 2) => item.center[axis] - item.size[axis] / 2;
-  const high = (item: Placement, axis: 0 | 2) => item.center[axis] + item.size[axis] / 2;
-  // With boxes that do not intersect, one separating axis decides which is farther from the camera.
-  const isBehind = (item: Placement) => high(item, 0) <= low(focus, 0)
-    || high(item, 2) <= low(focus, 2)
-    || item.center[1] + item.size[1] <= focus.center[1];
-  return placements.filter((item) => {
-    if (item === focus || isBehind(item)) return false;
-    if (isInside(item.object.id, focus.object.id, byId) || isInside(focus.object.id, item.object.id, byId)) return false;
-    if (item.lifts.some((lift) => lift.beat <= beat)) return false;
-    const other = screenBox(item);
-    const width = Math.min(box.maxX, other.maxX) - Math.max(box.minX, other.minX);
-    const height = Math.min(box.maxY, other.maxY) - Math.max(box.minY, other.minY);
-    return width > 0 && height > 0 && (width * height) / area >= MIN_OCCLUSION;
-  });
+  const family = (id: string) => id === focus.object.id || isInside(id, focus.object.id, byId) || isInside(focus.object.id, id, byId);
+  const seen = shotBox(shot, view);
+  const objects = placements.filter((item) => !family(item.object.id)
+    && !item.lifts.some((lift) => lift.beat <= beat)
+    && crosses(boxOf(corners(item.center, item.size)), seen));
+  // A pipe crossing a screen hides what the shot is for, so a screen keeps no links.
+  const routes = links.filter((link) => (focus.object.screen || !(linkEnds.get(link.id) ?? []).some(family)) && crosses(boxOf(link.points), seen));
+  return [
+    ...objects.flatMap((item) => (item.object.wall && item.object.shape !== 'blob' ? [item.object.id, `${item.object.id}-floor`] : [item.object.id])),
+    ...routes.map((link) => `link-${link.id}`),
+  ];
 }
 
-export interface IsoView {
-  width: number;
-  height: number;
-  centerY: number;
+/** Joins a solid's windows across beats, so it stays faded instead of blinking at each cut. */
+function mergeWindows(ghosts: NonNullable<IsoWorld['ghosts']>): NonNullable<IsoWorld['ghosts']> {
+  const merged: NonNullable<IsoWorld['ghosts']> = [];
+  for (const ghost of ghosts) {
+    const last = merged.findLast((item) => item.id === ghost.id);
+    if (last && ghost.from <= last.to + 1) last.to = ghost.to;
+    else merged.push({ ...ghost });
+  }
+  return merged;
 }
 
-const WIDE_FILL = { x: 0.92, y: 0.46 };
-const FOCUS_FILL = { x: 0.62, y: 0.26 };
-const MAX_FOCUS_ZOOM = 5;
-const MIN_FOCUS_ZOOM = 1.35;
-const CAMERA_FRAMES = 26;
-const LIFT_FRAMES = 36;
-const HIGHLIGHT_DELAY = 10;
-/** Share of a focus's screen box another object must cover before it fades. */
-const MIN_OCCLUSION = 0.2;
-
-function solidsFor(placement: Placement, moveFor: (lift: Placement['lifts'][number]) => IsoSolid['moves']): IsoSolid[] {
+function solidsFor(placement: Placement, moveFor: (lift: Placement['lifts'][number]) => IsoSolid['moves'], beats: Array<{ from: number }>): IsoSolid[] {
   const { object, center, size, lifts } = placement;
   const moves = lifts.flatMap((lift) => moveFor(lift) ?? []);
   const shared = { color: object.color, radius: object.radius ?? undefined, moves };
-  const solid: IsoSolid = { ...shared, id: object.id, shape: object.shape, at: center, size, axis: object.axis ?? undefined };
-  if (!object.wall) return [solid];
+  const solid: IsoSolid = {
+    ...shared,
+    id: object.id,
+    shape: object.shape,
+    at: center,
+    size,
+    axis: object.axis ?? undefined,
+    lobes: object.lobes ?? undefined,
+    screen: object.screen ? {
+      ...object.screen,
+      states: object.screen.states.map(({ fromBeat, ...state }) => ({ ...state, from: beats[fromBeat]?.from ?? Number.MAX_SAFE_INTEGER })),
+    } : undefined,
+  };
+  if (!object.wall || object.shape === 'blob') return [solid];
   const floorRadius = Math.max((object.radius ?? 0) - FLOOR_INSET, 0);
   return [
     { ...shared, radius: floorRadius, id: `${object.id}-floor`, shape: 'plate', at: center, size: [size[0] - FLOOR_INSET * 2, TRAY_FLOOR, size[2] - FLOOR_INSET * 2] },
@@ -403,16 +560,31 @@ function solidsFor(placement: Placement, moveFor: (lift: Placement['lifts'][numb
 
 /** Converts a resolved plan and real beat timing into the data IsoStage draws. */
 export function buildIsoWorld(resolved: ResolvedIso, beats: Array<{ from: number; duration: number }>, view: IsoView): IsoWorld {
-  const { plan, placements, links, focus } = resolved;
+  const { plan, placements, regions, links, focus } = resolved;
+  const linkEnds = new Map(plan.links.map((link) => [link.id, link.through.map((id) => regions.get(id)?.owner ?? id)]));
+  /** What a beat looks at: a whole placement, or one region of a blob. */
+  const focusOf = (index: number) => {
+    const id = focus[index];
+    if (!id) return null;
+    const region = regions.get(id);
+    const placement = placements.find((item) => item.object.id === (region?.owner ?? id));
+    if (!placement) return null;
+    return { placement, box: region ?? placement, lobe: region?.lobe };
+  };
   const closedBounds = placements.filter((item) => !item.object.lid);
   const worldPoints = closedBounds.flatMap((item) => corners(item.center, item.size));
   const wide = frameOf(worldPoints);
   const wideZoom = Math.min((view.width * WIDE_FILL.x) / wide.spanX, (view.height * WIDE_FILL.y) / wide.spanY);
 
-  const minX = Math.min(...worldPoints.map((point) => point[0])) - BASE_MARGIN;
-  const maxX = Math.max(...worldPoints.map((point) => point[0])) + BASE_MARGIN;
-  const minZ = Math.min(...worldPoints.map((point) => point[2])) - BASE_MARGIN;
-  const maxZ = Math.max(...worldPoints.map((point) => point[2])) + BASE_MARGIN;
+  const span = Math.max(
+    Math.max(...worldPoints.map((point) => point[0])) - Math.min(...worldPoints.map((point) => point[0])),
+    Math.max(...worldPoints.map((point) => point[2])) - Math.min(...worldPoints.map((point) => point[2])),
+  );
+  const margin = view.look === 'lit' ? span * DESK_REACH : BASE_MARGIN;
+  const minX = Math.min(...worldPoints.map((point) => point[0])) - margin;
+  const maxX = Math.max(...worldPoints.map((point) => point[0])) + margin;
+  const minZ = Math.min(...worldPoints.map((point) => point[2])) - margin;
+  const maxZ = Math.max(...worldPoints.map((point) => point[2])) + margin;
   const base: IsoSolid = {
     id: 'world-base',
     shape: 'box',
@@ -421,20 +593,28 @@ export function buildIsoWorld(resolved: ResolvedIso, beats: Array<{ from: number
     color: plan.palette.surface,
   };
 
-  const shotFor = (index: number) => {
-    const id = focus[index];
-    const placement = id ? placements.find((item) => item.object.id === id) : undefined;
-    if (!placement) return { target: wide.target, zoom: wideZoom };
-    const frame = frameOf(corners(placement.center, placement.size));
+  const shotFor = (index: number): Shot => {
+    const seen = focusOf(index);
+    if (!seen) return { target: wide.target, zoom: wideZoom };
+    const frame = frameOf(corners(seen.box.center, seen.box.size));
     const zoom = Math.min((view.width * FOCUS_FILL.x) / frame.spanX, (view.height * FOCUS_FILL.y) / frame.spanY);
-    return { target: frame.target, zoom: clamp(zoom, wideZoom * MIN_FOCUS_ZOOM, wideZoom * MAX_FOCUS_ZOOM) };
+    const limit = Math.min((view.width * FOCUS_LIMIT.x) / frame.spanX, (view.height * FOCUS_LIMIT.y) / frame.spanY);
+    // Screen text is only readable at the largest size the shot allows.
+    if (seen.placement.object.screen) return { target: frame.target, zoom: limit };
+    return { target: frame.target, zoom: Math.min(clamp(zoom, wideZoom * MIN_FOCUS_ZOOM, wideZoom * MAX_FOCUS_ZOOM), limit) };
   };
 
+  const heldShot = (index: number): Shot => {
+    const shot = shotFor(index);
+    return { ...shot, zoom: shot.zoom * HOLD_PUSH };
+  };
   const camera: IsoWorld['camera'] = [{ frame: 0, ...shotFor(0) }];
   beats.slice(1).forEach((beat, position) => {
     const index = position + 1;
-    camera.push({ frame: beat.from, ...shotFor(index - 1) }, { frame: beat.from + CAMERA_FRAMES, ...shotFor(index) });
+    camera.push({ frame: beat.from, ...heldShot(index - 1) }, { frame: beat.from + CAMERA_FRAMES, ...shotFor(index) });
   });
+  const finalBeat = beats[beats.length - 1];
+  if (finalBeat) camera.push({ frame: finalBeat.from + finalBeat.duration, ...heldShot(beats.length - 1) });
 
   const moveFor = (lift: Placement['lifts'][number]) => {
     const beat = beats[lift.beat];
@@ -442,39 +622,42 @@ export function buildIsoWorld(resolved: ResolvedIso, beats: Array<{ from: number
   };
 
   const lastFrame = (index: number) => beats[index].from + beats[index].duration - 1;
+  const clutter = focus.map((_, index) => {
+    const seen = focusOf(index);
+    return seen ? clutterOf(seen.placement, placements, links, linkEnds, shotFor(index), view, index) : [];
+  });
   return {
     background: plan.palette.ground,
     accent: plan.palette.accent,
     ink: plan.palette.ink,
     viewCenter: view.centerY,
+    ...(view.look === 'lit' ? { look: 'lit' as const, reach: span / 2 + BASE_MARGIN } : {}),
     solids: [
       base,
-      ...placements.flatMap((placement) => solidsFor(placement, moveFor)),
+      ...placements.flatMap((placement) => solidsFor(placement, moveFor, beats)),
       ...links.map((link): IsoSolid => ({ id: `link-${link.id}`, shape: 'tube', color: link.color, radius: link.radius, points: link.points })),
     ],
     camera,
-    flows: links.flatMap((link) => link.activeBeats.map((index) => ({
-      points: link.points,
-      radius: link.radius,
-      from: beats[index].from,
-      to: lastFrame(index),
-    }))),
-    ghosts: focus.flatMap((id, index) => {
-      const placement = id ? placements.find((item) => item.object.id === id) : undefined;
-      if (!placement) return [];
-      return occludersOf(placement, placements, index).flatMap((item) => {
-        const window = { from: beats[index].from, to: lastFrame(index) };
-        return item.object.wall
-          ? [{ id: item.object.id, ...window }, { id: `${item.object.id}-floor`, ...window }]
-          : [{ id: item.object.id, ...window }];
-      });
+    flows: links.flatMap((link) => link.activeBeats
+      // A faded pipe must not leave its dots hanging in the air.
+      .filter((index) => !clutter[index].includes(`link-${link.id}`))
+      .map((index) => ({
+        points: link.points,
+        radius: link.radius,
+        from: beats[index].from,
+        to: lastFrame(index),
+      }))),
+    ghosts: mergeWindows(clutter.flatMap((ids, index) => ids.map((id) => ({ id, from: beats[index].from, to: lastFrame(index) })))),
+    highlights: focus.flatMap((_, index) => {
+      const seen = focusOf(index);
+      return seen ? [{ id: seen.placement.object.id, lobe: seen.lobe, from: beats[index].from + HIGHLIGHT_DELAY, to: lastFrame(index) }] : [];
     }),
-    highlights: focus.flatMap((id, index) => (id ? [{ id, from: beats[index].from + HIGHLIGHT_DELAY, to: lastFrame(index) }] : [])),
-    labels: focus.flatMap((id, index) => {
+    labels: focus.flatMap((_, index) => {
       const text = plan.beats[index].label;
-      const placement = id ? placements.find((item) => item.object.id === id) : undefined;
-      if (!text || !placement) return [];
-      const at: Vec3 = [placement.center[0], placement.center[1] + placement.size[1], placement.center[2]];
+      const seen = focusOf(index);
+      // A screen already names itself, and a label would sit on its title.
+      if (!text || !seen || seen.placement.object.screen) return [];
+      const at: Vec3 = [seen.box.center[0], seen.box.center[1] + seen.box.size[1], seen.box.center[2]];
       return [{ text, at, from: beats[index].from + CAMERA_FRAMES, to: lastFrame(index) }];
     }),
   };

@@ -1,18 +1,29 @@
 import { z } from 'zod';
 import type { AssetManifest } from '@/lib/explainer/asset-contract';
+import type { StillStretch } from '@/lib/render/motion-check';
 
-export const StylePresetSchema = z.enum(['story-2d', 'ads-ui', 'world']);
+export const StylePresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world']);
 export type StylePreset = z.infer<typeof StylePresetSchema>;
 
+/** Which model draws the scenes. Absent on saved projects, which were all drawn by Gemini. */
+export const DrawingModelSchema = z.enum(['gemini', 'deepseek-flash']);
+export type DrawingModel = z.infer<typeof DrawingModelSchema>;
+
+export const DRAWING_MODEL_LABELS: Record<DrawingModel, string> = {
+  gemini: 'Gemini',
+  'deepseek-flash': 'DeepSeek Flash',
+};
+
 /** 'story' and 'ads' were 3D presets for a while, and those saved videos must still open and export. */
-export const StoredPresetSchema = z.enum(['story-2d', 'ads-ui', 'world', 'story', 'ads']);
+export const StoredPresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world', 'story', 'ads']);
 export type StoredPreset = z.infer<typeof StoredPresetSchema>;
 
 /** Isometric videos are one 3D world, while Story 2D and Ads keep one scene file per scene. */
-export const usesWorldEngine = (preset: StoredPreset) => preset !== 'ads-ui' && preset !== 'story-2d';
+export const usesWorldEngine = (preset: StoredPreset) => preset === 'world' || preset === 'story' || preset === 'ads';
 
 export const PRESET_LABELS: Record<StoredPreset, string> = {
-  'story-2d': 'Story 2D',
+  'story-2d': 'Story 2D Campuran',
+  'story-svg': 'Story 2D Full SVG',
   'ads-ui': 'Ads',
   world: 'Isometrik',
   story: 'Isometrik',
@@ -40,6 +51,21 @@ export const TimelapseSpecSchema = z.object({
 });
 export type TimelapseSpec = z.infer<typeof TimelapseSpecSchema>;
 
+export const TextStyleSchema = z.enum(['tegas', 'teknis', 'editorial', 'ramah']);
+export type TextStyleId = z.infer<typeof TextStyleSchema>;
+
+/** Optional on-screen data. Values are strings so "1,5" stays exactly as the narration says it. */
+export const DataVisualSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('stat'), value: z.string().min(1), unit: z.string().optional(), label: z.string().min(1) }),
+  z.object({
+    kind: z.literal('compare'),
+    unit: z.string().optional(),
+    items: z.array(z.object({ label: z.string().min(1), value: z.string().min(1) })).min(2).max(4),
+  }),
+  z.object({ kind: z.literal('steps'), items: z.array(z.string().min(1)).min(2).max(4) }),
+]);
+export type DataVisual = z.infer<typeof DataVisualSchema>;
+
 export const SceneSpecSchema = z.object({
   id: z.string(), // e.g. "scene-1-hook"
   order: z.number(),
@@ -51,6 +77,8 @@ export const SceneSpecSchema = z.object({
   cameraAction: z.enum(['static', 'macro-zoom-in', 'slow-push', 'pan-parallax', 'tilt-3d', 'timelapse']),
   sfxCue: z.enum(['none', 'pop', 'whoosh', 'notification', 'cash-register', 'success']),
   timelapse: TimelapseSpecSchema.optional(),
+  headlineFocus: z.string().optional(),
+  dataVisual: DataVisualSchema.optional(),
   fixedDurationSec: z.number().min(1).max(30).optional(),
   // Populated by Stage 2 (Audio-First TTS Engine):
   audioUrl: z.string().optional(),
@@ -76,6 +104,7 @@ export const StoryboardSchema = z.object({
   fps: z.number().default(30),
   voice: z.string().optional(),
   bgmTrack: z.enum(['dark-tech-pulse', 'upbeat-saas', 'warm-acoustic', 'cinematic-story', 'none']),
+  textStyle: TextStyleSchema.optional(),
   palette: ColorPaletteSchema,
   scenes: z.array(SceneSpecSchema),
 });
@@ -106,11 +135,15 @@ export interface SceneProgress {
   error?: string;
   simplified?: boolean;
   score?: number;
+  /** What the critic said about the saved version, kept so its findings can be checked later. */
+  issues?: string[];
 }
 
 export interface StudioProject {
   safeAreaPlatform?: SocialPlatform;
   id: string;
+  /** Absent on projects created before accounts existed. */
+  ownerId?: string;
   createdAt: number;
   updatedAt: number;
   userPrompt: string;
@@ -121,9 +154,12 @@ export interface StudioProject {
   sceneProgress?: Record<string, SceneProgress>;
   checkingScenes?: boolean;
   sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
+  drawingModel?: DrawingModel;
   generationError?: string;
   /** Automatic world repairs, kept so the editor can report them. */
   worldRepairs?: string[];
+  /** Long still stretches measured when generation finished. Absent when the check did not run. */
+  stillStretches?: StillStretch[];
   exportVideoUrl?: string;
 }
 

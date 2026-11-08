@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AspectRatioSchema, SocialPlatformSchema, StylePresetSchema } from '@/types/studio';
+import { AspectRatioSchema, DrawingModelSchema, SocialPlatformSchema, StylePresetSchema } from '@/types/studio';
 
 const PROJECT_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const VIRTUAL_FILE_NAME = /^(?:Scene\d{1,2}|MainVideo)\.tsx$/;
@@ -12,6 +12,7 @@ export const CreateProjectSchema = z.object({
   prompt: z.string().trim().min(1).max(8000),
   preset: StylePresetSchema.default('ads-ui'),
   aspectRatio: AspectRatioSchema.default('9:16'),
+  drawingModel: DrawingModelSchema.default('gemini'),
 });
 
 export const ProjectUpdateSchema = z
