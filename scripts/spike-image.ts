@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
-import { generateImage, imageModel, sceneImagePrompt } from '../src/lib/explainer/image-generator';
+import { blankCanvas, generateImage, imageModel, pixelate, sceneImagePrompt } from '../src/lib/explainer/image-generator';
 import { composeImageScene } from '../src/lib/explainer/scene-generator';
 import { generateMainVideoCode } from '../src/lib/pipeline/coder-agent';
 import { validateSceneCode } from '../src/lib/pipeline/code-validator';
@@ -10,7 +10,7 @@ import { generateStoryboard } from '../src/lib/pipeline/director-agent';
 import { generateSceneAudio } from '../src/lib/pipeline/tts-engine';
 import { renderProvider } from '../src/lib/render/render-service';
 import { saveProject } from '../src/lib/storage/project-store';
-import type { StudioProject } from '../src/types/studio';
+import { ArtStyleSchema, type StudioProject } from '../src/types/studio';
 
 const argument = (name: string, fallback: string) => {
   const index = process.argv.indexOf(`--${name}`);
@@ -19,6 +19,7 @@ const argument = (name: string, fallback: string) => {
 
 const topic = argument('topic', 'Bagaimana cara mencuci tangan yang benar?');
 const voice = argument('voice', 'Puck');
+const artStyle = ArtStyleSchema.parse(argument('art', 'flat'));
 const seconds = (startedAt: number) => Math.round((Date.now() - startedAt) / 1000) + 's';
 
 async function main() {
@@ -29,6 +30,7 @@ async function main() {
 
   const storyboard = await generateStoryboard(topic, 'story-2d', '9:16', { strict: true });
   storyboard.voice = voice;
+  storyboard.artStyle = artStyle;
   console.log('IMAGE draft', seconds(startedAt), storyboard.title, storyboard.scenes.length, 'scenes', JSON.stringify(storyboard.palette));
 
   const audioAt = Date.now();
@@ -43,7 +45,11 @@ async function main() {
   const thumbs: Buffer[] = [];
   await mapWithConcurrency(storyboard.scenes.map((_, index) => index), PIPELINE_CONCURRENCY, async (index) => {
     const imageAt = Date.now();
-    const image = await generateImage(sceneImagePrompt(storyboard, index), storyboard.aspectRatio);
+    // Same blank canvas reference as the real pipeline, otherwise the gemini/ route returns landscape pictures.
+    const canvas = await blankCanvas(storyboard.aspectRatio, storyboard.palette.background);
+    const drawn = await generateImage(sceneImagePrompt(storyboard, index), storyboard.aspectRatio, canvas);
+    if (artStyle === 'pixel') fs.writeFileSync(path.join(assetsDir, `${storyboard.scenes[index].id}-raw.png`), drawn);
+    const image = artStyle === 'pixel' ? await pixelate(drawn, storyboard.aspectRatio) : drawn;
     const name = `${storyboard.scenes[index].id}-image.png`;
     fs.writeFileSync(path.join(assetsDir, name), image);
     thumbs[index] = await sharp(image).resize(270, 480, { fit: 'cover' }).toBuffer();

@@ -4,6 +4,14 @@ Catatan keputusan, alasan, dan temuan yang tidak terlihat dari kode. Terakhir di
 
 Status fitur ada di [plan_fitur.md](../plan_fitur.md), sedangkan aturan kerja ada di [CLAUDE.md](../CLAUDE.md).
 
+## Pembaruan alur dan antarmuka (8 November 2026)
+
+- Penyusunan draf kini dimulai di `/studio/new` setelah navigasi dari beranda, bukan menahan pengguna di tombol sampai model selesai. Ide disimpan di `sessionStorage` per request ID; URL tidak memuat prompt. Skeleton menampilkan kerangka, tahap aktif, dan waktu berjalan, tanpa persentase perkiraan. Sukses memakai navigasi replace agar tombol Back tidak mengulang halaman proses.
+- Request ID divalidasi dan dikaitkan dengan pemilik. Permintaan bersamaan pada proses server yang sama berbagi pekerjaan; draf yang sudah tersimpan dibuka kembali. Ini belum antrean terdistribusi. Uji browser memakai respons model contoh; 83 test terkait, TypeScript, dan build sumber terpisah lulus. Jangan menjalankan build pada `.next` yang sedang dipakai server dev.
+- Revisi saat tahap draf dapat menambah/menghapus/mengurutkan adegan, maksimal 12. Kolom "Instruksi revisi" pada video yang sudah dibuat hanya mengubah adegan yang ada. Menambah adegan dari studio masih rencana, bukan fitur selesai.
+- Scrollbar daftar progres disembunyikan khusus pada daftar status adegan; fungsi gulir tetap aktif. Diverifikasi di Chrome pada proyek pelangi enam adegan `proj_1794123988607_cm89`. Daftar panjang dan gulir keyboard belum diuji langsung.
+- Arah visual antarmuka ada di `DESIGN.md`; rincian bukti dan batas pemeriksaan ada di `UI-REVIEW.md`. Item baru di plan tetap belum dicentang sampai seluruh verifikasi sesuai aturan proyek terpenuhi.
+
 ## Visi
 
 User mengetik 1–2 kalimat tentang topik apa pun, lalu mendapat video berkualitas studio. Yang dibangun adalah sistem umum. Jangan membuat komponen manual untuk satu topik, karena jantung dan HP dicas hanya contoh uji.
@@ -350,6 +358,68 @@ Persen di layar dulu timer yang naik 15% tiap 1,2 detik. Kini route export mengi
 - Biaya per revisi narasi: 1 panggilan Director tambahan dan 1 TTS adegan. Revisi visual pada Full SVG mahal karena kode adegan bisa 48 KB: uji latar lebih hangat butuh 128 detik.
 - Proyek uji ada di `storage/projects/proj_revnarr_story` dan `storage/projects/proj_revnarr_svg`, masing-masing dengan `exports/video.mp4`.
 
+## Jatah revisi dan revisi semua adegan (8 November 2026)
+
+- Revisi hanya bisa dilakukan pada video yang sudah dibayar dengan 1 kredit. Karena itu jatah dihitung per video, bukan per user per jam: 20 adegan per video. Angka ini sementara dan ikut diputuskan bersama harga.
+- `reserveRevision` memakai `INSERT ... SELECT ... WHERE SUM(units) + n <= batas`. Satu pernyataan SQLite berjalan atomik, termasuk di D1 HTTP, jadi dua request paralel tidak bisa sama-sama lolos.
+- Hasil yang tidak berubah atau dikembalikan tetap memakai jatah, karena panggilan AI sudah terjadi. Jatah hanya dikembalikan jika request melempar error.
+- `reviseScenes` menyiapkan adegan paralel, tetapi cek render dilakukan sekali untuk semua adegan. `bundleProject` menulis ke satu folder `build-src`, jadi cek render per adegan tidak boleh berjalan paralel.
+- Planner diberi tahu nomor adegan ("scene 3 of 5") dan boleh menjawab semua `null` jika permintaan jelas untuk adegan lain.
+- Proyek uji ada di `storage/projects/proj_revall_story` dengan `exports/video.mp4`.
+
+## Uji browser revisi chat (8 November 2026)
+
+- Diuji di Chrome dengan akun user pada salinan proyek `proj_revall_story`, yang `ownerId`-nya diisi akun user. Proyek tanpa pemilik menjawab 404 kecuali email user sama dengan `LEGACY_PROJECT_OWNER_EMAIL`.
+- Revisi visual oleh Gemini menulis ulang format kode adegan: atribut jadi multi-baris, string biasa, dan objek JS bukan JSON. Gemini juga sempat membuang prop `labelBackground` dan `labelText` dari `ImageStage`. Karena itu `retimeSceneCode` kini membaca atribut JSX dengan pemindai kurung dan string, bukan mencocokkan teks persis.
+- Chat editor menampilkan teks polos, jadi balasan tidak boleh memakai markdown seperti `**`.
+- Pesan user sekarang langsung tampil saat dikirim (`pendingMessage`), lalu digantikan riwayat tersimpan saat balasan masuk. Chat bergulir otomatis ke pesan terakhir. Diuji di Chrome: tidak ada pesan dobel, dan posisi gulir tetap di bawah setelah balasan masuk.
+
+## Bahan posting sosmed (8 November 2026)
+
+- Keputusan: belum ada upload langsung. TikTok Content Posting API membatasi aplikasi yang belum diaudit ke posting privat. Instagram Content Publishing butuh akun profesional, review Meta, dan URL video publik. Aplikasi YouTube yang belum diverifikasi juga mengunggah sebagai privat. Upload langsung juga berarti menyimpan token OAuth sosmed tiap user.
+- Yang dibuat: caption dan hashtag untuk TikTok / IG, serta judul, deskripsi, dan tag untuk YouTube, semuanya dalam satu panggilan Director. Ada pula tombol Bagikan lewat `navigator.share` dan nama file dari judul. Helper yang dipakai browser ada di `src/lib/social/format.ts`, terpisah dari `share.ts` supaya klien AI tidak ikut ke bundle browser.
+- Tag YouTube dihitung seperti YouTube menghitungnya: daftar koma, dan tag berspasi dianggap bertanda kutip.
+- Uji Gemini pada video kopi: caption, judul "Proses Pengolahan Kopi Nusantara dari Kebun ke Cangkir", dan 7 tag hanya memakai isi narasi, tanpa CTA karena prompt bukan iklan.
+
+## Ubah draf dengan AI (8 November 2026)
+
+- `reviseDraft` di [draft-revision.ts](../src/lib/pipeline/draft-revision.ts) meminta draf utuh kembali, bukan potongan perubahan. Adegan dicocokkan lewat `id`. Setiap id lama hanya boleh dipakai sekali, supaya model tidak bisa menggandakan adegan dengan id yang sama.
+- Versi sebelum perubahan disimpan di `draftBeforeRevision` untuk Kembalikan. `PATCH` manual menghapusnya, karena Kembalikan setelah edit manual akan membuang edit itu.
+- Klien menyimpan editan yang tertunda sebelum meminta AI, karena server merevisi versi yang tersimpan. Jawaban server dimuat dengan `skipNextSave`, supaya tidak dihitung sebagai edit manual dan tidak menghapus Kembalikan.
+- Draf masih gratis, jadi jatahnya per draf (10 kali), bukan dari kredit. Pembuatan draf awal sendiri belum dibatasi.
+
+## Catatan biaya AI untuk admin (8 November 2026)
+
+- Semua chat AI SDK lewat `resilientFetch` di [llm-client.ts](../src/lib/ai/llm-client.ts), jadi token dicatat di sana tanpa mengubah tiap pemanggil. Tiga titik lain: `callChat` (aset, streaming dengan `include_usage`), `generateImage`, dan TTS router.
+- Konteks dibawa `AsyncLocalStorage` ([usage.ts](../src/lib/billing/usage.ts)). `runWithUsage` di route generate membungkus `runGeneration`, dan konteksnya ikut ke semua promise job meski request sudah selesai.
+- `recordUsage` tidak pernah melempar error dan tidak ditunggu. Database yang bermasalah tidak boleh menggagalkan video.
+- Rupiah dihitung saat query: setiap baris memakai tarif terbaru untuk modelnya yang `effective_from`-nya sebelum permintaan. Model tanpa tarif bernilai NULL dan ditandai "belum bertarif", bukan Rp0 diam-diam.
+- Percobaan gambar yang gagal tetap dicatat, dengan 0 gambar, karena sebagian penyedia menagih permintaan yang ditolak.
+- Contoh nyata: caption Gemini `ag/gemini-3.8-flash-high` memakai 3.263 token masuk dan 1.118 token keluar dalam 9,3 detik. TTS Gemini untuk 5 adegan memakai 969 karakter.
+- Tarif awal diisi 8 November 2026 dari harga resmi, dibaca langsung lewat Chrome karena WebSearch error. Kurs JISDOR Bank Indonesia 6 November 2026: Rp18.130 per dolar. Tarif berlaku mundur ke 7 November karena harga resmi hari itu sudah tercatat sama.
+
+| Model di router | Harga resmi | Tarif rupiah |
+|---|---|---|
+| `ag/gemini-3.8-flash-high` dan `gemini/gemini-3.8-flash` | $0,75 masuk, $3,75 keluar per 1 jt token ([Google](https://aistudio.google.com/docs/pricing)) | Rp13.598 dan Rp67.988 per 1 jt token, naik 2 kali lipat mulai 1 Januari 2027 dan sudah dijadwalkan |
+| `gemini/gemini-3.1-flash-lite-image` | $0,0336 per gambar 1K | Rp609 per gambar |
+| `gemini/gemini-2.5-flash-preview-tts` | $0,50 per 1 jt token teks, $10 per 1 jt token audio, 25 token per detik | Rp325.796 per 1 jt karakter |
+| `ds/deepseek-v4.1-flash` | $0,30 masuk, $1,20 keluar per 1 jt token, tarif jam sibuk ([DeepSeek](https://api-docs.deepseek.com/quick_start/pricing)) | Rp5.439 dan Rp21.756 per 1 jt token |
+
+- TTS ditagih per token audio, sedangkan kita mencatat karakter. Dari 247 adegan bernarasi: 0,0714 detik audio per karakter, sekitar 1,78 jt token audio per 1 jt karakter, ditambah perkiraan 1 token teks per 4 karakter. Hasilnya $17,97 per 1 jt karakter.
+- Ini perkiraan biaya jika memakai API resmi, bukan tagihan router. Jalur `ag/` memakai kuota langganan, dan router bisa menambah token sendiri. Cocokkan dengan tagihan nyata sebelum menetapkan harga.
+- Contoh: video Full SVG 5 adegan "Celah Penyadapan Komunikasi Pejabat Negara" menghabiskan sekitar Rp7.891 untuk draf, ubah draf, TTS, dan sebagian gambar adegan. Gemini 3.8 Flash adalah biaya terbesar, dan TTS 5 adegan hanya Rp316.
+
+## Suara ElevenLabs (8 November 2026)
+
+- Pilihan di layar draf: Gemini (1 kredit) atau ElevenLabs (2 kredit). Tambahan 1 kredit adalah angka sementara di `ELEVENLABS_EXTRA_CREDITS`. Pilihan disimpan sebagai `storyboard.voiceProvider` dan dipakai generate, coba ulang, serta revisi narasi.
+- Endpoint `/v1/text-to-speech/{voice}/with-timestamps` mengembalikan waktu per karakter. `alignmentToWordTimings` mengubahnya menjadi timing per kata, jadi subtitle mengikuti suara asli, bukan pembagian rata. Jika jumlah kata tidak cocok, dipakai perkiraan lama.
+- Jika ElevenLabs gagal, adegan ditandai gagal. Tidak ada fallback ke Gemini, karena user sudah membayar suara ElevenLabs.
+- Kunci ElevenLabs bisa dibatasi per izin. Kunci user saat ini hanya punya `text_to_speech`. Tanpa `voices_read`, pilihan hanya berisi suara `ELEVENLABS_VOICE_ID` dan tombol Dengar disembunyikan.
+- Uji satu kalimat 84 karakter: `eleven_multilingual_v2` 3,2 detik (header `character-cost` 34), `eleven_flash_v2_5` 0,3 detik (17). Timing per kata cocok untuk 13 dari 13 kata.
+- Uji video roti 5 adegan: 6 permintaan untuk 824 karakter, 1 gagal lalu berhasil saat dicoba ulang. Generate berjalan paralel 4 adegan, jadi batas konkurensi akun ElevenLabs bisa tersentuh.
+- Penilaian user setelah menonton video roti: suara Gemini masih lebih bagus. Yang diuji baru satu suara (`ELEVENLABS_VOICE_ID`) dengan `eleven_multilingual_v2` dan pengaturan bawaan. Suara penutur asli Indonesia dari Voice Library dan model `eleven_v3` belum dicoba.
+- Harga API resmi ([elevenlabs.io/pricing/api](https://elevenlabs.io/pricing/api)): v2 Multilingual $0,08 dan Flash/Turbo $0,04 per 1.000 karakter, yaitu Rp1.450.400 dan Rp725.200 per 1 jt karakter. Ini sekitar 4,5 kali TTS Gemini (Rp325.796). Untuk video 5 adegan sekitar 1.000 karakter, biayanya sekitar Rp1.450, dibanding Rp320 dengan Gemini.
+
 ## Isometrik dirombak menjadi gambar AI (8 November 2026)
 
 User menilai video Isometrik 3D buruk. Objeknya tidak menggambarkan yang dibahas dan hanya tampak seperti selang. Semua benda juga berdiri di atas alas, padahal jantung seharusnya tampil di dalam tubuh manusia. Penyebabnya mendasar: balok, silinder, dan blob tidak cukup untuk benda yang dikenali, berapa pun aturannya. User memilih arah "objek digambar AI".
@@ -400,6 +470,21 @@ Diuji atas permintaan user dengan topik kulkas, mode lit, `ds/deepseek-v4.1-flas
 - 6 benda dibuang karena tidak muat (kipas, termostat, katup ekspansi, dan lainnya), dan 2 beat kehilangan fokus. Kulkas tampil sebagai kotak abu-abu terbuka dengan pintu tergeletak di lantai, sehingga tidak terbaca sebagai kulkas.
 - Kesimpulan: untuk dunia 3D, DeepSeek Flash lebih buruk dari Gemini dan jangan dipakai. Klip ada di `storage/spike/iso-world/kulkas-ds/clip.mp4`.
 
+### Opus 5.5 sebagai penyusun dunia 3D (8 November 2026)
+
+Diuji atas permintaan user, mode lit, `cc/claude-opus-5-5`, dengan topik HP dan kulkas agar bisa dibandingkan langsung dengan Gemini dan DeepSeek.
+
+| Topik | Percobaan | Waktu rencana | Token masuk / keluar | Benda | Perbaikan |
+|---|---|---|---|---|---|
+| HP | 2 | 92 detik | 17.001 / 10.317 | 28 | tidak ada |
+| Kulkas | 2 | 148 detik | 17.875 / 16.101 | 24 | tidak ada |
+
+- Kedua jawaban pertama ditolak hanya karena satu `value` dikirim sebagai teks, bukan angka. Percobaan kedua lolos.
+- Dibandingkan Gemini (hp2-lit: 256 detik, 37.754 token keluar), Opus lebih cepat dan memakai token keluar jauh lebih sedikit. Biaya dalam dolar belum dihitung karena harga router untuk Opus belum dicek.
+- HP: paling rapi dari semua uji. Bingkai, papan hijau, baterai, chip, dan kepala charger terbaca, warnanya terang, dan kabelnya tipis. Tapi bentuknya tetap balok dan masih jauh dari video contoh user.
+- Kulkas: lebih lengkap dari DeepSeek. Kompresor, kondensor, dan pipa ada, dan tidak ada benda yang dibuang. Tapi kulkas tetap tampil sebagai kotak terbuka, dan dua bidikan dekat (panas pindah, termostat) hanya menampilkan dinding atau satu pipa.
+- Kesimpulan: model AI yang lebih kuat memperbaiki susunan, tapi tidak mengubah batas utamanya, yaitu bentuk yang disusun dari primitif. Klip ada di `storage/spike/iso-lit/hp-opus.mp4` dan `storage/spike/iso-lit/kulkas-opus.mp4`.
+
 ### Perbandingan layanan model 3D (dibaca dari halaman harga resmi, 8 November 2026)
 
 | Layanan | Masukan | Harga per model | Catatan |
@@ -413,3 +498,31 @@ Diuji atas permintaan user dengan topik kulkas, mode lit, `ds/deepseek-v4.1-flas
 
 Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada benda yang sama. Belum diputuskan user.
 
+## Spike gaya pixel art (8 November 2026)
+
+- Gaya gambar sebelumnya ditulis tetap sebagai flat vector di `sceneImagePrompt`. Sekarang baris jenis dan gaya diambil dari `ART_STYLES` menurut `storyboard.artStyle`, dan aturan tata letak serta larangan teks tetap sama untuk semua gaya.
+- Model gambar memang bisa menggambar pixel art, tetapi kotaknya lunak dan tidak rata. Grid tidak diserahkan ke prompt: `pixelate` mengecilkan gambar ke 180 kotak lebar (9:16), mengurangi warna menjadi 32, lalu membesarkan lagi dengan `nearest`. State adegan tetap digambar dari gambar asli model dan baru dipaskan ke grid di akhir, supaya grid tidak memengaruhi gambar berikutnya.
+- Jebakan: `sharp` 0.35.5 di mesin ini mengabaikan `png({ palette: true, colours })` dan `gif({ colours })`, dan hasilnya tetap 255–256 warna walau `imagequant` terpasang. Karena itu palet dihitung sendiri dengan k-means 8 putaran yang benihnya diambil merata menurut kecerahan, jadi hasilnya deterministik. Biayanya kecil karena hanya sekitar 58 ribu piksel.
+- Jebakan: `scripts/spike-image.ts` dulu tidak mengirim kanvas kosong sebagai referensi, sehingga rute `gemini/` mengembalikan gambar lanskap 1408×768. Pada video 9:16 gambar itu dipotong tengah dan sebagian besar isinya hilang. Skrip sekarang mengirim `blankCanvas` seperti pipeline asli.
+- Hasil uji (run kedua, `proj_spike_image_1794126229695`): 5 gambar 768×1376 dalam 9 detik, render 43 detik, total 98 detik. Gaya 16-bit konsisten antar-adegan. Masalah yang terlihat: jam bertuliskan "23:00", tulisan kecil di chip, font judul dan subtitle tidak bergaya pixel, dan adegan suhu panas menggambar api di sekitar bantal sehingga terkesan berlebihan.
+- Belum dicoba: font pixel untuk judul dan subtitle, pilihan gaya di UI, rasio 4:5 dan 16:9, serta topik lain.
+- Disambungkan ke aplikasi (8 November 2026): pilihan hanya untuk Story 2D Campuran, karena hanya preset itu yang menggambar adegan dengan model gambar (`supportsArtStyle`). Server memaksa `flat` untuk preset lain, supaya pilihan tidak diabaikan diam-diam. Adegan `svg` dibangun dari bentuk vektor datar dan akan merusak gaya, jadi video pixel art menggambar semua adegan dengan model gambar, termasuk saat planner gagal (`singlePictureScene`). Konsekuensinya biaya gambar per video naik, karena adegan diagram juga memakai model gambar.
+
+## Registry aset dan kebijakan library-first (8 November 2026)
+
+- Keputusan: semua gaya diarahkan memakai aset terdaftar, tetapi transisinya bertahap. Default sementara `library-first`: objek yang ada di registry wajib memakai aset, sedangkan objek yang belum ada boleh memakai jalur lama asalkan ditandai di draf dan dicatat. `library-only` diterapkan per gaya setelah tingkat fallback-nya rendah. Alasan: katalog awal hanya mobil dan jalan, jadi `library-only` langsung akan menolak sebagian besar prompt. Perkiraan urutan: Ads, lalu Isometrik, lalu Story 2D.
+- Registry ada di `src/lib/assets/`. Model hanya memilih ID, versi, varian, prop, anchor, dan aksi. Schema prop Zod dibangun dari metadata registry dengan `.strict()`, jadi prop yang tidak dikenal (misalnya `onClick`) dan warna non-hex ditolak, bukan diteruskan ke SVG.
+- Anchor registry merujuk langsung ke `ISO_CAR_ANCHORS` dan `ISO_ELECTRIC_CAR_ANCHORS`, bukan salinan angka, sehingga geometri dan registry tidak bisa berbeda. Varian listrik tidak punya anchor `fuelTank`, dan varian bensin tidak punya `tractionBattery`.
+- Prop per varian: `engineRotation` hanya untuk bensin, sedangkan `motorRotation`, `batteryCoverOpacity`, `chargePortOpen`, `energyFlow`, dan `energyPhase` hanya untuk listrik. Aksi hanya boleh menargetkan prop angka yang `animatable`.
+- Jalan hanya boleh ditempatkan lewat layout `road`. Anchor tengah lajur bergantung pada jumlah lajur dan belum diekspos.
+- Pencarian katalog mencocokkan kata utuh setelah normalisasi, jadi "Seven" tidak cocok dengan alias "ev". Kata varian saja ("EV", "bensin") sudah menunjuk ke asetnya. Kecocokan nama belum berarti mekanismenya didukung; pemanggil tetap harus memeriksa `capabilities`.
+- Belum ada: renderer rencana, pemisahan material internal menjadi token tema, dan sambungan ke director, generate, atau revisi.
+
+## Uji pertama video dari aset mobil (8 November 2026)
+
+- Alur uji: `scripts/spike-asset-plan.ts`. Prompt dicocokkan ke katalog, lalu Gemini (`ag/gemini-3.8-flash-high`) menyusun rencana JSON dari subset katalog. Rencana divalidasi `validateAssetPlan`, narasi dibuat dengan TTS, waktunya disesuaikan dengan `retimePlan`, lalu dirender oleh `PlanVideo` (`src/motion-kit/assets/`). Model tidak menulis SVG atau kode. `--reuse` merender ulang rencana tersimpan tanpa memanggil model atau TTS.
+- Hasil (topik "Apa beda mobil listrik dan mobil bensin?", 9:16): dua run, masing-masing 5 adegan, 29–33 detik video, total 90–98 detik termasuk rencana 47–58 detik dan render sekitar 11 detik. Kedua run memakai varian yang benar: tangki dan mesin di bensin, baterai dan motor di listrik. Tidak ada komponen tertukar dan tidak ada angka karangan. Klip ada di `storage/spike/asset-plan/ev/` dan `ev2/`.
+- Validator bekerja sebagai pengaman. Percobaan pertama kedua run ditolak karena contoh struktur di prompt lupa mencantumkan `instances` per adegan; Gemini memperbaikinya dari daftar error pada percobaan kedua. Contoh struktur di prompt sudah diperbaiki.
+- Jebakan tata letak yang ditemukan dari frame: (1) label yang diletakkan di atas titiknya membuat garis penunjuk bersilangan, sehingga "Tangki bensin" tampak menunjuk mesin. Sekarang label ditaruh di tepi layar pada sisi titiknya, dan garis digambar lebih dulu dari kotak label. (2) Close-up zoom 1,9× memotong mobil terlalu banyak; sekarang 1,55× dan hanya bergeser sebagian ke tengah. (3) Dua mobil di jalan saling menutupi; sekarang lajur digeser maju-mundur 150 unit. (4) Label yang sama dengan nama mobil di layout `side-by-side` disembunyikan.
+- Gerakan yang menyangkut fisika diambil alih renderer: di jalan, putaran roda selalu dihitung dari `distance`, dan `energyPhase` dihitung dari frame (tidak lagi `animatable`). Gemini sempat memilih `energyPhase` 0→250 dalam 6 detik (titik berkedip) dan roda berputar berlawanan dengan arah jalan. Aliran energi disembunyikan pada tampilan `exterior` karena tergambar di atas bodi.
+- Masih terlihat: narasi kadang menyebut hal yang tidak bisa ditampilkan aset ("mobil listrik lebih senyap"), caption tampil satu kalimat penuh tanpa sorotan kata, area atas layar banyak kosong, dan belum ada judul atau transisi kamera antaradegan. Kualitas akhir belum dinilai user.

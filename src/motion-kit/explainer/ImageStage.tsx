@@ -25,7 +25,9 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
   textStyle?: TextStyleId;
   labelBackground?: string;
   labelText?: string;
-}>> = ({ images, shots, backgroundColor, accent, textStyle, labelBackground = LABEL_BACKGROUND, labelText = LABEL_TEXT, children }) => {
+  /** Pixel art pictures scale with hard edges, so camera zooms keep square pixels. */
+  pixelated?: boolean;
+}>> = ({ images, shots, backgroundColor, accent, textStyle, labelBackground = LABEL_BACKGROUND, labelText = LABEL_TEXT, pixelated = false, children }) => {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const camera = imageCameraAt(frame, shots, fps);
@@ -45,7 +47,7 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
       <SceneBackground scrim={false}>
         <div style={{ position: 'absolute', left: 0, top: 0, width, height, transformOrigin: '0 0', transform: `translate(${offset.x}px, ${offset.y}px) scale(${camera.scale})` }}>
           {images.map((src, pose) => (
-            <Img key={src} src={src} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: poseOpacity[pose] }} />
+            <Img key={src} src={src} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: poseOpacity[pose], imageRendering: pixelated ? 'pixelated' : undefined }} />
           ))}
           {box && box.w * box.h <= MAX_MARKED_AREA && (
             <div style={{ position: 'absolute', inset: 0, background: spotlightGradient(box, width, height), opacity: markOpacity }} />

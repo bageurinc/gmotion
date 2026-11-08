@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
 import sharp from 'sharp';
-import { blankCanvas, generateImage, imageChangePrompt, imageModel, matchesAspect, sceneImagePrompt } from './image-generator';
+import { blankCanvas, generateImage, imageChangePrompt, imageModel, matchesAspect, pixelate, sceneImagePrompt } from './image-generator';
 import { composeImageScene } from './scene-generator';
 
 const storyboard = generateProceduralStoryboard('Topik uji', 'story-2d', '9:16');
@@ -44,6 +44,48 @@ describe('sceneImagePrompt', () => {
     expect(prompt).toContain('from edge to edge');
     expect(prompt).toContain('Never end the picture with a flat strip');
     expect(prompt).not.toContain('empty background');
+  });
+});
+
+describe('pixel art style', () => {
+  it('swaps only the style lines of the prompt', () => {
+    const pixel = sceneImagePrompt({ ...storyboard, artStyle: 'pixel' }, 0);
+    expect(pixel).toContain('pixel art');
+    expect(pixel).not.toContain('Flat editorial vector');
+    expect(pixel).toContain('no text');
+    expect(sceneImagePrompt(storyboard, 0)).toContain('Flat editorial vector');
+  });
+
+  it('snaps a smooth picture onto a square grid with few colors at full size', async () => {
+    const width = 768;
+    const height = 1376;
+    const gradient = Buffer.alloc(width * height * 3);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const at = (y * width + x) * 3;
+        gradient[at] = Math.round((x / width) * 255);
+        gradient[at + 1] = Math.round((y / height) * 255);
+        gradient[at + 2] = 128;
+      }
+    }
+    const smooth = await sharp(gradient, { raw: { width, height, channels: 3 } }).png().toBuffer();
+    const out = await pixelate(smooth, '9:16');
+    const { data, info } = await sharp(out).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([width, height]);
+    const colors = new Set<string>();
+    for (let at = 0; at < data.length; at += 3) colors.add(`${data[at]},${data[at + 1]},${data[at + 2]}`);
+    expect(colors.size).toBeLessThanOrEqual(32);
+    // 768 / 180 is about 4.3, so neighbouring screen pixels inside one grid cell share a color.
+    const row = data.subarray(0, width * 3);
+    let runs = 1;
+    for (let x = 1; x < width; x += 1) if (row[x * 3] !== row[(x - 1) * 3]) runs += 1;
+    expect(runs).toBeLessThanOrEqual(180);
+  });
+
+  it('marks the stage pixelated and still passes the validator', () => {
+    const code = composeImageScene({ ...storyboard, artStyle: 'pixel' }, 0, ['/a.png'], [{ from: 0, pose: 0, box: null, label: null }]);
+    expect(code).toContain(' pixelated>');
+    expect(validateSceneCode(code, 'Scene1.tsx')).toMatchObject({ valid: true });
   });
 });
 

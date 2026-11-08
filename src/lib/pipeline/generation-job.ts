@@ -2,7 +2,7 @@ import { saveProject } from '@/lib/storage/project-store';
 import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { buildImageScene } from '@/lib/explainer/image-scene';
-import { planSceneMoments, ScenePlan } from '@/lib/explainer/scene-moments';
+import { planSceneMoments, ScenePlan, singlePictureScene } from '@/lib/explainer/scene-moments';
 import { continuityFor } from '@/lib/explainer/continuity';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
@@ -76,6 +76,7 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
           fps: current().storyboard.fps,
           projectId: current().id,
           voice: current().storyboard.voice,
+          provider: current().storyboard.voiceProvider,
         });
         commit((project) => ({
           storyboard: {
@@ -150,6 +151,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       fps: project.storyboard.fps,
       projectId: project.id,
       voice: project.storyboard.voice,
+      provider: project.storyboard.voiceProvider,
     });
     commit((current) => ({
       storyboard: {
@@ -182,6 +184,8 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     } catch (err) {
       console.warn(`[GenerationJob] Moment plan failed for ${project.id}, drawing every scene from parts:`, err);
     }
+    // Parts are flat vector and would break a pixel art video, so a failed plan still draws pictures.
+    if (!plans && project.storyboard.artStyle === 'pixel') plans = project.storyboard.scenes.map(singlePictureScene);
   }
 
   const drawScene = async (index: number) => {

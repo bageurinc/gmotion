@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AspectRatioSchema, DrawingModelSchema, SocialPlatformSchema, StylePresetSchema } from '@/types/studio';
+import { ArtStyleSchema, AspectRatioSchema, DrawingModelSchema, SocialPlatformSchema, StylePresetSchema } from '@/types/studio';
 
 const PROJECT_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const VIRTUAL_FILE_NAME = /^(?:Scene\d{1,2}|MainVideo)\.tsx$/;
@@ -9,10 +9,12 @@ export const isValidProjectId = (id: string) => PROJECT_ID.test(id);
 export const isVirtualFileName = (name: string) => VIRTUAL_FILE_NAME.test(name);
 
 export const CreateProjectSchema = z.object({
+  requestId: z.string().uuid().optional(),
   prompt: z.string().trim().min(1).max(8000),
   preset: StylePresetSchema.default('ads-ui'),
   aspectRatio: AspectRatioSchema.default('9:16'),
   drawingModel: DrawingModelSchema.default('gemini'),
+  artStyle: ArtStyleSchema.default('flat'),
 });
 
 export const ProjectUpdateSchema = z
@@ -21,6 +23,11 @@ export const ProjectUpdateSchema = z
     safeAreaPlatform: SocialPlatformSchema.optional(),
   })
   .strict();
+
+export const DraftRevisionInputSchema = z.union([
+  z.object({ instruction: z.string().trim().min(3).max(1000) }),
+  z.object({ undo: z.literal(true) }),
+]);
 
 export const RevisionInputSchema = z.object({
   userMessage: z.string().trim().min(1).max(2000),

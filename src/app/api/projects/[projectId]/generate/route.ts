@@ -1,3 +1,4 @@
+import { runWithUsage } from '@/lib/billing/usage';
 import { NextRequest, NextResponse } from 'next/server';
 import { firstSceneWithoutNarration } from '@/lib/pipeline/draft';
 import {
@@ -7,7 +8,8 @@ import {
   runGeneration,
 } from '@/lib/pipeline/generation-job';
 import { requireProject } from '@/lib/auth/project-access';
-import { chargeForVideo } from '@/lib/billing/credits';
+import { chargeForVideo, creditsForVideo } from '@/lib/billing/credits';
+import { isElevenLabsConfigured } from '@/lib/audio/elevenlabs';
 import { saveProject } from '@/lib/storage/project-store';
 
 export async function POST(
@@ -30,7 +32,10 @@ export async function POST(
     return NextResponse.json({ error: `Adegan ${missing + 1} belum punya narasi.` }, { status: 400 });
   }
 
-  const charge = await chargeForVideo(user.id, projectId);
+  if (project.storyboard.voiceProvider === 'elevenlabs' && !isElevenLabsConfigured()) {
+    return NextResponse.json({ error: 'Suara ElevenLabs sedang tidak tersedia. Pilih suara Gemini di draf.' }, { status: 409 });
+  }
+  const charge = await chargeForVideo(user.id, projectId, creditsForVideo(project.storyboard));
   if (charge === 'insufficient') {
     return NextResponse.json({ error: 'Kredit habis. Beli kredit dulu.', code: 'insufficient_credits' }, { status: 402 });
   }
@@ -41,7 +46,10 @@ export async function POST(
 
   const prepared = prepareGeneration(project);
   saveProject(prepared);
-  void runGeneration(prepared).catch((err) => {
+  // The job outlives this request; the usage context follows it into every AI call it makes.
+  void runWithUsage({ userId: user.id, projectId, preset: prepared.storyboard.preset, stage: 'generate' }, () =>
+    runGeneration(prepared)
+  ).catch((err) => {
     console.error('[API /generate] Generation job crashed:', err);
   });
 

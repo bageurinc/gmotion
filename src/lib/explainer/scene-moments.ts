@@ -59,6 +59,9 @@ MOMENTS for "svg" scenes
 ${VISUAL_ANTI_SLOP_RULES}
 ${COPY_ANTI_SLOP_RULES}`;
 
+/** Shape-built scenes are flat vector, so a pixel art video draws every scene with the image model. */
+const PIXEL_NOTE = '\n\nThis video is pixel art drawn by the image model, so every scene must be "image". Diagrams and processes become pictures whose states show the change.';
+
 export async function planSceneMoments(model: string, storyboard: Storyboard): Promise<ScenePlan[]> {
   const scenes = storyboard.scenes
     .map((scene, index) => `Scene ${index + 1} (${(scene.durationInFrames / storyboard.fps).toFixed(1)} seconds)\nNarration: ${scene.voiceoverText}\nVisual direction: ${scene.visualPrompt}`)
@@ -66,15 +69,18 @@ export async function planSceneMoments(model: string, storyboard: Storyboard): P
   const { text } = await callChat({
     model,
     system: MOMENT_SYSTEM_PROMPT,
-    content: `Video: "${storyboard.title}"\n\n${scenes}\n\nReturn exactly ${storyboard.scenes.length} scenes in this order.`,
+    content: `Video: "${storyboard.title}"\n\n${scenes}\n\nReturn exactly ${storyboard.scenes.length} scenes in this order.${storyboard.artStyle === 'pixel' ? PIXEL_NOTE : ''}`,
     maxTokens: 12000,
   });
   const json = text.match(/\{[\s\S]*\}/);
   if (!json) throw new Error('Moment plan was not JSON');
   const { scenes: plans } = MomentPlanSchema.parse(JSON.parse(json[0]));
   if (plans.length !== storyboard.scenes.length) throw new Error(`Moment plan has ${plans.length} scenes`);
-  return plans;
+  return storyboard.artStyle === 'pixel' ? plans.map((plan) => (plan.kind === 'image' ? plan : { ...plan, kind: 'image' as const })) : plans;
 }
+
+/** A scene with no planned states: one picture from its visual direction, with the camera filling long stretches. */
+export const singlePictureScene = (): ScenePlan => ({ kind: 'image', reason: 'pixel art', poses: [], moments: [] });
 
 const normalizeWord = (word: string) => word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 

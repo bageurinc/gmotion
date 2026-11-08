@@ -1,415 +1,565 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowUpRight, Check, RefreshCw } from 'lucide-react';
 import {
-  Sparkles,
-  Play,
-  Film,
-  Zap,
-  Layers,
-  ArrowRight,
-  Clock,
-  CheckCircle2,
-  Tv,
-  Smartphone,
-  Square,
-  RefreshCw,
-  FolderOpen,
-  Cpu,
-} from 'lucide-react';
-import { StylePreset, AspectRatio, DrawingModel, StudioProject, DRAWING_MODEL_LABELS, PRESET_LABELS } from '@/types/studio';
+  StylePreset,
+  ArtStyle,
+  AspectRatio,
+  DrawingModel,
+  StudioProject,
+  ART_STYLE_LABELS,
+  DRAWING_MODEL_LABELS,
+  PRESET_LABELS,
+  supportsArtStyle,
+} from '@/types/studio';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
+import { readDraftIntent, saveDraftIntent } from '@/lib/studio/draft-intent';
 
-const PRESET_OPTIONS: Array<{ id: StylePreset; label: string; description: string }> = [
-  { id: 'story-2d', label: PRESET_LABELS['story-2d'], description: 'Cerita dengan kombinasi gambar ilustrasi dan animasi SVG.' },
-  { id: 'story-svg', label: PRESET_LABELS['story-svg'], description: 'Ilustrasi vektor dan gerakan objek mengikuti cerita, tanpa gambar raster.' },
-  { id: 'ads-ui', label: 'Ads', description: 'Iklan produk dengan mockup, grafik, dan tombol ajakan.' },
-  { id: 'world', label: 'Isometrik', description: 'Satu dunia 3D dengan kamera menyambung. Cocok untuk benda, mesin, dan alur proses.' },
+const PRESETS: Array<{ id: StylePreset; description: string }> = [
+  { id: 'story-2d', description: 'Ilustrasi dan animasi untuk bercerita.' },
+  {
+    id: 'story-svg',
+    description: 'Bentuk vektor yang bergerak mengikuti cerita.',
+  },
+  { id: 'ads-ui', description: 'Mockup produk, grafik, dan ajakan membeli.' },
+  { id: 'world', description: 'Benda dan proses dalam ruang isometrik.' },
 ];
-
-const DRAWING_MODEL_OPTIONS: Array<{ id: DrawingModel; description: string }> = [
-  { id: 'gemini', description: 'Model bawaan dengan biaya lebih tinggi.' },
-  { id: 'deepseek-flash', description: 'Biaya pembuatan video lebih rendah.' },
+const ART_STYLES: Array<{ id: ArtStyle; description: string }> = [
+  { id: 'flat', description: 'Vektor rapi dengan garis tepi tebal.' },
+  { id: 'pixel', description: 'Gaya game 16-bit dengan piksel kotak.' },
 ];
-
-const STARTER_FILTERS: Array<StylePreset | 'all'> = ['all', 'story-2d', 'story-svg', 'world', 'ads-ui'];
+const RATIOS: Array<{ id: AspectRatio; label: string }> = [
+  { id: '9:16', label: 'Reels / TikTok' },
+  { id: '4:5', label: 'Feed Instagram' },
+  { id: '16:9', label: 'YouTube' },
+];
+const FILTERS: Array<StylePreset | 'all'> = [
+  'all',
+  'story-2d',
+  'story-svg',
+  'world',
+  'ads-ui',
+];
 
 export default function HomePage() {
   const router = useRouter();
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const [prompt, setPrompt] = useState('');
-  const [starterFilter, setStarterFilter] = useState<StylePreset | 'all'>('all');
   const [preset, setPreset] = useState<StylePreset>('ads-ui');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [drawingModel, setDrawingModel] = useState<DrawingModel>('gemini');
-  const starters = STARTER_PROMPTS.filter((item) => starterFilter === 'all' || item.preset === starterFilter);
+  const [artStyle, setArtStyle] = useState<ArtStyle>('flat');
+  const [filter, setFilter] = useState<StylePreset | 'all'>('all');
+  const [showAllStarters, setShowAllStarters] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [recentProjects, setRecentProjects] = useState<StudioProject[]>([]);
+  const [error, setError] = useState('');
+  const [projects, setProjects] = useState<StudioProject[]>([]);
+  const [projectsState, setProjectsState] = useState<
+    'loading' | 'ready' | 'error' | 'guest'
+  >('loading');
   const [credits, setCredits] = useState<number | null>(null);
+  const [accountState, setAccountState] = useState<
+    'loading' | 'signed-in' | 'guest' | 'error'
+  >('loading');
+
+  const loadProjects = () => {
+    setProjectsState('loading');
+    fetch('/api/projects')
+      .then(async (res) => {
+        if (res.status === 401) {
+          setProjectsState('guest');
+          return;
+        }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setProjects(data.projects ?? []);
+        setProjectsState('ready');
+      })
+      .catch(() => setProjectsState('error'));
+  };
 
   useEffect(() => {
-    fetch('/api/projects')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.projects) setRecentProjects(data.projects);
-      })
-      .catch(() => {});
+    const draftId = new URLSearchParams(window.location.search).get('draft');
+    const draft = draftId ? readDraftIntent(draftId) : null;
+    if (draft) {
+      setPrompt(draft.prompt);
+      setPreset(draft.preset);
+      setAspectRatio(draft.aspectRatio);
+      setDrawingModel(draft.drawingModel);
+      setArtStyle(draft.artStyle);
+    }
+    loadProjects();
     fetch('/api/me')
-      .then((res) => res.json())
-      .then((data) => setCredits(data.user?.credits ?? null))
-      .catch(() => {});
+      .then(async (res) => {
+        if (res.status === 401) {
+          setAccountState('guest');
+          return;
+        }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setCredits(data.user?.credits ?? null);
+        setAccountState(data.user ? 'signed-in' : 'guest');
+      })
+      .catch(() => setAccountState('error'));
   }, []);
 
-  const handleGenerate = async (
-    customPrompt?: string,
-    customPreset?: StylePreset,
-    customRatio?: AspectRatio
-  ) => {
-    const p = customPrompt || prompt;
-    const pr = customPreset || preset;
-    const r = customRatio || aspectRatio;
-
-    if (!p.trim() || isGenerating) return;
-
+  const handleGenerate = () => {
+    if (!prompt.trim() || isGenerating) return;
+    setError('');
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: p,
-          preset: pr,
-          aspectRatio: r,
-          drawingModel,
-        }),
+      const requestId = crypto.randomUUID();
+      saveDraftIntent({
+        requestId,
+        startedAt: Date.now(),
+        prompt: prompt.trim(),
+        preset,
+        aspectRatio,
+        drawingModel,
+        artStyle: supportsArtStyle(preset) ? artStyle : 'flat',
       });
-
-      const data = await res.json();
-      if (data.code === 'insufficient_credits') {
-        router.push('/billing');
-        return;
-      }
-      if (data.project) {
-        router.push(`/studio/${data.project.id}`);
-      } else {
-        alert(data.error || 'Gagal menyusun draf');
-        setIsGenerating(false);
-      }
-    } catch (err) {
-      console.error('Draft failed:', err);
-      alert('Gagal menyusun draf');
+      router.push(`/studio/new?request=${requestId}`);
+    } catch {
+      setError(
+        'Ide belum bisa disimpan di browser ini. Izinkan penyimpanan situs, lalu coba lagi.',
+      );
       setIsGenerating(false);
     }
   };
+  const starters = STARTER_PROMPTS.filter(
+    (item) => filter === 'all' || item.preset === filter,
+  );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
-      {/* Background Glow Orbs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-emerald-500/10 blur-[130px] rounded-full" />
-        <div className="absolute top-1/3 -right-40 w-[500px] h-[400px] bg-cyan-500/10 blur-[140px] rounded-full" />
-      </div>
-
-      {/* Header */}
-      <header className="relative z-10 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20">
-            <Play className="w-5 h-5 fill-current ml-0.5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg tracking-tight text-white">gmotion</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
-                v0 for Remotion
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">Prompt-to-Motion-Graphics SaaS Platform</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {credits !== null && (
-            <Link href="/billing" className="text-xs font-semibold text-emerald-300 transition hover:text-emerald-200">
-              {credits} kredit
-            </Link>
-          )}
-          <a
-            href="https://github.com/bageurinc/gmotion"
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-slate-400 hover:text-slate-200 transition font-medium"
+    <div className="min-h-screen text-slate-100">
+      <a
+        href="#brief"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-slate-800 focus:p-4"
+      >
+        Langsung ke ide video
+      </a>
+      <header className="border-b border-slate-800">
+        <div className="mx-auto flex min-h-20 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link
+            href="/"
+            aria-label="gmotion, beranda"
+            className="text-2xl font-semibold tracking-tight"
           >
-            GitHub
-          </a>
+            g<span className="text-emerald-300">motion.</span>
+          </Link>
+          <nav
+            aria-label="Navigasi utama"
+            className="flex items-center gap-5 text-sm"
+          >
+            <a
+              href="#projects"
+              className="py-3 text-slate-300 hover:text-white"
+            >
+              Proyek
+            </a>
+            {accountState === 'signed-in' ? (
+              <Link
+                href="/billing"
+                className="rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-800"
+              >
+                {credits} kredit
+              </Link>
+            ) : accountState === 'loading' ? (
+              <span className="text-slate-400" role="status">
+                Memuat akun…
+              </span>
+            ) : (
+              <Link
+                href="/login"
+                className="rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-800"
+              >
+                Masuk
+              </Link>
+            )}
+          </nav>
         </div>
       </header>
-
-      {/* Main Hero & Generator Studio Section */}
-      <main className="relative z-10 flex-1 max-w-5xl w-full mx-auto px-6 py-12 flex flex-col items-center">
-        {/* Hero Title */}
-        <div className="text-center max-w-3xl space-y-4 mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-emerald-400 shadow-sm">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Hybrid v0 Architecture: Curated Motion-Kit + Remotion Player</span>
+      <main className="mx-auto max-w-6xl px-5 sm:px-8">
+        <div className="grid gap-10 py-10 sm:py-14 lg:grid-cols-[0.8fr_1.7fr] lg:gap-16">
+          <div>
+            <p className="mb-5 text-sm text-slate-400">
+              Studio video · Bahasa Indonesia
+            </p>
+            <h1 className="max-w-sm text-4xl font-medium leading-[1.15] sm:text-5xl">
+              Mulai dari cerita.
+              <br />
+              <span className="text-emerald-300">Jadikan video.</span>
+            </h1>
+            <p className="mt-5 max-w-sm text-base leading-7 text-slate-300">
+              Tulis idenya, periksa narasi dan adegannya, lalu buat animasi yang
+              bisa kamu revisi.
+            </p>
+            <ol
+              aria-label="Alur membuat video"
+              className="mt-8 space-y-4 border-t border-slate-700 pt-6 text-sm"
+            >
+              {[
+                'Tulis ide & pilih format',
+                'Periksa draf adegan',
+                'Buat, revisi & unduh video',
+              ].map((label, i) => (
+                <li
+                  key={label}
+                  className={`flex items-center gap-3 ${i === 0 ? 'text-slate-100' : 'text-slate-400'}`}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-700 text-xs tabular-nums">
+                    {i + 1}
+                  </span>
+                  {label}
+                </li>
+              ))}
+            </ol>
           </div>
-
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.12]">
-            Ketik 1-2 Kalimat. <br />
-            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-              Motion Graphic Studio Instan.
-            </span>
-          </h1>
-
-          <p className="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
-            Hasilkan video motion graphic kelas studio lengkap dengan narasi suara Bahasa Indonesia, kinetic typography, live preview tanpa server, dan ekspor MP4 beresolusi tinggi.
-          </p>
-        </div>
-
-        {/* Studio Prompt Card */}
-        <div className="w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl space-y-6">
-          {/* Main Prompt Input Area */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Prompt Ide Video Anda:</span>
-            </label>
+          <form
+            id="brief"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleGenerate();
+            }}
+            className="min-w-0 scroll-mt-6 rounded-xl border border-slate-700 bg-slate-900 p-5 sm:p-7"
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <label htmlFor="video-idea" className="text-lg font-semibold">
+                Video apa yang ingin kamu buat?
+              </label>
+              <span className="shrink-0 text-xs text-slate-400">Draf baru</span>
+            </div>
             <textarea
+              ref={promptRef}
+              id="video-idea"
+              required
+              maxLength={6000}
+              disabled={isGenerating}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Contoh: Buat video iklan FB Ads 15 detik untuk aplikasi WhatsApp AI Chatbot anti-ghosting agar closing sales naik 320%..."
-              rows={3}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-2xl p-4 text-sm text-white placeholder-slate-500 focus:outline-none transition leading-relaxed"
+              rows={4}
+              placeholder="Misalnya: Jelaskan cara menyeduh kopi dengan V60 untuk pemula. Gunakan bahasa santai dan tutup dengan tips memilih gilingan."
+              className="w-full resize-y rounded-md border border-slate-700 bg-slate-950 p-4 text-base leading-7 placeholder:text-slate-400 disabled:opacity-60"
             />
-          </div>
-
-          {/* Controls: Preset & Aspect Ratio */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-            {/* Style Preset Selector */}
-            <div className="space-y-2.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Style Preset:</span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {PRESET_OPTIONS.map((option) => (
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              Sebutkan topik, penonton, dan pesan yang ingin mereka ingat.
+            </p>
+            <fieldset disabled={isGenerating} className="mt-6">
+              <legend className="mb-3 text-sm font-semibold">Gaya video</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {PRESETS.map((option) => (
                   <button
-                    key={option.id}
                     type="button"
+                    key={option.id}
                     aria-pressed={preset === option.id}
                     onClick={() => setPreset(option.id)}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col ${
-                      preset === option.id
-                        ? 'bg-emerald-500/10 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
+                    className="option-control disabled:opacity-50"
                   >
-                    <div className="flex items-center justify-between gap-2 w-full mb-1">
-                      <span className="text-xs font-bold text-white">{option.label}</span>
-                      {preset === option.id && <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />}
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-tight">{option.description}</p>
+                    <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                      {option.id === 'ads-ui'
+                        ? 'Iklan produk'
+                        : PRESET_LABELS[option.id]}
+                      {preset === option.id && (
+                        <Check
+                          aria-hidden="true"
+                          className="h-4 w-4 text-emerald-300"
+                        />
+                      )}
+                    </span>
+                    <span className="mt-1 block text-sm leading-5 text-slate-300">
+                      {option.description}
+                    </span>
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div className="space-y-6">
-            {/* Aspect Ratio Selector */}
-            <div className="space-y-2.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Film className="w-3.5 h-3.5 text-amber-400" />
-                <span>Rasio Format:</span>
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: '9:16' as AspectRatio, label: '9:16', desc: 'Reels / TikTok', icon: Smartphone },
-                  { id: '4:5' as AspectRatio, label: '4:5', desc: 'Feed IG', icon: Square },
-                  { id: '16:9' as AspectRatio, label: '16:9', desc: 'YouTube', icon: Tv },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const isSelected = aspectRatio === item.id;
-                  return (
+            </fieldset>
+            {supportsArtStyle(preset) && (
+              <fieldset disabled={isGenerating} className="mt-6">
+                <legend className="mb-3 text-sm font-semibold">
+                  Gaya gambar
+                </legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {ART_STYLES.map((option) => (
                     <button
-                      key={item.id}
                       type="button"
-                      onClick={() => setAspectRatio(item.id)}
-                      className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1 ${
-                        isSelected
-                          ? 'bg-slate-800 border-emerald-500/60 text-white'
-                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-400'
-                      }`}
+                      key={option.id}
+                      aria-pressed={artStyle === option.id}
+                      onClick={() => setArtStyle(option.id)}
+                      className="option-control disabled:opacity-50"
                     >
-                      <Icon className="w-4 h-4" />
-                      <span className="text-xs font-bold">{item.label}</span>
-                      <span className="text-[10px] text-slate-500">{item.desc}</span>
+                      <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                        {ART_STYLE_LABELS[option.id]}
+                        {artStyle === option.id && (
+                          <Check
+                            aria-hidden="true"
+                            className="h-4 w-4 text-emerald-300"
+                          />
+                        )}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-300">
+                        {option.description}
+                      </span>
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Drawing Model Selector */}
-            <div className="space-y-2.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-violet-400" />
-                <span>Model AI:</span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {DRAWING_MODEL_OPTIONS.map((option) => (
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            <fieldset disabled={isGenerating} className="mt-6">
+              <legend className="mb-3 text-sm font-semibold">
+                Format layar
+              </legend>
+              <div className="grid grid-cols-3 gap-2">
+                {RATIOS.map((ratio) => (
                   <button
-                    key={option.id}
                     type="button"
-                    aria-pressed={drawingModel === option.id}
-                    onClick={() => setDrawingModel(option.id)}
-                    className={`p-3.5 rounded-2xl border text-left transition flex flex-col ${
-                      drawingModel === option.id
-                        ? 'bg-emerald-500/10 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
+                    key={ratio.id}
+                    aria-pressed={aspectRatio === ratio.id}
+                    onClick={() => setAspectRatio(ratio.id)}
+                    className="option-control disabled:opacity-50"
                   >
-                    <div className="flex items-center justify-between gap-2 w-full mb-1">
-                      <span className="text-xs font-bold text-white">{DRAWING_MODEL_LABELS[option.id]}</span>
-                      {drawingModel === option.id && <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />}
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-tight">{option.description}</p>
+                    <span className="block text-sm font-semibold tabular-nums">
+                      {ratio.id}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-300">
+                      {ratio.label}
+                    </span>
                   </button>
                 ))}
               </div>
+            </fieldset>
+            <details className="mt-5 border-b border-slate-700 pb-5">
+              <summary className="flex min-h-11 items-center justify-between gap-3 text-sm text-slate-300">
+                Pengaturan pembuatan{' '}
+                <span className="text-xs">
+                  {DRAWING_MODEL_LABELS[drawingModel]} · +
+                </span>
+              </summary>
+              <label
+                htmlFor="drawing-model"
+                className="mt-3 block text-sm text-slate-300"
+              >
+                Model gambar
+              </label>
+              <select
+                id="drawing-model"
+                disabled={isGenerating}
+                value={drawingModel}
+                onChange={(e) =>
+                  setDrawingModel(e.target.value as DrawingModel)
+                }
+                className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              >
+                <option value="gemini">
+                  {DRAWING_MODEL_LABELS.gemini} — model bawaan
+                </option>
+                <option value="deepseek-flash">
+                  {DRAWING_MODEL_LABELS['deepseek-flash']} — biaya lebih rendah
+                </option>
+              </select>
+            </details>
+            {error && (
+              <p role="alert" className="mt-4 text-sm leading-6 text-red-300">
+                {error}
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="max-w-[28ch] text-xs leading-5 text-slate-300">
+                Kamu bisa mengubah draf sebelum membuat video.
+              </p>
+              <button
+                type="submit"
+                disabled={!prompt.trim() || isGenerating}
+                className="primary-action shrink-0"
+              >
+                {isGenerating && (
+                  <RefreshCw
+                    aria-hidden="true"
+                    className="h-4 w-4 motion-safe:animate-spin"
+                  />
+                )}
+                {isGenerating ? 'Membuka draf…' : 'Susun draf video'}
+              </button>
             </div>
-            </div>
-          </div>
-
-          {/* Action Button & Loading Progress */}
-          <div className="pt-2">
-            <button
-              onClick={() => handleGenerate()}
-              disabled={isGenerating || !prompt.trim()}
-              className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 transition disabled:opacity-50"
-            >
-              {isGenerating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>AI sedang menyusun draf adegan...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Buat Draf Video</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </>
-              )}
-            </button>
-          </div>
+            <span role="status" className="sr-only">
+              {isGenerating
+                ? 'Membuka halaman penyusunan draf.'
+                : ''}
+            </span>
+          </form>
         </div>
-
-        {/* 1-Click Starter Prompts */}
-        <div className="w-full mt-12 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Contoh Prompt Siap Pakai ({starters.length}):</span>
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {STARTER_FILTERS.map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => setStarterFilter(filter)}
-                  className={`text-[11px] font-semibold px-3 py-1 rounded-full border transition ${
-                    starterFilter === filter
-                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
-                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
+        <section
+          id="projects"
+          aria-labelledby="projects-heading"
+          className="workspace-section scroll-mt-6"
+        >
+          <div className="mb-5 flex items-baseline justify-between gap-4">
+            <h2 id="projects-heading" className="text-xl font-semibold">
+              Lanjutkan proyek
+            </h2>
+            <span className="text-sm text-slate-400">
+              {projects.length > 0
+                ? `${projects.length} proyek`
+                : 'Ruang kerjamu'}
+            </span>
+          </div>
+          {projectsState === 'loading' && (
+            <p role="status" className="py-4 text-sm text-slate-400">
+              Memuat proyek tersimpan…
+            </p>
+          )}
+          {projectsState === 'error' && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-4 py-4 text-sm text-slate-300"
+            >
+              Proyek belum bisa dimuat.
+              <button
+                type="button"
+                onClick={loadProjects}
+                className="rounded-md border border-slate-700 px-4 py-2 hover:bg-slate-800"
+              >
+                Muat ulang
+              </button>
+            </div>
+          )}
+          {projectsState === 'guest' && (
+            <p className="py-4 text-sm leading-6 text-slate-300">
+              <Link
+                href="/login"
+                className="text-emerald-300 underline underline-offset-4"
+              >
+                Masuk dengan Google
+              </Link>{' '}
+              untuk membuka proyek tersimpan.
+            </p>
+          )}
+          {projectsState === 'ready' && projects.length === 0 && (
+            <p className="py-4 text-sm leading-6 text-slate-300">
+              Belum ada proyek. Mulai dari ide di atas, atau gunakan salah satu
+              contoh di bawah.
+            </p>
+          )}
+          {projectsState === 'ready' && (
+            <div className="divide-y divide-slate-800">
+              {projects.map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/studio/${project.id}`}
+                  className="group flex items-center justify-between gap-4 py-5"
                 >
-                  {filter === 'all' ? 'Semua' : PRESET_LABELS[filter]}
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-medium group-hover:text-emerald-300">
+                      {project.storyboard.title}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {PRESET_LABELS[project.storyboard.preset]} ·{' '}
+                      {project.storyboard.aspectRatio} ·{' '}
+                      {project.storyboard.scenes.length} adegan
+                    </p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-2 text-sm text-slate-300">
+                    <span className="hidden sm:inline">
+                      {project.status === 'draft' ? 'Buka draf' : 'Buka studio'}
+                    </span>
+                    <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+        <section
+          aria-labelledby="examples-heading"
+          className="workspace-section"
+        >
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 id="examples-heading" className="text-xl font-semibold">
+                Butuh titik awal?
+              </h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Pilih ide, lalu sesuaikan dengan ceritamu.
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label="Filter contoh"
+              className="flex flex-wrap gap-1"
+            >
+              {FILTERS.map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  aria-pressed={filter === item}
+                  onClick={() => {
+                    setFilter(item);
+                    setShowAllStarters(false);
+                  }}
+                  className={`rounded-md px-3 py-2 text-sm transition-colors ${filter === item ? 'bg-slate-800 text-emerald-300' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}
+                >
+                  {item === 'all'
+                    ? 'Semua'
+                    : item === 'ads-ui'
+                      ? 'Iklan'
+                      : PRESET_LABELS[item]}
                 </button>
               ))}
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {starters.map((item) => (
-              <div
+          <div id="starter-list" className="mt-6 divide-y divide-slate-800">
+            {(showAllStarters ? starters : starters.slice(0, 6)).map((item) => (
+              <button
+                type="button"
                 key={item.title}
+                disabled={isGenerating}
                 onClick={() => {
                   setPrompt(item.prompt);
                   setPreset(item.preset);
                   setAspectRatio(item.ratio);
+                  promptRef.current?.focus();
+                  promptRef.current?.scrollIntoView({
+                    behavior: 'instant',
+                    block: 'center',
+                  });
                 }}
-                className="group cursor-pointer bg-slate-900/50 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/40 rounded-2xl p-4 transition flex flex-col justify-between space-y-3"
+                className="group grid w-full gap-2 py-5 text-left transition-colors hover:bg-slate-900 sm:grid-cols-[180px_1fr_auto] sm:gap-6 disabled:opacity-50"
               >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 uppercase">
-                      {PRESET_LABELS[item.preset]}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-500">{item.ratio}</span>
-                  </div>
-                  <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition">
-                    {item.title}
-                  </h4>
-                  <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">
-                    {item.prompt}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-emerald-400 font-semibold">
-                  <span>Gunakan Prompt</span>
-                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
+                <span className="text-sm font-medium group-hover:text-emerald-300">
+                  {item.title}
+                </span>
+                <span className="line-clamp-2 text-sm leading-6 text-slate-300">
+                  {item.prompt}
+                </span>
+                <span className="text-xs leading-6 text-slate-400">
+                  {item.ratio}
+                  <span className="sr-only"> — Gunakan ide ini</span>
+                </span>
+              </button>
             ))}
           </div>
-        </div>
-
-        {/* Recent Projects (if any) */}
-        {recentProjects.length > 0 && (
-          <div className="w-full mt-12 space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-              <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Proyek Tersimpan ({recentProjects.length}):</span>
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {recentProjects.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/studio/${p.id}`}
-                  className="bg-slate-900/40 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between transition group"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
-                        {PRESET_LABELS[p.storyboard.preset]}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        {DRAWING_MODEL_LABELS[p.drawingModel ?? 'gemini']} · {p.storyboard.aspectRatio}
-                      </span>
-                    </div>
-                    <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition truncate">
-                      {p.storyboard.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">{p.userPrompt}</p>
-                  </div>
-                  <div className="pt-3 border-t border-slate-800/60 mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="flex items-center gap-1 font-mono">
-                      <Clock className="w-3 h-3 text-cyan-400" />
-                      {p.storyboard.scenes.length} Scenes
-                    </span>
-                    <span className="text-emerald-400 font-bold group-hover:underline">
-                      {p.status === 'draft' ? 'Lanjutkan Draf →' : 'Buka Studio →'}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+          {starters.length > 6 && (
+            <button
+              type="button"
+              aria-expanded={showAllStarters}
+              aria-controls="starter-list"
+              onClick={() => setShowAllStarters((value) => !value)}
+              className="mt-4 rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            >
+              {showAllStarters
+                ? 'Tampilkan lebih sedikit'
+                : `Lihat semua ${starters.length} ide`}
+            </button>
+          )}
+        </section>
       </main>
-
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-        gmotion &copy; 2026. Powered by Next.js 15, Remotion 4.x, and OpenAI/OpenRouter Architecture.
+      <footer className="border-t border-slate-800">
+        <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-3 px-5 py-6 text-xs text-slate-400 sm:px-8">
+          <span>gmotion · Ruang untuk cerita bergerak.</span>
+          <span>Ide → Draf → Video</span>
+        </div>
       </footer>
     </div>
   );

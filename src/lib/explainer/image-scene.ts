@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import type { Storyboard } from '@/types/studio';
-import { blankCanvas, generateImage, imageChangePrompt, matchesAspect, sceneImagePrompt } from './image-generator';
+import { blankCanvas, generateImage, imageChangePrompt, matchesAspect, pixelate, sceneImagePrompt } from './image-generator';
 import { assetModel, composeImageScene } from './scene-generator';
 import { buildImageShots, fillLongShots, locateObjects, MAX_SCENE_STATES, momentFrames, ScenePlan } from './scene-moments';
 
@@ -18,6 +18,10 @@ export async function buildImageScene(projectId: string, storyboard: Storyboard,
   }
   const shapes = await Promise.all(images.map((image) => matchesAspect(image, storyboard.aspectRatio)));
   if (shapes.includes(false)) throw new Error('Image came back in the wrong shape');
+  // States are drawn from the model's own pictures and snapped to the grid afterwards, so the grid never feeds back into the next drawing.
+  if (storyboard.artStyle === 'pixel') {
+    images.splice(0, images.length, ...(await Promise.all(images.map((image) => pixelate(image, storyboard.aspectRatio)))));
+  }
 
   const assetsDir = path.join(process.cwd(), 'storage', 'projects', projectId, 'assets');
   fs.mkdirSync(assetsDir, { recursive: true });

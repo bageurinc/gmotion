@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
-import { parseRevisionPlan, retimeSceneCode, reviseScene, type SceneRevisionDeps } from '@/lib/pipeline/scene-revision';
+import { parseRevisionPlan, retimeSceneCode, reviseScene, reviseScenes, type SceneRevisionDeps } from '@/lib/pipeline/scene-revision';
 import { composeImageScene } from '@/lib/explainer/scene-generator';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
@@ -60,6 +60,43 @@ export const Scene1 = () => (
     const code = retimeSceneCode(assetCode, before, { ...before, durationInFrames: 60 }, storyboard)!;
     expect(code).toContain('buildAssetShots(manifest, 60, 30)');
     expect(code).toContain('actionCues={[{"id":"petik","from":5,"to":50}]}');
+  });
+
+  it('still works after a model reformatted the scene', () => {
+    const reformatted = `import { ImageStage, KineticHeadline, SyncedCaptions } from '@/motion-kit';
+
+export const Scene2 = () => (
+  <ImageStage
+    images={["/a.png"]}
+    shots={[
+      { from: 0, pose: 0, box: { x: 0.1, y: 0.3, w: 0.3, h: 0.1 }, label: "Ceri {merah}" },
+      { from: 60, pose: 1, box: { x: 0.4, y: 0.3, w: 0.4, h: 0.1 }, label: "Keranjang" },
+    ]}
+    backgroundColor="#E5DAC8"
+  >
+    <KineticHeadline
+      text="Petik Buah Merah"
+      highlightWords={["PETIK"]}
+      textStyle="editorial"
+    />
+    <SyncedCaptions
+      text="Petani memetik buah, lalu {menyortir}."
+      wordTimings={[{ word: "Petani", startMs: 0, endMs: 400 }]}
+      activeColor="#96a69d"
+    />
+  </ImageStage>
+);
+`;
+    const after: SceneSpec = { ...before, voiceoverText: 'Kalimat baru.', wordTimings: timings('Kalimat baru.'), kineticHeadline: 'JUDUL BARU', headlineFocus: undefined, durationInFrames: 60 };
+    const code = retimeSceneCode(reformatted, { ...before, kineticHeadline: 'Petik Buah Merah' }, after, storyboard)!;
+    expect(code).toContain('text={"Kalimat baru."}');
+    expect(code).toContain(`wordTimings={${JSON.stringify(after.wordTimings)}}`);
+    expect(code).toContain('text={"JUDUL BARU"}');
+    expect(code).not.toContain('highlightWords');
+    expect(code).toContain('{ from: 30, pose: 1');
+    expect(code).toContain('label: "Ceri {merah}"');
+    expect(code).toContain('backgroundColor="#E5DAC8"');
+    expect(validateSceneCode(code, 'Scene2.tsx').errors).toEqual([]);
   });
 
   it('leaves scenes without composed captions to the model', () => {
@@ -134,5 +171,30 @@ describe('reviseScene', () => {
     const result = await reviseScene(project, 0, 'x', d);
     expect(result.outcome).toBe('unchanged');
     expect(d.speak).not.toHaveBeenCalled();
+  });
+
+  it('revises several scenes with one render check, leaving unrelated ones alone', async () => {
+    const multi = { ...project, files: { ...project.files, 'Scene2.tsx': imageCode.replace(/Scene1/g, 'Scene2'), 'Scene3.tsx': 'export default () => null;' } };
+    const d = deps({});
+    d.plan = vi.fn().mockImplementation(async (_scene: SceneSpec, _ins: string, position: { sceneNumber: number }) =>
+      position.sceneNumber === 3 ? {} : { visualInstruction: 'Warmer background' });
+    const result = await reviseScenes(multi, [0, 1, 2], 'latar lebih hangat', d);
+    expect(result.scenes.map((scene) => scene.outcome)).toEqual(['ok', 'ok', 'unchanged']);
+    expect(d.check.findCrashes).toHaveBeenCalledTimes(1);
+    expect(d.check.findCrashes).toHaveBeenCalledWith(expect.anything(), [0, 1]);
+    expect(result.project.files['Scene2.tsx']).toContain('// visual');
+    expect(result.project.files['Scene3.tsx']).toBe('export default () => null;');
+  });
+
+  it('keeps the other scenes when one scene fails to prepare, and throws when all fail', async () => {
+    const d = deps({ visualInstruction: 'x' });
+    d.reviseCode = vi.fn().mockRejectedValueOnce(new Error('model down')).mockImplementation(async (code: string) => `${code}\n// visual`);
+    const multi = { ...project, files: { ...project.files, 'Scene2.tsx': imageCode } };
+    const result = await reviseScenes(multi, [0, 1], 'x', d);
+    expect(result.scenes.map((scene) => scene.outcome).sort()).toEqual(['ok', 'unchanged']);
+
+    const broken = deps({ visualInstruction: 'x' });
+    broken.reviseCode = vi.fn().mockRejectedValue(new Error('model down'));
+    await expect(reviseScene(project, 0, 'x', broken)).rejects.toThrow('model down');
   });
 });

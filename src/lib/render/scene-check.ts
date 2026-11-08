@@ -225,40 +225,75 @@ export interface RevisionCheckTools {
   repair: (project: StudioProject, crash: SceneCrash) => Promise<string>;
 }
 
-const withSceneCode = (project: StudioProject, index: number, code: string): StudioProject => ({
+const withSceneCodes = (project: StudioProject, codes: Map<number, string>): StudioProject => ({
   ...project,
-  files: { ...project.files, [`Scene${index + 1}.tsx`]: code },
+  files: { ...project.files, ...Object.fromEntries([...codes].map(([index, code]) => [`Scene${index + 1}.tsx`, code])) },
 });
 
+export interface RevisedSceneCheck {
+  code: string;
+  outcome: RevisionCheckOutcome;
+  crash?: string;
+}
+
 /**
- * Renders a chat-revised scene before it is kept. A crash gets one AI repair; if that still
- * crashes, the scene goes back to the code it had before the revision, which already rendered.
+ * Renders chat-revised scenes before they are kept, all in one browser session. Each crash
+ * gets one AI repair; a scene that still crashes goes back to its safe code, which already rendered.
  */
+export async function guardRevisedScenes(
+  project: StudioProject,
+  safeCodes: Map<number, string>,
+  tools: RevisionCheckTools
+): Promise<Map<number, RevisedSceneCheck>> {
+  const indexes = [...safeCodes.keys()];
+  const revised = (index: number) => project.files[`Scene${index + 1}.tsx`];
+  const results = new Map<number, RevisedSceneCheck>(indexes.map((index) => [index, { code: revised(index), outcome: 'ok' }]));
+  if (!indexes.length) return results;
+
+  let crashes: SceneCrash[];
+  try {
+    crashes = await tools.findCrashes(project, indexes);
+  } catch (error) {
+    // A broken checker must not throw away the user's revision. Export still reports real crashes.
+    console.error('[SceneCheck] Revision check could not run:', error);
+    for (const index of indexes) results.set(index, { code: revised(index), outcome: 'unchecked' });
+    return results;
+  }
+  if (!crashes.length) return results;
+
+  const repairs = new Map<number, string>();
+  await mapWithConcurrency(crashes, PIPELINE_CONCURRENCY, async (crash) => {
+    try {
+      const code = await tools.repair(project, crash);
+      if (code !== revised(crash.index)) repairs.set(crash.index, code);
+    } catch (error) {
+      console.error('[SceneCheck] Revision repair failed:', error);
+    }
+  });
+
+  let stillCrashing = new Set(crashes.map((crash) => crash.index));
+  if (repairs.size) {
+    try {
+      const recheck = await tools.findCrashes(withSceneCodes(project, repairs), [...repairs.keys()]);
+      const failed = new Set(recheck.map((crash) => crash.index));
+      stillCrashing = new Set([...stillCrashing].filter((index) => !repairs.has(index) || failed.has(index)));
+    } catch (error) {
+      console.error('[SceneCheck] Revision recheck could not run:', error);
+    }
+  }
+  for (const crash of crashes) {
+    results.set(crash.index, stillCrashing.has(crash.index)
+      ? { code: safeCodes.get(crash.index)!, outcome: 'reverted', crash: crash.message }
+      : { code: repairs.get(crash.index)!, outcome: 'repaired', crash: crash.message });
+  }
+  return results;
+}
+
 export async function guardRevisedScene(
   project: StudioProject,
   index: number,
   previousCode: string,
   tools: RevisionCheckTools
-): Promise<{ code: string; outcome: RevisionCheckOutcome; crash?: string }> {
-  const revisedCode = project.files[`Scene${index + 1}.tsx`];
-  let crash: SceneCrash | undefined;
-  try {
-    [crash] = await tools.findCrashes(project, [index]);
-  } catch (error) {
-    // A broken checker must not throw away the user's revision. Export still reports real crashes.
-    console.error('[SceneCheck] Revision check could not run:', error);
-    return { code: revisedCode, outcome: 'unchecked' };
-  }
-  if (!crash) return { code: revisedCode, outcome: 'ok' };
-
-  try {
-    const repairedCode = await tools.repair(project, crash);
-    if (repairedCode !== revisedCode) {
-      const [stillCrashing] = await tools.findCrashes(withSceneCode(project, index, repairedCode), [index]);
-      if (!stillCrashing) return { code: repairedCode, outcome: 'repaired', crash: crash.message };
-    }
-  } catch (error) {
-    console.error('[SceneCheck] Revision repair failed:', error);
-  }
-  return { code: previousCode, outcome: 'reverted', crash: crash.message };
+): Promise<RevisedSceneCheck> {
+  return (await guardRevisedScenes(project, new Map([[index, previousCode]]), tools)).get(index)!;
 }

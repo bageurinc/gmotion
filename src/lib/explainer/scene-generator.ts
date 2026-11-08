@@ -82,7 +82,7 @@ export function composeImageScene(storyboard: Storyboard, index: number, images:
   return `import { DataCard, ImageStage, KineticHeadline, SyncedCaptions } from '@/motion-kit';
 
 export const ${componentName} = () => (
-  <ImageStage images={${JSON.stringify(images)}} shots={${JSON.stringify(shots)}} backgroundColor={${JSON.stringify(palette.background)}} accent={${JSON.stringify(accent)}} labelBackground={${JSON.stringify(palette.text)}} labelText={${JSON.stringify(palette.background)}}${stageStyle(storyboard)}>
+  <ImageStage images={${JSON.stringify(images)}} shots={${JSON.stringify(shots)}} backgroundColor={${JSON.stringify(palette.background)}} accent={${JSON.stringify(accent)}} labelBackground={${JSON.stringify(palette.text)}} labelText={${JSON.stringify(palette.background)}}${stageStyle(storyboard)}${storyboard.artStyle === 'pixel' ? ' pixelated' : ''}>
     ${sceneOverlays(storyboard, index)}
   </ImageStage>
 );

@@ -1,3 +1,4 @@
+import { recordUsage } from '@/lib/billing/usage';
 import { AssetManifest, AssetManifestSchema, missingContractIds } from './asset-contract';
 import { VISUAL_ANTI_SLOP_RULES } from '../pipeline/anti-slop';
 import { validateSceneCode } from '../pipeline/code-validator';
@@ -158,6 +159,7 @@ export async function callChat(options: {
     response = await send();
   }
   if (!response.ok || !response.body) {
+    recordUsage({ kind: 'chat', model: options.model, durationMs: Date.now() - startedAt, ok: false });
     throw new Error(`LLM request failed with HTTP ${response.status}`);
   }
 
@@ -192,6 +194,14 @@ export async function callChat(options: {
     }
   }
 
+  recordUsage({
+    kind: 'chat',
+    model: options.model,
+    inputTokens: promptTokens,
+    outputTokens: completionTokens,
+    durationMs: Date.now() - startedAt,
+    ok: true,
+  });
   return {
     text,
     finishReason,

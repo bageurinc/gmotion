@@ -30,6 +30,18 @@ export const PRESET_LABELS: Record<StoredPreset, string> = {
   ads: 'Isometrik',
 };
 
+/** How image-model scenes are drawn. Absent means flat vector, which every video used before. */
+export const ArtStyleSchema = z.enum(['flat', 'pixel']);
+export type ArtStyle = z.infer<typeof ArtStyleSchema>;
+
+export const ART_STYLE_LABELS: Record<ArtStyle, string> = {
+  flat: 'Ilustrasi datar',
+  pixel: 'Pixel art',
+};
+
+/** Only Story 2D Campuran draws scenes with the image model, so only it can change the drawing style. */
+export const supportsArtStyle = (preset: StoredPreset) => preset === 'story-2d';
+
 export const AspectRatioSchema = z.enum(['9:16', '4:5', '16:9']);
 export type AspectRatio = z.infer<typeof AspectRatioSchema>;
 
@@ -103,8 +115,11 @@ export const StoryboardSchema = z.object({
   aspectRatio: AspectRatioSchema,
   fps: z.number().default(30),
   voice: z.string().optional(),
+  /** Absent means Gemini, which every video used before ElevenLabs existed. */
+  voiceProvider: z.enum(['gemini', 'elevenlabs']).optional(),
   bgmTrack: z.enum(['dark-tech-pulse', 'upbeat-saas', 'warm-acoustic', 'cinematic-story', 'none']),
   textStyle: TextStyleSchema.optional(),
+  artStyle: ArtStyleSchema.optional(),
   palette: ColorPaletteSchema,
   scenes: z.array(SceneSpecSchema),
 });
@@ -161,6 +176,23 @@ export interface StudioProject {
   /** Long still stretches measured when generation finished. Absent when the check did not run. */
   stillStretches?: StillStretch[];
   exportVideoUrl?: string;
+  /** AI draft revisions used, capped because drafts are free. */
+  draftRevisionCount?: number;
+  /** The draft as it was before the last AI revision, so the user can undo it exactly. */
+  draftBeforeRevision?: Storyboard;
+  /** Post caption for social media, written on request from the final narration. */
+  socialCaption?: SocialCaption;
+}
+
+export interface SocialCaption {
+  /** Caption for TikTok and Instagram, also used as the YouTube description. */
+  text: string;
+  hashtags: string[];
+  /** Absent on captions written before YouTube fields existed. */
+  youtubeTitle?: string;
+  youtubeTags?: string[];
+  /** How many times it was written, capped so the button cannot run the model without limit. */
+  generatedCount: number;
 }
 
 export const RevisionRequestSchema = z.object({

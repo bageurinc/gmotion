@@ -13,7 +13,7 @@ import { GET as projectEvents } from '@/app/api/projects/[projectId]/events/rout
 import { POST as projectRender } from '@/app/api/projects/[projectId]/render/route';
 import { readExportStream } from '@/lib/render/export-stream';
 import { PUT as updateProject } from '@/app/api/projects/[projectId]/route';
-import { POST as reviseProject } from '@/app/api/projects/[projectId]/revise/route';
+import { GET as revisionAllowance, POST as reviseProject } from '@/app/api/projects/[projectId]/revise/route';
 import {
   applyDraftUpdate,
   DraftUpdateSchema,
@@ -25,6 +25,8 @@ import {
 } from '@/lib/pipeline/draft';
 import { generateProceduralStoryboard, parseStoryboardFromLLMResponse } from '@/lib/pipeline/director-agent';
 import { getProject, saveProject } from '@/lib/storage/project-store';
+import { releaseRevision, reserveRevision } from '@/lib/billing/credits';
+import { getDb } from '@/lib/db/client';
 import type { StudioProject } from '@/types/studio';
 
 const measureStillness = vi.hoisted(() => vi.fn());
@@ -386,7 +388,43 @@ describe('draft review flow', () => {
       const res = await revise(project, 'buat lebih dramatis');
       expect((await res.json()).revisionOutcome).toBe('unchanged');
       expect(findSceneCrashes).not.toHaveBeenCalled();
-      expect(lastReply(project.id)).toContain('belum berhasil');
+      expect(lastReply(project.id)).toContain('tidak berubah');
+    });
+
+    it('revises every finished scene when none is chosen, and counts each one', async () => {
+      const project = await createDraft();
+      const files = Object.fromEntries(project.storyboard.scenes.map((_, i) => [`Scene${i + 1}.tsx`, sceneCode.replace('Scene1', `Scene${i + 1}`)]));
+      saveProject({ ...project, status: 'ready', files: { ...project.files, ...files } });
+      const res = await reviseProject(request({ userMessage: 'ganti warna aksen jadi emas' }), context(project.id));
+      const body = await res.json();
+      const count = project.storyboard.scenes.length;
+      expect(body.scenes).toHaveLength(count);
+      expect(body.scenes.every((scene: { outcome: string }) => scene.outcome === 'ok')).toBe(true);
+      expect(findSceneCrashes).toHaveBeenCalledTimes(1);
+      expect(findSceneCrashes).toHaveBeenCalledWith(expect.anything(), project.storyboard.scenes.map((_, i) => i));
+      for (let i = 0; i < count; i++) expect(getProject(project.id)?.files[`Scene${i + 1}.tsx`]).toContain('#F59E0B');
+      expect(body.revisionsLeft).toBe(20 - count);
+    });
+
+    it('targets the one scene a message names', async () => {
+      const project = await readyProject();
+      const res = await reviseProject(request({ userMessage: 'adegan 1 warnanya jadi emas' }), context(project.id));
+      expect((await res.json()).scenes.map((scene: { index: number }) => scene.index)).toEqual([0]);
+    });
+
+    it('stops at the revision allowance, and a released reservation is given back', async () => {
+      const project = await readyProject();
+      for (let i = 0; i < 20; i++) expect((await revise(project, 'buat lebih dramatis')).status).toBe(200);
+      const blocked = await revise(project, 'ganti warna jadi emas');
+      expect(blocked.status).toBe(402);
+      expect(await blocked.json()).toMatchObject({ code: 'revision_limit', revisionsLeft: 0 });
+
+      const other = await readyProject();
+      const user = await getDb().first<{ user_id: string }>('SELECT user_id FROM revision_usage LIMIT 1');
+      const reservation = await reserveRevision(user!.user_id, other.id, 3);
+      expect(reservation.left).toBe(17);
+      await releaseRevision(reservation.id!);
+      expect((await (await revisionAllowance(new NextRequest('http://localhost/api'), context(other.id))).json()).revisionsLeft).toBe(20);
     });
   });
 

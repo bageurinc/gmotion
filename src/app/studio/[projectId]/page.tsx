@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { canAccessProject } from '@/lib/auth/project-access';
 import { getCurrentUser } from '@/lib/auth/session';
@@ -9,6 +10,8 @@ import { StudioWorkspaceClient } from '@/components/studio/StudioWorkspaceClient
 interface PageProps {
   params: Promise<{ projectId: string }>;
 }
+
+export const metadata: Metadata = { title: 'Studio video' };
 
 export default async function StudioPage({ params }: PageProps) {
   const { projectId } = await params;

@@ -110,7 +110,7 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-4 px-4">
           <Link href="/" className="flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm font-semibold text-slate-300 transition-colors duration-150 hover:text-white">
             <ArrowLeft className="h-4 w-4" />
-            <span>Dashboard</span>
+            <span>gmotion / Studio</span>
           </Link>
           <div className="flex min-w-0 items-center gap-3">
             <span className="truncate text-sm text-slate-400">{email}</span>
@@ -122,9 +122,9 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-2xl font-bold text-white">Kredit</h1>
+        <h1 className="text-3xl font-semibold text-white">Isi kredit video</h1>
         <p className="mt-2 text-slate-400">
-          Saldo Anda <strong className="font-semibold text-white">{credits} kredit</strong>. Satu kredit untuk satu video.
+          Saldo kamu <strong className="font-semibold text-white">{credits} kredit</strong>. Biaya pembuatan video ditampilkan sebelum kamu mulai.
         </p>
 
         {error && (
@@ -133,23 +133,28 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
           </p>
         )}
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
+        <section aria-labelledby="packages-heading" className="mt-8">
+        <h2 id="packages-heading" className="text-base font-semibold">Pilih jumlah kredit</h2>
+        <p className="mt-2 text-sm text-slate-300">Bayar dengan QRIS dari aplikasi bank atau dompet digital.</p>
+        <div className="mt-5 divide-y divide-slate-700 border-y border-slate-700">
           {packages.map((pkg) => (
             <button
               key={pkg.id}
               type="button"
-              disabled={Boolean(loadingPackage)}
+              disabled={Boolean(loadingPackage) || isPending}
               onClick={() => handleBuy(pkg.id)}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-5 text-left transition-colors duration-150 hover:border-emerald-500/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 disabled:opacity-60"
+              className="grid w-full grid-cols-[1fr_auto] items-center gap-3 px-3 py-5 text-left transition-colors duration-150 hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 disabled:opacity-60 sm:grid-cols-[1fr_1fr_auto]"
             >
               <span className="block text-sm font-semibold text-slate-300">{pkg.name}</span>
-              <span className="mt-2 block text-2xl font-bold text-white">{pkg.credits} kredit</span>
-              <span className="mt-1 block text-sm text-slate-400">
+              <span className="block text-lg font-semibold text-white">{pkg.credits} kredit</span>
+              <span className="col-span-2 text-sm text-emerald-300 sm:col-span-1">
                 {loadingPackage === pkg.id ? 'Membuat QRIS...' : formatRupiah(pkg.priceIdr)}
               </span>
             </button>
           ))}
         </div>
+        {isPending && <p className="mt-3 text-sm text-slate-300">Selesaikan pembayaran yang sedang berlangsung sebelum membeli paket lain.</p>}
+        </section>
 
         {payment && (
           <section aria-live="polite" className="mt-8 rounded-xl border border-slate-800 bg-slate-900 p-6">
@@ -158,7 +163,7 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
                 <div className="flex h-60 w-60 shrink-0 items-center justify-center rounded-lg bg-white">
                   {qrImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={qrImage} alt={`Kode QRIS senilai ${formatRupiah(payment.amount)}`} className="h-full w-full rounded-lg" />
+                    <img src={qrImage} width={320} height={320} alt={`Kode QRIS senilai ${formatRupiah(payment.amount)}`} className="h-full w-full rounded-lg" />
                   ) : (
                     <QrCode className="h-10 w-10 text-slate-400" />
                   )}
@@ -192,6 +197,7 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
                 <p className="text-white">Pembayaran diterima. {payment.credits} kredit sudah masuk ke saldo Anda.</p>
               </div>
             )}
+            {payment.status === 'creating' && <p role="status" className="text-slate-300">Menyiapkan kode pembayaran…</p>}
             {payment.status === 'expired' && <p className="text-slate-300">QRIS sudah kedaluwarsa. Pilih paket lagi untuk membuat kode baru.</p>}
             {payment.status === 'failed' && <p className="text-slate-300">Pembayaran gagal. Pilih paket lagi untuk mencoba ulang.</p>}
           </section>

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { activeShot, cameraForShot, imageCameraAt, imageOffset } from '@/motion-kit/explainer/image-camera';
 import { stillStretches } from '@/lib/render/motion-check';
-import { buildImageShots, expectedMoments, fillLongShots, findPhraseStart, MAX_SCENE_STATES, momentFrames, normalizeBox } from './scene-moments';
+import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
+import { callChat } from './asset-generator';
+import { buildImageShots, expectedMoments, fillLongShots, findPhraseStart, MAX_SCENE_STATES, momentFrames, normalizeBox, planSceneMoments } from './scene-moments';
 
 vi.mock('./asset-generator', () => ({ callChat: vi.fn() }));
 
@@ -123,5 +125,25 @@ describe('stillStretches', () => {
 
   it('counts a quiet ending', () => {
     expect(stillStretches([9, 1, 1, 1], 1, 2, 3)).toEqual([{ from: 1, to: 4, seconds: 3 }]);
+  });
+});
+
+describe('planSceneMoments with pixel art', () => {
+  const storyboard = generateProceduralStoryboard('Topik uji', 'story-2d', '9:16');
+  const reply = (count: number) => ({
+    text: JSON.stringify({ scenes: Array.from({ length: count }, () => ({ kind: 'svg', reason: 'diagram', poses: [], moments: [] })) }),
+  });
+
+  it('draws every scene as a picture so no flat vector scene breaks the style', async () => {
+    vi.mocked(callChat).mockResolvedValueOnce(reply(storyboard.scenes.length) as Awaited<ReturnType<typeof callChat>>);
+    const plans = await planSceneMoments('model', { ...storyboard, artStyle: 'pixel' });
+    expect(plans.every((plan) => plan.kind === 'image')).toBe(true);
+    expect(vi.mocked(callChat).mock.calls.at(-1)?.[0].content).toContain('pixel art');
+  });
+
+  it('keeps the planner choice for flat videos', async () => {
+    vi.mocked(callChat).mockResolvedValueOnce(reply(storyboard.scenes.length) as Awaited<ReturnType<typeof callChat>>);
+    const plans = await planSceneMoments('model', storyboard);
+    expect(plans.every((plan) => plan.kind === 'svg')).toBe(true);
   });
 });

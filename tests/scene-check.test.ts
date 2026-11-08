@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
 import { describeStillStretches, frameChanges } from '@/lib/render/motion-check';
-import { guardRevisedScene, opensWithPreviousScene, repairCrashedScenes, sampleSceneFrames, sheetFrames, type SceneCrash } from '@/lib/render/scene-check';
+import { guardRevisedScene, guardRevisedScenes, opensWithPreviousScene, repairCrashedScenes, sampleSceneFrames, sheetFrames, type SceneCrash } from '@/lib/render/scene-check';
 import type { StudioProject } from '@/types/studio';
 
 const project = {
@@ -157,5 +157,19 @@ describe('guardRevisedScene', () => {
   it('keeps the revision but says so when the checker itself fails', async () => {
     const t = guard([new Error('no chrome')]);
     expect(await guardRevisedScene(project, 0, 'before', t)).toEqual({ code: 'crashing', outcome: 'unchecked' });
+  });
+
+  it('checks several scenes together and only rechecks the repaired ones', async () => {
+    const multi = { ...project, files: { 'Scene1.tsx': 'crashing', 'Scene2.tsx': 'also crashing', 'Scene3.tsx': 'fine' } } as unknown as StudioProject;
+    const findCrashes = vi.fn()
+      .mockResolvedValueOnce([{ index: 0, message: 'a' }, { index: 1, message: 'b' }])
+      .mockResolvedValueOnce([{ index: 1, message: 'b' }]);
+    const repair = vi.fn().mockImplementation(async (_p: StudioProject, c: SceneCrash) => `fixed ${c.index}`);
+    const results = await guardRevisedScenes(multi, new Map([[0, 'safe0'], [1, 'safe1'], [2, 'safe2']]), { findCrashes, repair });
+    expect(findCrashes.mock.calls[0][1]).toEqual([0, 1, 2]);
+    expect(findCrashes.mock.calls[1][1].sort()).toEqual([0, 1]);
+    expect(results.get(0)).toMatchObject({ code: 'fixed 0', outcome: 'repaired' });
+    expect(results.get(1)).toMatchObject({ code: 'safe1', outcome: 'reverted' });
+    expect(results.get(2)).toEqual({ code: 'fine', outcome: 'ok' });
   });
 });

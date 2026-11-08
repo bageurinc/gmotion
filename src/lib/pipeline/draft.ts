@@ -12,7 +12,8 @@ export const DURATION_TOLERANCE = 0.15;
 
 export const DraftUpdateSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  voice: z.enum(VOICE_OPTIONS.map((voice) => voice.id) as [string, ...string[]]).optional(),
+  voice: z.string().max(40).optional(),
+  voiceProvider: z.enum(['gemini', 'elevenlabs']).optional(),
   scenes: z
     .array(
       z.object({
@@ -25,6 +26,13 @@ export const DraftUpdateSchema = z.object({
     )
     .min(1)
     .max(MAX_DRAFT_SCENES),
+}).superRefine((value, ctx) => {
+  if (value.voice === undefined) return;
+  // Gemini voices are a fixed list; ElevenLabs voices are account ids, checked by shape.
+  const valid = value.voiceProvider === 'elevenlabs'
+    ? /^[A-Za-z0-9]{10,40}$/.test(value.voice)
+    : VOICE_OPTIONS.some((voice) => voice.id === value.voice);
+  if (!valid) ctx.addIssue({ code: 'custom', path: ['voice'], message: 'Unknown voice' });
 });
 export type DraftUpdate = z.infer<typeof DraftUpdateSchema>;
 
@@ -46,7 +54,13 @@ export function applyDraftUpdate(storyboard: Storyboard, update: DraftUpdate): S
     };
     return { ...base, ...item, order: index + 1 };
   });
-  return { ...storyboard, title: update.title, voice: update.voice ?? storyboard.voice, scenes };
+  return {
+    ...storyboard,
+    title: update.title,
+    voice: update.voice ?? storyboard.voice,
+    voiceProvider: update.voice !== undefined ? update.voiceProvider ?? 'gemini' : storyboard.voiceProvider,
+    scenes,
+  };
 }
 
 /** Scene ids drive file and audio names, so generation needs them to match the final order. */

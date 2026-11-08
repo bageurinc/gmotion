@@ -30,7 +30,7 @@ export const GenerationProgress: React.FC<{
   const readyCount = scenes.filter((scene) => stageOf(scene.id) === 'ready').length;
   const hasFailure = scenes.some((scene) => stageOf(scene.id) === 'failed');
   const canRetry = interrupted || (project.status !== 'generating' && hasFailure);
-  const percent = Math.round((readyCount / scenes.length) * 100);
+  const percent = scenes.length ? Math.round((readyCount / scenes.length) * 100) : 0;
 
   return (
     <section aria-label="Progres pembuatan video" className="border-b border-slate-800 bg-slate-900 p-4">
@@ -60,7 +60,11 @@ export const GenerationProgress: React.FC<{
         <div className="h-full bg-emerald-400 transition-[width] duration-200" style={{ width: `${percent}%` }} />
       </div>
       {interrupted && <p className="mt-2 text-sm text-amber-300">Proses terhenti. Adegan yang sudah selesai tetap aman.</p>}
-      <ol className="mt-3 max-h-56 space-y-1 overflow-y-auto">
+      <ol
+        aria-label="Status tiap adegan"
+        tabIndex={scenes.length > 9 ? 0 : undefined}
+        className="mt-3 max-h-56 space-y-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {scenes.map((scene, index) => {
           const stage = stageOf(scene.id);
           return (

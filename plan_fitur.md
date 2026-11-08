@@ -2,6 +2,10 @@
 
 Terakhir diperbarui 8 November 2026.
 
+Rencana pustaka aset reusable, pengaturan warna dan tema, serta integrasi video
+berbasis aset tersedia di [plan_asset.md](plan_asset.md). Dokumen tersebut membedakan
+aset yang baru diuji lewat demo dari fitur yang sudah tersambung di aplikasi.
+
 ## Aturan teknis
 
 Aturan ini wajib diikuti oleh AI, model, atau developer mana pun yang mengerjakan project ini.
@@ -96,10 +100,11 @@ Sebuah item boleh dicentang hanya jika semua ini terpenuhi:
 
 - [x] Upgrade Next.js ke 15.5.29 dan tutup kerentanan dependency produksi
 - [x] Commit pekerjaan timelapse
-- [x] Tes otomatis untuk alur utama (420 test)
+- [x] Tes otomatis untuk alur utama (459 test)
 
 ## Draf dan alur
 
+- [ ] Langsung pindah ke halaman proses saat klik "Susun draf video": kode sudah tersedia di `/studio/new`, dengan skeleton, tahap aktif, waktu berjalan, dan ide yang bisa dibuka/tutup. Setelah selesai, otomatis membuka draf. Muat ulang dan Coba lagi memakai request ID yang sama; server menggabungkan permintaan aktif dan mengembalikan draf yang sudah tersimpan, terpisah per pemilik. Error tetap menampilkan ide, dan Edit ide memulihkan isi form. Verifikasi: 83 test terkait lulus, TypeScript dan build di salinan sumber terpisah lulus; uji browser dengan respons model ditahan membuktikan perpindahan sebelum draf selesai, lebar 320/375/768/1440 px, muat ulang, retry, dan pemulihan prompt. Batasan: browser memakai akun QA lokal dan respons model contoh, belum alur nyata dengan model sampai selesai; seluruh suite dan lint belum diperiksa ulang. Penyimpanan ide hanya berlaku di tab yang sama, dan deduplikasi proses aktif belum memakai antrean terdistribusi
 - [x] Prompt hanya membuat draf, belum TTS atau kode
 - [x] Jumlah dan isi adegan mengikuti topik, 3–12 adegan
 - [x] Layar review draf: judul, narasi, teks, arahan visual
@@ -107,13 +112,15 @@ Sebuah item boleh dicentang hanya jika semua ini terpenuhi:
 - [x] Simpan otomatis dengan percobaan ulang
 - [x] Perkiraan durasi di layar draf
 - [x] Validasi narasi kosong sebelum generate
-- [ ] Minta AI memperbaiki draf lewat instruksi
+- [x] Minta AI memperbaiki draf lewat instruksi: kotak "Minta AI mengubah draf" di layar draf. Gemini menerima draf lengkap dan instruksi, lalu mengembalikan draf utuh. Adegan yang dipertahankan tetap memakai kamera, suara, dan timelapse lamanya. Target durasi di instruksi ("jadikan 30 detik") memakai anggaran kata yang sama dengan pembuatan draf. CTA hanya boleh jika prompt atau instruksi memintanya. Tombol Kembalikan memulihkan draf persis dari server, dan hilang setelah edit manual. Jatah 10 kali per draf (draf masih gratis), dan jawaban rusak dicoba ulang 1 kali tanpa memotong jatah. Kolom draf dikunci selama AI bekerja. Uji Chrome pada draf roti 5 adegan: "lebih santai, gabungkan adegan 2 dan 3, jadikan 30 detik" menghasilkan 4 adegan, perkiraan durasi 59,4 → 31,4 detik, dalam sekitar 45 detik. Kembalikan memulihkan isi yang sama, dan hasil tetap ada setelah halaman dimuat ulang. Batasan: satu permintaan butuh sekitar 45 detik, dan arahan visual adegan baru belum dinilai pada video jadi
 - [ ] Kunci durasi sesuai target di prompt: kode membaca durasi yang disebut untuk video ("video 30 detik", "durasi 1,5 menit", "iklan 45 detik"), memberi Director anggaran kata dan jumlah adegan, lalu meminta 1 kali perbaikan jika estimasi meleset lebih dari 15%. Perkiraan durasi di layar draf kini memakai kecepatan bicara terukur 2,1 kata/detik (sebelumnya 2,4). Uji nyata Gemini + TTS: target 30 detik jadi audio 30,1 detik, target 60 detik jadi 58,6 detik; draf saja: 15 → 15,3 dan 45 → 42,6 detik. Batasan: belum dijalankan lewat browser sampai export, perbaikan menambah 1 panggilan Director (sekitar +20–35 detik) hanya saat draf meleset, durasi yang tidak didahului kata seperti video/durasi/iklan tidak terbaca, dan target di bawah 8 atau di atas 300 detik diabaikan
 - [ ] Percepat pembuatan draf ke bawah 15 detik (saat ini sekitar 30–40 detik)
 - [ ] Uji prompt yang berisi daftar tahap sendiri
 
 ## Generate dan editor
 
+- [ ] Tambah adegan baru lewat "Instruksi revisi" setelah video dibuat: belum diimplementasikan. Saat ini revisi studio hanya mengubah adegan yang sudah ada. Penambahan adegan lewat instruksi baru tersedia saat tahap draf. Rencana: pahami posisi sisipan, susun narasi dan visual adegan baru, buat audio serta animasinya, lalu perbarui urutan, durasi, dan komposisi video tanpa merusak adegan lama. Tetap batasi maksimal 12 adegan, periksa hasil render, dan tentukan pemakaian jatah revisinya sebelum implementasi
+- [ ] Hilangkan scrollbar yang muncul saat kursor menyentuh daftar progres: perbaikan sudah tersedia, khusus daftar status adegan, tanpa mematikan fungsi gulir. Uji langsung di Chrome pada `proj_1794123988607_cm89`: enam baris muat, scrollbar tidak tampil, dan status berubah dari 5/6 menjadi pemeriksaan semua adegan. Batasan: daftar panjang yang benar-benar perlu digulir dan navigasi keyboard belum diuji langsung; pemeriksaan otomatis lengkap belum dijalankan ulang
 - [x] Editor terbuka langsung setelah draf disetujui
 - [x] Job latar belakang per adegan, paralel maksimal 4
 - [x] Progres per adegan lewat SSE
@@ -121,10 +128,10 @@ Sebuah item boleh dicentang hanya jika semua ini terpenuhi:
 - [x] Coba ulang hanya adegan gagal, dan lanjutkan proses yang terhenti
 - [x] Export dikunci selama proses
 - [x] Status kembali normal saat export gagal
-- [ ] Progres export asli: route mengirim persen dari `renderMedia` lewat stream, dan timer palsu dihapus. Lolos test, belum disaksikan di browser karena butuh login Google
-- [ ] Revisi chat juga mengubah narasi dan audio: Gemini memisahkan permintaan menjadi narasi baru, judul baru, dan perubahan visual. Narasi baru dibuatkan suara TTS baru, lalu durasi adegan, subtitle, judul, kartu data, dan timing kamera atau aksi disesuaikan oleh kode tanpa model. `MainVideo.tsx` ikut dibuat ulang. Jika adegan buatan model tidak punya subtitle standar, penyesuaian diserahkan ke model, dan jika hasilnya crash, narasi, judul, dan audio lama dikembalikan. Uji nyata sampai MP4: video kopi Story 2D (narasi dipendekkan 8,7 → 5,9 detik dan judul diganti, revisi 19 detik, export 26 detik) dan Full SVG (narasi diperpanjang 9,0 → 12,4 detik plus latar lebih hangat, revisi 128 detik, export 35 detik). Frame MP4 diperiksa: subtitle dan judul baru tampil. Batasan: timing kamera dan aksi diskalakan sesuai durasi baru, bukan dicocokkan ulang ke kata baru; gambar tidak digambar ulang walau narasi membahas hal baru; belum dicoba lewat browser karena butuh login Google; kualitas suara dan sinkron aksi menunggu penilaian user saat menonton
-- [ ] Revisi untuk semua adegan sekaligus
-- [ ] Cek crash setelah revisi chat: adegan yang direvisi dirender di Chrome (3 frame, hanya adegan itu). Jika crash, AI memperbaiki 1 kali; jika masih crash, adegan kembali ke kode sebelum revisi. Balasan chat kini menyebut hasil apa adanya (lolos, diperbaiki, dikembalikan, kode tidak berubah, atau cek tidak bisa jalan), bukan selalu "telah diterapkan". Uji nyata Gemini pada salinan video kopi: revisi biasa lolos dengan cek 6,3 detik setelah revisi 18,7 detik; crash buatan terdeteksi dan diperbaiki 1 kali, total 32 detik. Batasan: belum dicoba lewat browser karena butuh login Google, jalur "dikembalikan" baru dibuktikan lewat test, dan request revisi kini menunggu cek render sebelum menjawab
+- [x] Progres export asli: route mengirim persen dari `renderMedia` lewat stream, dan timer palsu dihapus. Lolos test Uji browser 8 November 2026: persen naik 1% → 32% → selesai dalam sekitar 25 detik, dan MP4 benar.
+- [x] Revisi chat juga mengubah narasi dan audio: Gemini memisahkan permintaan menjadi narasi baru, judul baru, dan perubahan visual. Narasi baru dibuatkan suara TTS baru, lalu durasi adegan, subtitle, judul, kartu data, dan timing kamera atau aksi disesuaikan oleh kode tanpa model. `MainVideo.tsx` ikut dibuat ulang. Jika adegan buatan model tidak punya subtitle standar, penyesuaian diserahkan ke model, dan jika hasilnya crash, narasi, judul, dan audio lama dikembalikan. Uji nyata sampai MP4: video kopi Story 2D (narasi dipendekkan 8,7 → 5,9 detik dan judul diganti, revisi 19 detik, export 26 detik) dan Full SVG (narasi diperpanjang 9,0 → 12,4 detik plus latar lebih hangat, revisi 128 detik, export 35 detik). Frame MP4 diperiksa: subtitle dan judul baru tampil. Uji browser: "Ganti narasi adegan 2 jadi ..." mengganti narasi, durasi menjadi 4,4 detik, dan MP4 dari tombol Export menampilkan subtitle baru. Penyesuaian tanpa model kini membaca atribut JSX, jadi tetap jalan setelah Gemini menulis ulang format kode adegan. Batasan: timing kamera dan aksi diskalakan sesuai durasi baru, bukan dicocokkan ulang ke kata baru; gambar tidak digambar ulang walau narasi membahas hal baru; kualitas suara dan sinkron aksi menunggu penilaian user saat menonton
+- [x] Revisi untuk semua adegan sekaligus: pilihan "Semua adegan" di editor kini merevisi semua adegan yang sudah jadi. Setiap adegan disiapkan paralel, adegan yang tidak terkait dibiarkan, lalu semua adegan yang berubah dicek dalam 1 kali render. Jika pesan menyebut satu nomor adegan ("adegan 2"), hanya adegan itu yang direvisi. Tebakan adegan lama dari kata khusus iklan seperti "omzet" atau "chat" dihapus, dan saran cepat diganti dengan saran umum. Revisi kedua pada proyek yang sama ditolak selama yang pertama berjalan. Uji nyata Gemini dan TTS sampai MP4 pada video kopi 5 adegan: "pendekkan narasi tiap adegan" selesai dalam 26 detik dengan 1 kali cek render, video turun dari 42,7 ke 22,7 detik, export 16 detik, dan frame tiap adegan diperiksa. Uji browser: "Buat warna latar semua adegan lebih hangat" mengubah 5 adegan dalam sekitar 80 detik, semuanya lolos cek render, dan latar hangat tampil di MP4. Pesan yang menyebut "adegan 2" saat "Semua adegan" dipilih hanya merevisi adegan 2. Batasan: permintaan yang menyebut dua nomor adegan merevisi semua adegan lalu bergantung pada penilaian Gemini per adegan
+- [x] Cek crash setelah revisi chat: adegan yang direvisi dirender di Chrome (3 frame, hanya adegan itu). Jika crash, AI memperbaiki 1 kali; jika masih crash, adegan kembali ke kode sebelum revisi. Balasan chat kini menyebut hasil apa adanya (lolos, diperbaiki, dikembalikan, kode tidak berubah, atau cek tidak bisa jalan), bukan selalu "telah diterapkan". Uji nyata Gemini pada salinan video kopi: revisi biasa lolos dengan cek 6,3 detik setelah revisi 18,7 detik; crash buatan terdeteksi dan diperbaiki 1 kali, total 32 detik. Uji browser 8 November 2026 di Chrome: revisi satu adegan, semua adegan, dan narasi semuanya menampilkan "lolos cek render". Batasan: jalur "dikembalikan" baru dibuktikan lewat test, dan request revisi kini menunggu cek render sebelum menjawab
 - [ ] Job queue sungguhan untuk produksi
 
 ## Kualitas visual
@@ -157,7 +164,7 @@ Bagian ini berlaku untuk Story 2D dan Ads. Pilihan Isometrik memakai bagian Vide
 - [ ] Kesinambungan antaradegan Full SVG: blok dunia bersama disalin identik ke semua adegan, dan adegan digambar berurutan dari pose akhir adegan sebelumnya. Uji nyata sampai MP4: 2 topik dengan DeepSeek Flash dan 1 topik dengan Gemini, frame sekitar potongan diperiksa. Menunggu penilaian user saat menonton. Batasan: objek di luar `WorldBase` masih bisa berubah bentuk, dan pose di potongan belum selalu menyambung
 - [x] Pilihan model gambar Gemini atau DeepSeek Flash di halaman utama, tersimpan per proyek dan tampil di daftar proyek serta studio. Uji browser: pilihan tersimpan dan video lebah berhasil dibuat. Batasan: DeepSeek Flash baru diuji pada Story 2D Full SVG, belum pada Campuran, Ads, dan Isometrik
 - [ ] Uji DeepSeek Flash pada Story 2D Campuran, Ads, dan Isometrik
-- [ ] Cek tagihan nyata model gambar `gemini/gemini-3.1-flash-lite-image`
+- [ ] Cek tagihan nyata model gambar `gemini/gemini-3.1-flash-lite-image` (bisa dijawab dari catatan biaya admin di bagian Siap dijual)
 - [x] Pemeriksaan bagian video yang diam di job generate: Story 2D Campuran, Ads, dan Isometrik diukur setelah cek crash, dan hasilnya tampil di pesan chat editor. Uji nyata lewat API: Isometrik 5 adegan, 31,1 detik, 5 bagian diam, frame MP4 diperiksa. Batasan: hanya melapor tanpa memperbaiki, baru dikalibrasi di 9:16, Ads belum diuji, Full SVG dikecualikan karena aksi kecil terbaca diam, dan pesan tidak muncul lagi saat Coba ulang jika chat sudah berisi
 - [ ] Contact sheet per aksi dan frame potongan untuk kritik: frame menghindari fade, memuat pose akhir tiap aksi, dan Full SVG diawali frame terakhir adegan sebelumnya. Catatan kritik kini tersimpan di `sceneProgress.issues`. Uji nyata Full SVG sampai MP4 berhasil (3 adegan, 45,3 detik). Batasan: pada uji 4 potongan, kritik baru menyebut 1 lompatan secara eksplisit, dan lompatan bentuk panel pada video semut tidak disebut
 - [ ] Gerak pada Isometrik: kamera mendorong 8% selama bidikan bertahan, dan tubuh organik yang disorot berdenyut. Uji nyata iklan kasir: 0 bagian diam, sebelumnya 6 bagian pada video paru-paru. Menunggu penilaian user saat menonton. Batasan: denyut tidak ikut menggerakkan benda yang menempel di atas blob
@@ -171,6 +178,7 @@ Bagian ini berlaku untuk Story 2D dan Ads. Pilihan Isometrik memakai bagian Vide
 - [x] SFX per adegan
 - [x] Transisi antar-adegan
 - [x] Timing subtitle dari jeda audio asli
+- [ ] Suara ElevenLabs sebagai pilihan berbayar: dipilih di layar draf, 2 kredit (Gemini 1 kredit, tambahan masih angka sementara). Timing subtitle per kata diambil dari ElevenLabs. Tidak ada fallback ke Gemini jika gagal. Biaya tercatat di halaman admin dengan tarif resmi. Uji nyata di Chrome pada draf roti Story 2D Campuran 5 adegan: saldo turun tepat 2 kredit (53 → 51), generate selesai dalam 320 detik tanpa versi sederhana, 5 MP3 ElevenLabs dengan timing per kata bervariasi (127–1.381 ms), export MP4 64,3 detik dengan audio AAC, dan frame diperiksa. Tercatat 824 karakter ElevenLabs (1 dari 6 permintaan gagal lalu berhasil saat dicoba ulang) dan 4 gambar. Penilaian user 8 November 2026: suara Gemini masih lebih bagus daripada suara ElevenLabs yang dipakai (`ELEVENLABS_VOICE_ID` dengan `eleven_multilingual_v2`). Batasan: kunci belum punya izin `voices_read`, jadi hanya 1 suara dan tanpa tombol Dengar; harga tambahan 1 kredit masih sementara
 - [ ] Penilaian user atas musik dan SFX
 - [ ] Ganti musik dengan track bebas royalti pilihan, jika perlu
 - [ ] Cek audio baru di pratinjau editor
@@ -210,12 +218,19 @@ Status saat ini: tersedia sebagai pilihan **Isometrik**, untuk rasio 9:16. Sejak
 
 ## Pilihan gaya dan brand
 
+- [ ] Perapian seluruh antarmuka: sudah diterapkan pada beranda, login, draf, editor, kredit, dan admin; glow, gradasi dekoratif, serta badge arsitektur dihapus. Contoh ide menjadi daftar enam item dengan tombol membuka sisanya; proyek dan paket kredit memakai baris. Label Bahasa Indonesia, fokus keyboard, tombol sentuh, reduced motion, serta halaman galat dan 404 diperbaiki. Arah visual dicatat di `DESIGN.md`, bukti pemeriksaan di `docs/UI-REVIEW.md`. Uji browser desktop/mobile dan build lulus. Batasan: pemeriksaan editor/pembayaran memakai data contoh, admin belum diperiksa ulang dengan data nyata, belum diuji di HP sungguhan, dan checklist verifikasi penuh belum tuntas
 - [x] Empat pilihan gaya: Story 2D Campuran, Story 2D Full SVG, Ads, dan Isometrik
+- [ ] Gaya gambar pixel art untuk Story 2D Campuran: pilihan "Gaya gambar" (Ilustrasi datar atau Pixel art) muncul di beranda hanya saat Story 2D Campuran dipilih. Pilihan dibawa draft intent ke `POST /api/projects`, disimpan sebagai `storyboard.artStyle`, dan ikut dicek saat permintaan yang sama diulang. Preset lain selalu disimpan flat. Label "Pixel art" tampil di layar persiapan draf dan header editor. Kolom `artStyle` mengganti baris gaya di prompt gambar, hasil model dipaskan ke grid nyata oleh `pixelate` (180 kotak lebar untuk 9:16, 32 warna lewat k-means), dan `ImageStage` memakai `imageRendering: pixelated`. Pada video pixel art semua adegan digambar model gambar: planner diminta memilih `image`, adegan `svg` diubah menjadi `image`, dan jika planner gagal tiap adegan tetap mendapat satu gambar. Uji nyata lewat `scripts/spike-image.ts --art pixel`, topik "HP dicas semalaman", 5 adegan, 98 detik, frame diperiksa: gaya 16-bit terbaca dan sama di semua adegan. 474 test lolos. Belum dinilai user, dan belum diuji lewat job generate atau browser. Batasan: judul dan subtitle masih memakai font biasa; model gambar masih menggambar angka jam dan tulisan kecil di chip walau dilarang; adegan yang gambarnya gagal tetap jatuh ke bentuk vektor datar; jenis gaya tidak bisa diubah setelah draf dibuat; baru diuji 9:16 dan 1 topik; Full SVG, Ads, dan Isometrik belum ikut
+- [ ] Gaya lain setelah pixel art: PS2/low-poly, mainan balok (jangan memakai nama merek), dan CGI halus. Belum dimulai
 - [ ] Brand kit: logo, warna, dan foto produk
 - [ ] Kartu penutup dan identitas seri
 - [ ] Unggah aset user
 - [ ] Variasi hook untuk A/B test
 - [ ] Export ke beberapa rasio
+- [x] Bahan posting sosmed setelah export: tombol "Bagikan" di header atau modal export membuka panel dengan tab TikTok / IG (caption dan hashtag) dan YouTube (judul maksimal 100 karakter, deskripsi, dan tag maksimal 500 karakter), masing-masing dengan tombol salin. Semua ditulis Gemini dalam 1 panggilan hanya dari narasi, maksimal 5 kali per video, dan bisa diedit. Tanpa AI, panel diisi judul dan kalimat pertama. File download bernama dari judul, misalnya `perjalanan-kopi-nusantara.mp4`. Uji Chrome: caption, judul, dan tag sesuai narasi, tombol salin bekerja, dan nama file benar. Batasan: teks yang diedit tidak disimpan ke server, dan bahan ini tidak tahu jika video berubah setelah export terakhir
+- [ ] Tombol Bagikan ke aplikasi lewat menu bagikan sistem: video diambil sebagai file lalu diberikan ke `navigator.share`, dan caption disalin dulu karena Instagram dan TikTok membuang teks yang ikut. Tombol hanya muncul jika browser menerima berbagi file. Di Chrome Mac `canShare` menerima file MP4 10,8 MB, tetapi menu bagikan belum dibuka dan belum dicoba di HP sungguhan. Batasan: belum dicoba di HP sungguhan
+- [x] Editor bisa dipakai di HP: di bawah 768 px player tampil di atas (40% tinggi layar) dan panel chat mengisi sisanya, header hanya memuat judul, tombol Bagikan berupa ikon, dan tombol Export. Label tab dipendekkan, modal Bagikan bisa di-scroll, dan tingginya memakai `dvh` supaya tidak tertutup bar browser HP. Uji Chrome lewat iframe 390×780 dan 360×640: tanpa scroll ke samping, semua tombol header terlihat, dan modal Bagikan muat. Desktop tetap dua kolom. Batasan: belum dicoba di HP sungguhan, tab Kode tetap tidak nyaman di layar kecil, dan halaman lain seperti draf belum dicek di lebar HP
+- [ ] Upload langsung ke YouTube, TikTok, dan Instagram: ditunda sampai aplikasi publik dan object storage ada. TikTok mewajibkan audit sebelum video bisa publik, Instagram butuh akun bisnis dan review Meta, dan YouTube paling mudah untuk dimulai
 
 ## Keamanan
 
@@ -226,6 +241,7 @@ Status saat ini: tersedia sebagai pilihan **Isometrik**, untuk rasio 9:16. Sejak
 - [x] Larang edit project saat generate berjalan
 - [x] Login Google dan kepemilikan project
 - [x] Batas generate per user lewat saldo kredit (revisi chat belum dibatasi)
+- [x] Batas revisi chat: setiap video punya jatah 20 adegan revisi (angka sementara, ditetapkan bersama harga final di `src/lib/billing/credits.ts`). Jatah dicatat di tabel `revision_usage` (migrasi `0002_revision_usage.sql`) dan dipesan dengan satu INSERT bersyarat sebelum AI dipanggil, lalu dikembalikan jika revisi gagal. Revisi semua adegan memakai jatah sebanyak jumlah adegannya. Editor menampilkan sisa revisi dan pesan error, dan pesan yang gagal dikembalikan ke kotak input. Lolos test route. Uji browser: sisa revisi tampil di editor dan turun 20 → 19 → 14 → 13 sesuai jumlah adegan yang direvisi. Batasan: migrasi belum diterapkan ke D1 sungguhan, dan jalur pengembalian jatah saat error baru diuji lewat fungsi, bukan lewat route
 - [ ] Pratinjau dalam iframe sandbox
 - [ ] Render di worker terisolasi tanpa akses jaringan
 - [ ] Ganti koneksi router ke HTTPS
@@ -234,16 +250,21 @@ Status saat ini: tersedia sebagai pilihan **Isometrik**, untuk rasio 9:16. Sejak
 
 - [x] D1 untuk akun, saldo, dan pembayaran
 - [ ] Object storage untuk file project
-- [ ] Catat biaya per video
-- [ ] Hitung biaya rupiah per video
+- [ ] Catat biaya per video untuk admin (bukan untuk user, yang tetap hanya melihat kredit). Tujuannya menentukan harga kredit, menilai jatah gratis, menemukan video yang biayanya tidak wajar, dan membandingkan model. Rencana:
+  - [x] Setiap panggilan AI mencatat satu baris ke tabel `ai_usage` (migrasi `0003_ai_usage.sql`). Dicatat di empat titik: klien chat AI SDK, chat streaming aset, model gambar, dan TTS router. Konteks user, proyek, gaya, dan tahap dibawa `AsyncLocalStorage` dari route, termasuk ke job generate di latar belakang. Uji nyata: caption, draf, ubah draf, TTS 5 adegan, dan gambar adegan Full SVG lewat chat streaming (6.816 token masuk, 13.131 keluar, 90 detik) tercatat dengan user dan proyek. Pencatatan model gambar baru dibuktikan lewat kode, belum lewat video Campuran nyata. Batasan: tahap di dalam generate belum dipecah (aset, kritik, perbaikan), tetapi model dan jenisnya terlihat; TTS `msedge-tts` langsung tidak dicatat karena gratis. Rencana awal: user, proyek, tahap (draf, ubah draf, rencana gambar, gambar, kode adegan, perbaikan crash, kritik, TTS, revisi chat, caption), model, token masuk dan keluar atau karakter TTS, jumlah gambar, durasi, dan berhasil atau gagal. Pencatatan tidak boleh menggagalkan video jika database sedang bermasalah
+  - [x] Tabel `model_rates` dalam rupiah, sudah diisi dari harga resmi Google dan DeepSeek dengan kurs JISDOR Rp18.130, termasuk kenaikan Gemini 3.8 Flash per 1 Januari 2027. Sumber dan cara hitung TTS ada di KNOWLEDGE. Rencana awal: diisi dari harga resmi atau tagihan router, dengan tanggal berlaku supaya catatan lama tidak berubah saat tarif naik
+  - [x] Ringkasan per video, per tahap, per model, per gaya, dan proyek termahal. Ringkasan per user dan per hari belum ada. Rencana awal: ringkasan per video: total token, gambar, karakter TTS, perkiraan rupiah, dan rincian per tahap. Juga ringkasan per user dan per hari
+  - [x] Peran admin: daftar email di `ADMIN_EMAILS`, dicek di server. User biasa mendapat 404 untuk halaman dan route admin
+  - [x] Halaman admin `/admin/biaya` dengan periode 7, 30, dan 90 hari, peringatan model belum bertarif, dan form tarif. Diuji di Chrome. Isi rencana: tabel video dengan biaya tertinggi, rata-rata biaya per gaya (Story 2D Campuran, Full SVG, Ads, Isometrik), biaya jatah gratis (revisi, ubah draf, caption), dan perbandingan dengan pemasukan kredit
+  - [ ] Cocokkan perkiraan dengan tagihan nyata router setidaknya sekali sebelum menetapkan harga final
 - [x] Paket kredit dan pembayaran QRIS Xendit (harga masih placeholder)
-- [ ] Tetapkan harga final di `src/lib/billing/packages.ts`
+- [ ] Tetapkan harga final di `src/lib/billing/packages.ts`, setelah catatan biaya admin memberi angka nyata
 - [x] Uji login Google dengan kredensial sungguhan di localhost
 - [x] Uji buat QRIS, simulasi bayar, dan kredit masuk dengan kunci uji Xendit
 - [ ] Uji webhook Xendit dari alamat publik
 - [ ] Terapkan migrasi ke D1 sungguhan
 - [ ] Pindahkan generate dan render ke host yang mendukung Node dan Chromium
 - [ ] Cek lisensi komersial Remotion dan Gemini TTS
-- [ ] Pustaka aset untuk topik yang sering dipakai
+- [ ] Pustaka aset untuk topik yang sering dipakai. Rencana dan kebijakan `library-first` → `library-only` ada di [plan_asset.md](plan_asset.md). Sudah ada: registry `src/lib/assets/` (mobil bensin, mobil listrik, jalan), validator rencana, dan pencarian katalog dengan 14 uji. Belum tersambung ke pipeline.
 - [ ] Set 30 prompt acuan untuk mengukur kualitas
 - [ ] Perbarui README

@@ -3,11 +3,141 @@
 @tailwind utilities;
 
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
+  color-scheme: dark;
+  --background: #101612;
+  --foreground: #e9eeeb;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.025em;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  button,
+  a[href],
+  select,
+  summary,
+  label[for] {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+  button,
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    min-height: 44px;
+  }
+  button { min-width: 44px; }
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 18px;
+    height: 18px;
+  }
+  label:has(input[type='checkbox']),
+  label:has(input[type='radio']) {
+    min-height: 44px;
+  }
+  input,
+  textarea,
+  select {
+    min-width: 0;
+  }
+  body input:not([type='checkbox']):not([type='radio']),
+  body textarea,
+  body select {
+    border-color: #627369;
+  }
+  :focus-visible {
+    outline: 2px solid #6ee7b7 !important;
+    outline-offset: 3px;
+  }
+  ::selection {
+    background: #6ee7b7;
+    color: #101612;
+  }
+}
+
+.workspace-section {
+  border-top: 1px solid #35443b;
+  padding-block: 2rem;
+}
+.option-control {
+  border: 1px solid #627369;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: left;
+  transition:
+    background 150ms,
+    border-color 150ms;
+}
+.option-control:hover {
+  background: #28352d;
+}
+.option-control[aria-pressed='true'] {
+  border-color: #6ee7b7;
+  background: #1b3026;
+}
+.option-control:active {
+  transform: translateY(1px);
+}
+.primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  border-radius: 6px;
+  padding: 12px 20px;
+  background: #6ee7b7;
+  color: #101612;
+  font-weight: 650;
+  transition: background 150ms;
+}
+.primary-action:hover {
+  background: #a7f3d0;
+}
+.primary-action:disabled {
+  background: #35443b;
+  color: #b7c4bc;
+}
+.studio-canvas {
+  background: #090d0a;
+}
+.preview-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+
+.draft-skeleton { animation: draft-breathe 1.8s ease-in-out 2; }
+@keyframes draft-breathe { 50% { opacity: 0.5; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

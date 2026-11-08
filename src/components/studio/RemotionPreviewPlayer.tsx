@@ -51,7 +51,7 @@ export const RemotionPreviewPlayer: React.FC<RemotionPreviewPlayerProps> = ({
   const inputProps = useMemo(() => ({ showGuides, showSocialUI, platform: previewPlatform }), [showGuides, showSocialUI, previewPlatform]);
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center p-3 sm:p-4">
+    <div className="relative w-full h-full min-h-0 flex flex-col items-center p-3 sm:p-4">
       <div role="group" aria-label="Platform pratinjau safe area" className="mb-3 flex flex-wrap justify-center gap-1.5">
         {SOCIAL_PLATFORMS.map(option => <button key={option.id} type="button"
           aria-pressed={previewPlatform === option.id}
@@ -76,11 +76,12 @@ export const RemotionPreviewPlayer: React.FC<RemotionPreviewPlayerProps> = ({
       </label>
       </div>
       {/* Player Canvas Container with Aspect Ratio Bounds */}
+      <div className="preview-stage">
       <div
-        className="relative shrink-0 rounded-xl overflow-hidden border border-slate-800 bg-slate-950"
+        className="relative rounded-md overflow-hidden bg-black"
         style={{
           aspectRatio: `${width} / ${height}`,
-          width: `min(100%, ${isPortrait ? 740 * width / height : 920}px, max(160px, calc((100dvh - 260px) * ${width / height})))`,
+          width: `min(100cqw, calc(100cqh * ${width / height}), 920px)`,
         }}
       >
         <Player
@@ -95,10 +96,11 @@ export const RemotionPreviewPlayer: React.FC<RemotionPreviewPlayerProps> = ({
             height: '100%',
           }}
           controls
-          autoPlay
+          autoPlay={false}
           loop
           showVolumeControls
         />
+      </div>
       </div>
 
       <p className="mt-3 max-w-sm text-center text-xs text-slate-300">

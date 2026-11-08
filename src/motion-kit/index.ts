@@ -20,3 +20,4 @@ export * from './timelapse/primitives';
 export * from './timelapse/examples';
 export * from './docs';
 export * from './world/IsoPicture';
+export * from './isometric';

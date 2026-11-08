@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "gmotion - Prompt-to-Motion-Graphics Studio",
-  description: "v0 for Remotion: AI-powered SaaS motion graphics studio with live in-browser preview and audio-first sync.",
+  title: { default: "gmotion — Studio video", template: "%s · gmotion" },
+  description: "Susun ide, periksa narasi dan adegan, lalu buat video animasi dengan suara Bahasa Indonesia.",
 };
 
 export default function RootLayout({
@@ -23,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

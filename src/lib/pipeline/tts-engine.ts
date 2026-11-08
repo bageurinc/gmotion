@@ -1,3 +1,5 @@
+import { recordUsage } from '@/lib/billing/usage';
+import { synthesizeElevenLabs } from '@/lib/audio/elevenlabs';
 import { alignWordsToSpeech, detectSpeechSegments } from '@/lib/audio/speech-timing';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import fs from 'fs';
@@ -11,6 +13,7 @@ const TTS_RATE_LIMIT_RETRIES = 4;
 
 export interface TTSOptions {
   voice?: string;
+  provider?: 'gemini' | 'elevenlabs';
   fps?: number;
   projectId: string;
 }
@@ -106,8 +109,14 @@ export async function generateSceneAudio(
   const configuredVoice = process.env.TTS_VOICE_ID || 'id-ID-ArdiNeural';
   const provider = process.env.TTS_PROVIDER || 'msedge-tts';
   let audioBuffer: Buffer;
+  let providerTimings: WordTiming[] = [];
 
-  if (provider === '9router' || provider === 'openai-compatible') {
+  if (options.provider === 'elevenlabs') {
+    // The user paid more for this voice, so a failure is reported instead of falling back to Gemini.
+    const result = await synthesizeElevenLabs(scene.voiceoverText, options.voice ?? '');
+    audioBuffer = result.audio;
+    providerTimings = result.wordTimings;
+  } else if (provider === '9router' || provider === 'openai-compatible') {
     const baseUrl = process.env.TTS_BASE_URL || process.env.OPENAI_BASE_URL;
     const apiKey = process.env.TTS_API_KEY || process.env.OPENAI_API_KEY;
     if (!baseUrl || !apiKey) {
@@ -119,7 +128,7 @@ export async function generateSceneAudio(
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: process.env.TTS_MODEL || `edge-tts/${voiceName}`,
+          model: speechModel,
           voice: voiceName,
           input: scene.voiceoverText,
           response_format: 'mp3',
@@ -127,11 +136,24 @@ export async function generateSceneAudio(
         signal: AbortSignal.timeout(60000),
       });
 
-    let response = await requestSpeech();
+    const speechModel = process.env.TTS_MODEL || `edge-tts/${voiceName}`;
+    const timedSpeech = async () => {
+      const startedAt = Date.now();
+      const result = await requestSpeech();
+      recordUsage({
+        kind: 'speech',
+        model: speechModel,
+        characters: result.ok ? scene.voiceoverText.length : 0,
+        durationMs: Date.now() - startedAt,
+        ok: result.ok,
+      });
+      return result;
+    };
+    let response = await timedSpeech();
     for (let attempt = 0; attempt < TTS_RATE_LIMIT_RETRIES && RATE_LIMIT_STATUS.has(response.status); attempt += 1) {
       await response.body?.cancel();
       await new Promise((resolve) => setTimeout(resolve, Number(process.env.TTS_RETRY_DELAY_MS ?? 35_000)));
-      response = await requestSpeech();
+      response = await timedSpeech();
     }
     if (!response.ok) {
       // Do not include upstream bodies: they may contain credentials or provider internals.
@@ -169,7 +191,9 @@ export async function generateSceneAudio(
   }
   // Only replace existing narration after a real audio response has been validated.
   fs.writeFileSync(audioFilePath, audioBuffer);
-  const alignedTimings = isWav ? alignWordsToSpeech(scene.voiceoverText, detectSpeechSegments(audioBuffer)) : [];
+  const alignedTimings = providerTimings.length
+    ? providerTimings
+    : isWav ? alignWordsToSpeech(scene.voiceoverText, detectSpeechSegments(audioBuffer)) : [];
   const wordTimings: WordTiming[] = alignedTimings.length
     ? alignedTimings
     : estimateWordTimings(scene.voiceoverText, audioDurationSeconds);
@@ -198,6 +222,8 @@ export async function syncStoryboardWithAudio(
     const audioResult = await generateSceneAudio(scene, {
       fps: storyboard.fps,
       projectId,
+      voice: storyboard.voice,
+      provider: storyboard.voiceProvider,
     });
 
     return {

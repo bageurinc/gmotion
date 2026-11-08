@@ -1,4 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { recordUsage, usageFromBody } from '@/lib/billing/usage';
 
 /**
  * Parses raw Server-Sent Events (SSE) stream text (e.g. data: {"choices":...})
@@ -72,11 +73,14 @@ export function parseSSEStreamToChatCompletion(sseText: string): Record<string, 
  */
 const resilientFetch: typeof fetch = async (input, init) => {
   const options = init ? { ...init } : {};
+  const startedAt = Date.now();
+  let model = 'unknown';
 
   // Force stream: false if sending JSON body
   if (options.body && typeof options.body === 'string') {
     try {
       const bodyObj = JSON.parse(options.body);
+      if (typeof bodyObj.model === 'string') model = bodyObj.model;
       if (bodyObj.stream !== undefined) {
         bodyObj.stream = false;
       }
@@ -86,15 +90,24 @@ const resilientFetch: typeof fetch = async (input, init) => {
     }
   }
 
-  const response = await fetch(input, options);
+  let response: Response;
+  try {
+    response = await fetch(input, options);
+  } catch (error) {
+    recordUsage({ kind: 'chat', model, durationMs: Date.now() - startedAt, ok: false });
+    throw error;
+  }
 
   // Read response text to inspect format
   const rawText = await response.text();
   const trimmed = rawText.trim();
+  const record = (body: unknown) =>
+    recordUsage({ kind: 'chat', model, ...usageFromBody(body), durationMs: Date.now() - startedAt, ok: response.ok });
 
   // If upstream router returned SSE stream (starts with data: or event:)
   if (trimmed.startsWith('data:') || trimmed.startsWith('event:') || trimmed.includes('\ndata:')) {
     const chatCompletion = parseSSEStreamToChatCompletion(rawText);
+    record(chatCompletion);
     return new Response(JSON.stringify(chatCompletion), {
       status: response.status,
       statusText: response.statusText,
@@ -105,6 +118,13 @@ const resilientFetch: typeof fetch = async (input, init) => {
   }
 
   // Normal JSON or standard response
+  let body: unknown = null;
+  try {
+    body = JSON.parse(rawText);
+  } catch {
+    // Not JSON: the request still counts, without token numbers.
+  }
+  record(body);
   return new Response(rawText, {
     status: response.status,
     statusText: response.statusText,
