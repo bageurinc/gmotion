@@ -146,7 +146,7 @@ export function buildAssetScene(
     if (idle.length) throw new Error(`Drive these actions from actionProgress instead of idle-only motion: ${idle.join(', ')}`);
     asset = { ...asset, code: applySharedWorld(asset.code, continuity?.sharedWorld) };
   }
-  const code = composeAssetScene(asset, storyboard, index, continuity?.previous);
+  const code = composeAssetScene(asset, storyboard, index, continuity?.adjacent ? continuity.previous : undefined);
   const validation = validateSceneCode(code, `Scene${index + 1}.tsx`, { svgOnly: storyboard.preset === 'story-svg' });
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
   return { asset, code };

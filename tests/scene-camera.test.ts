@@ -47,8 +47,9 @@ describe('scene camera path', () => {
     expect(scenePath(asset(), 1, wide)).toBeUndefined();
   });
 
-  it('treats a first scene that claims to continue as a cut', () => {
+  it('treats a first scene, or one after a simple fallback scene, as a cut', () => {
     expect(scenePath(frame, 0)).toEqual({ to: frame.manifest.camera!.focus });
+    expect(scenePath(frame, 1)).toEqual({ to: frame.manifest.camera!.focus });
   });
 
   it('flies to the target in the first seconds, then holds still', () => {
@@ -86,6 +87,11 @@ describe('fades between scenes', () => {
     expect(transitions[2]).toContain('fadeIn={false}');
     expect(transitions[2]).not.toContain('fadeOut');
     expect(transitions[3]).not.toContain('fadeIn');
+  });
+
+  it('keeps the fade after a scene that fell back to the simple version', () => {
+    const withoutFirst = Object.fromEntries(Object.entries(sceneAssets).filter(([id]) => id !== scenes[0].id));
+    expect([...continuedScenes(scenes, withoutFirst)]).toEqual([2]);
   });
 
   it('keeps the fade when the scene in between is missing', () => {

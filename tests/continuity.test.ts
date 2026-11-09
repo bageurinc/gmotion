@@ -48,19 +48,19 @@ describe('continuityFor', () => {
   const second = asset(scene(block('#111111'), '<WorldBase /><circle />'));
 
   it('starts empty on the first scene', () => {
-    expect(continuityFor(scenes, undefined, 0)).toEqual({ sharedWorld: undefined, previous: undefined });
+    expect(continuityFor(scenes, undefined, 0)).toEqual({ sharedWorld: undefined, previous: undefined, adjacent: false });
   });
 
   it('inherits the first block and the nearest earlier scene', () => {
-    expect(continuityFor(scenes, { a: first, b: second }, 2)).toEqual({ sharedWorld: block('#111111'), previous: second });
+    expect(continuityFor(scenes, { a: first, b: second }, 2)).toEqual({ sharedWorld: block('#111111'), previous: second, adjacent: true });
   });
 
   it('skips a scene that fell back to the simple version', () => {
-    expect(continuityFor(scenes, { a: first }, 2).previous).toBe(first);
+    expect(continuityFor(scenes, { a: first }, 2)).toMatchObject({ previous: first, adjacent: false });
   });
 
   it('keeps the block when the first scene is redrawn', () => {
-    expect(continuityFor(scenes, { a: first, b: second }, 0)).toEqual({ sharedWorld: block('#111111'), previous: undefined });
+    expect(continuityFor(scenes, { a: first, b: second }, 0)).toEqual({ sharedWorld: block('#111111'), previous: undefined, adjacent: false });
   });
 
   it('lets a later scene define the block when the first has none', () => {
