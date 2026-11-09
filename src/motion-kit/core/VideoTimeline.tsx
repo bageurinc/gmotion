@@ -7,18 +7,22 @@ import { SCENE_FADE_FRAMES as FADE_FRAMES } from '../../lib/render/motion-check'
 const MUSIC_UNDER_VOICE = 0.13;
 const MUSIC_BETWEEN_SCENES = 0.3;
 
-/** Dips each scene through the video background so cuts feel like one film. */
-export const SceneTransition: React.FC<React.PropsWithChildren<{ color: string; first: boolean }>> = ({
-  children,
-  color,
-  first,
-}) => {
+/**
+ * Dips each scene through the video background so cuts feel like one film.
+ * A scene whose camera carries on from its neighbour skips the dip on that side.
+ */
+export const SceneTransition: React.FC<React.PropsWithChildren<{
+  color: string;
+  first: boolean;
+  fadeIn?: boolean;
+  fadeOut?: boolean;
+}>> = ({ children, color, first, fadeIn = !first, fadeOut = true }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   const opacity = interpolate(
     frame,
     [0, FADE_FRAMES, durationInFrames - FADE_FRAMES, durationInFrames],
-    [first ? 1 : 0, 1, 1, 0],
+    [fadeIn ? 0 : 1, 1, 1, fadeOut ? 0 : 1],
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
   );
   return (

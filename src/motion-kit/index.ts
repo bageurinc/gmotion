@@ -21,3 +21,8 @@ export * from './timelapse/examples';
 export * from './docs';
 export * from './world/IsoPicture';
 export * from './isometric';
+
+// Library videos: the plan renderer and the code asset catalog it starts from.
+export { PlanVideo, planDurationInFrames } from './assets/PlanVideo';
+export { WorldPlanVideo } from './assets/WorldPlanVideo';
+export { ASSET_REGISTRY as LIBRARY_ASSETS } from '@/lib/assets/registry';

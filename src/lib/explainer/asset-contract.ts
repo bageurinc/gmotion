@@ -16,6 +16,15 @@ export const FocusSchema = z.object({
   scale: z.number().min(1).max(4),
 });
 
+/**
+ * Where a Full SVG scene points the camera in the shared world.
+ * "continue" flies on from the previous scene's camera with no fade; "cut" fades to a new place.
+ */
+export const SceneCameraSchema = z.object({
+  link: z.enum(['continue', 'cut']),
+  focus: FocusSchema,
+});
+
 export const AssetManifestSchema = z
   .object({
     topic: z.string().min(1),
@@ -29,6 +38,7 @@ export const AssetManifestSchema = z
       text: HexColor,
     }),
     heroFocus: FocusSchema,
+    camera: SceneCameraSchema.optional(),
     choreography: z.array(z.object({
       id: IdSchema,
       description: z.string().min(1),
@@ -108,6 +118,7 @@ export const AssetManifestSchema = z
 
 export type AssetManifest = z.infer<typeof AssetManifestSchema>;
 export type AssetFocus = z.infer<typeof FocusSchema>;
+export type SceneCamera = z.infer<typeof SceneCameraSchema>;
 
 export interface GeneratedAssetProps {
   /** Opacity from 0 to 1 for every manifest view. */

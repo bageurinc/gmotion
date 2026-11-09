@@ -122,6 +122,34 @@ function cameraAt(frame: number, shots: StageShot[], fps: number): AssetFocus {
   return { ...camera, scale: camera.scale * drift };
 }
 
+/** A Full SVG scene's camera: where it starts (the previous scene's camera) and where it settles. */
+export interface ScenePath {
+  from?: AssetFocus;
+  to: AssetFocus;
+}
+
+const CAMERA_MOVE_SECONDS = 1.3;
+
+/** Flies from the previous scene's camera to this scene's, then holds still so the actions read. */
+export function scenePathCamera(frame: number, fps: number, path?: ScenePath): AssetFocus {
+  if (!path) return WIDE;
+  const from = path.from ?? path.to;
+  const moveFrames = Math.round(fps * CAMERA_MOVE_SECONDS);
+  if (frame >= moveFrames) return path.to;
+  const progress = interpolate(frame, [0, moveFrames], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: EASE,
+  });
+  // Zoom moves through log scale so a deep push in feels as even as a small one.
+  const scale = Math.exp(Math.log(from.scale) + (Math.log(path.to.scale) - Math.log(from.scale)) * progress);
+  return {
+    x: from.x + (path.to.x - from.x) * progress,
+    y: from.y + (path.to.y - from.y) * progress,
+    scale,
+  };
+}
+
 const FlowParticles: React.FC<{ d: string; color: string; frame: number; opacity: number }> = ({
   d,
   color,
@@ -149,7 +177,9 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
   /** Lets the artwork reach the frame edges. Scenes drawn before the bleed rule stop at the canvas and need the fade. */
   fullBleed?: boolean;
   textStyle?: TextStyleId;
-}>> = ({ manifest, Asset, shots: providedShots, actionCues = [], fullBleed = false, textStyle, children }) => {
+  /** Camera path in the shared world for a Full SVG scene. Without it the scene stays wide. */
+  camera?: ScenePath;
+}>> = ({ manifest, Asset, shots: providedShots, actionCues = [], fullBleed = false, textStyle, camera: path, children }) => {
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const insets = useSafeInsets();
@@ -165,7 +195,7 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
     () => shots.map((item) => ({ ...item, focus: fitFocus(item.focus, fit) })),
     [shots, fit]
   );
-  const camera = manifest.choreography ? WIDE : cameraAt(frame, fittedShots, fps);
+  const camera = manifest.choreography ? scenePathCamera(frame, fps, path) : cameraAt(frame, fittedShots, fps);
 
   useLayoutEffect(() => {
     if (manifest.choreography) return;

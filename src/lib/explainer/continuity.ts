@@ -1,4 +1,5 @@
 import type { GeneratedAsset } from './asset-generator';
+import type { AssetFocus } from './asset-contract';
 
 const START = '// SHARED-WORLD:START';
 const END = '// SHARED-WORLD:END';
@@ -38,6 +39,40 @@ export function applySharedWorld(code: string, sharedWorld?: string): string {
   return applied;
 }
 
+const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
+
+/** True when this scene's camera flies on from the previous scene instead of cutting to a new place. */
+export const continuesCamera = (asset: GeneratedAsset | undefined, index: number) =>
+  index > 0 && asset?.manifest.camera?.link === 'continue';
+
+/** Scene indexes whose camera carries on from the scene before them, for the fade-free cuts in MainVideo. */
+export function continuedScenes(
+  scenes: Array<{ id: string }>,
+  sceneAssets: Record<string, GeneratedAsset> | undefined,
+): Set<number> {
+  return new Set(scenes.flatMap((scene, index) => (continuesCamera(sceneAssets?.[scene.id], index) ? [index] : [])));
+}
+
+/** The stage camera for one scene: from the previous scene's settled camera when it continues, else straight in. */
+export function scenePath(
+  asset: GeneratedAsset,
+  index: number,
+  previous?: GeneratedAsset,
+): { from?: AssetFocus; to: AssetFocus } | undefined {
+  const camera = asset.manifest.camera;
+  if (!camera) return undefined;
+  if (!continuesCamera(asset, index)) return { to: camera.focus };
+  return { from: previous?.manifest.camera?.focus ?? WIDE, to: camera.focus };
+}
+
+const CAMERA_RULES = `CAMERA (the stage moves it, your code never does):
+- Add "camera": {"link": "continue" or "cut", "focus": {"x": ..., "y": ..., "scale": ...}} to the manifest, in the shared world's 1000 by 1000 coordinates. focus is the centre of what this scene explains. scale 1 shows the whole canvas, 2 shows a 500-unit-wide window, 4 shows 250 units. Use 1 to 4.
+- "continue" when this scene stays in the same place as the previous scene, including when it explains one part of the same object, such as a floor, a joint, or the foundation of the same building. The camera flies from the previous scene's focus to yours with no fade, so the viewer sees where the part sits in the whole.
+- "cut" only when the scene moves to a different place or a different kind of picture, such as a document, a chart, or another location. The video fades there. The first scene is always "cut".
+- When the scene explains a part, draw that part where it really is in the shared world, at its real size, through the shared components, and point the camera at it. Never cover the world with a panel, card, blueprint mat, or magnified inset to show a close-up. Zoom is how the viewer gets close.
+- At scale S everything looks S times larger, so draw the explained part with detail fine enough for that zoom: thin strokes around 2/S, small bolts, seams, and layers. Detail outside the camera's window can stay simple.
+- The camera's window is 1000/S units wide around focus. The explained part and its full motion fill most of that window and stay inside it. The headline covers the top tenth of the window.`;
+
 /** Prompt section that makes one scene continue the sequence instead of starting a new drawing. */
 export function continuityPrompt({ sharedWorld, previous }: SceneContinuity): string {
   const rules = sharedWorld
@@ -54,11 +89,16 @@ ${sharedWorld}
 - The block also defines every recurring object as a component driven only by props, such as position, scale, and state, so later scenes can place it in any pose.
 - Code in the block reads only its own props. It must not use actionProgress, time, or anything declared outside the block. Prefix its gradient and filter ids with "asset-world-".
 - Asset renders <WorldBase /> with no props, then places the recurring objects. Design WorldBase for all scenes, not only this one, and leave room for every object in the sequence.`;
-  if (!previous) return rules;
+  if (!previous) return `${rules}
+
+${CAMERA_RULES}`;
   return `${rules}
+
+${CAMERA_RULES}
 
 PREVIOUS SCENE (continue from it):
 - The first frame of this scene matches its final state, the moment every actionProgress value is 1. Keep each object's position, scale, and shape from there.
+- Previous camera: ${JSON.stringify(previous.manifest.camera ?? { link: 'cut', focus: WIDE })}. With "continue", your camera starts there.
 - Previous actions: ${JSON.stringify(previous.manifest.choreography ?? [])}
 \`\`\`tsx
 ${previous.code}

@@ -3,6 +3,7 @@
 import React, { Component, ReactNode, ErrorInfo } from 'react';
 import * as Remotion from 'remotion';
 import * as MotionKit from '@/motion-kit';
+import * as DraftKit from '@/motion-kit/isometric/draft-kit';
 import * as LucideIcons from 'lucide-react';
 import { transform } from 'sucrase';
 import { VirtualFileMap } from '@/types/studio';
@@ -119,6 +120,10 @@ export function compileVirtualProject(
           return FallbackComponent;
         },
       }) as unknown as Record<string, unknown>;
+    }
+    // Published library assets import only React and the draft kit.
+    if (path === '@/motion-kit/isometric/draft-kit') {
+      return DraftKit as unknown as Record<string, unknown>;
     }
     if (path === 'lucide-react') {
       return new Proxy(LucideIcons, {

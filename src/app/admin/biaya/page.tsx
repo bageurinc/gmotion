@@ -52,6 +52,7 @@ export default async function AdminCostPage({ searchParams }: { searchParams: Pr
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Link href="/" className="inline-flex min-h-11 items-center text-sm text-slate-300 hover:text-white">← gmotion / Studio</Link>
+            <Link href="/admin/assets" className="ml-4 inline-flex min-h-11 items-center text-sm text-slate-300 hover:text-white">Pustaka aset</Link>
             <h1 className="mt-2 text-3xl font-semibold text-white">Biaya dan pemakaian</h1>
             <p className="mt-2 text-sm text-slate-300">Pantau biaya pembuatan video, pemasukan kredit, dan tarif model.</p>
           </div>

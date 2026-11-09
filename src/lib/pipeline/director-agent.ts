@@ -297,7 +297,7 @@ export async function generateStoryboard(
   userPrompt: string,
   preset: StylePreset = 'ads-ui',
   aspectRatio: AspectRatio = '9:16',
-  options: { strict?: boolean } = {}
+  options: { strict?: boolean; libraryNote?: string } = {}
 ): Promise<Storyboard> {
   if (isApiKeyConfigured()) {
     try {
@@ -308,7 +308,7 @@ Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
-FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action.' : ''}${budget ? durationInstruction(budget) : ''}`;
+FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action. When scenes explain parts of one object, such as the frame, dampers, and foundation of one building, write each visualPrompt as the camera moving into that part of the same object, not as a new separate drawing, cutaway card, or blueprint. Camera directions go only in visualPrompt: voiceoverText is what the narrator says and never mentions the camera, shots, or scenes.' : ''}${budget ? durationInstruction(budget) : ''}${options.libraryNote ? `\n${options.libraryNote}` : ''}`;
       const ask = async (extra = '') => {
         const response = await generateText({ model: getDirectorModel(), system: DIRECTOR_SYSTEM_PROMPT, prompt: basePrompt + extra });
         return parseStoryboardFromLLMResponse(response.text, userPrompt, preset, aspectRatio);

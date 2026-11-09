@@ -1,6 +1,6 @@
 import { buildActionCues, narrationWords, unanimatedActions } from './choreography';
 import { dataVisualStart, spokenDataVisual } from './data-visual';
-import { applySharedWorld, continuityPrompt, type SceneContinuity } from './continuity';
+import { applySharedWorld, continuityPrompt, scenePath, type SceneContinuity } from './continuity';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
@@ -37,7 +37,13 @@ function sceneOverlays(storyboard: Storyboard, index: number): string {
     <SyncedCaptions text={${JSON.stringify(scene.voiceoverText)}} wordTimings={${JSON.stringify(scene.wordTimings)}} activeColor={${JSON.stringify(captionHighlight(palette))}}${style} />`;
 }
 
-export function composeAssetScene(asset: GeneratedAsset, storyboard: Storyboard, index: number): string {
+export function composeAssetScene(
+  asset: GeneratedAsset,
+  storyboard: Storyboard,
+  index: number,
+  /** The scene before this one, whose settled camera a continuing scene starts from. */
+  previous?: GeneratedAsset,
+): string {
   const scene: SceneSpec = storyboard.scenes[index];
   const componentName = `Scene${index + 1}`;
   const { palette } = storyboard;
@@ -54,6 +60,8 @@ export function composeAssetScene(asset: GeneratedAsset, storyboard: Storyboard,
   const actionCues = manifest.choreography
     ? buildActionCues(manifest.choreography, narrationWords(scene, storyboard.fps || 30), scene.durationInFrames, storyboard.fps || 30)
     : [];
+  const path = scenePath(asset, index, previous);
+  const camera = path ? ` camera={${JSON.stringify(path)}}` : '';
   const assetCode = asset.code
     .replace(/export\s+default\s+Asset;?/, '')
     .replace(/export\s+const\s+Asset\b/, 'const Asset');
@@ -65,7 +73,7 @@ const manifest = ${JSON.stringify(manifest, null, 2)};
 const shots = buildAssetShots(manifest, ${scene.durationInFrames}, ${storyboard.fps || 30});
 
 export const ${componentName} = () => (
-  <AssetStage manifest={manifest} Asset={Asset} shots={shots} actionCues={${JSON.stringify(actionCues)}} fullBleed${stageStyle(storyboard)}>
+  <AssetStage manifest={manifest} Asset={Asset} shots={shots} actionCues={${JSON.stringify(actionCues)}} fullBleed${camera}${stageStyle(storyboard)}>
     ${sceneOverlays(storyboard, index)}
   </AssetStage>
 );
@@ -115,7 +123,7 @@ FULL SVG CHOREOGRAPHY MODE (use the choreography contract from the system prompt
 - Add 1 to 4 choreography actions {id, description, startWord, endWord}. Word indexes below are zero-based, inclusive, ordered, non-overlapping. Cover the narrated process; prefer 1 or 2 strong actions for short sentences.
 - Destructure actionProgress in Asset. For EVERY action, use actionProgress.actionId ?? 0 to change object position, rotation, shape, or a meaningful physical state. Progress stays at 1 after completion. Do not reset or loop the main action using time or sin.
 - Use the same SVG nodes for an object's before/after state. One action leads into the next. Keep the final result visible. No crossfaded duplicate objects, generic particles, bouncing, or idle-only motion.
-- Keep the dominant subject and its full motion envelope inside x=60..940 and y=100..900. The subject should occupy about 70-85% of the canvas. Camera stays still so the action reads clearly.
+- Keep the dominant subject and its full motion envelope inside the camera's window from the CAMERA rules, where it fills most of the window. The camera settles in the first second and then stays still so the action reads clearly.
 - Keep a consistent subject silhouette, material, scale, light direction, ground height, and screen direction throughout this video. Begin from the previous scene's final state; finish in the next scene's starting state. Use the complete directions below as the shared design specification.
 - No raster images, no ImageStage, no video.
 Narration words with timing: ${JSON.stringify(words.map((w, i) => ({ index: i, ...w })))}
@@ -138,7 +146,7 @@ export function buildAssetScene(
     if (idle.length) throw new Error(`Drive these actions from actionProgress instead of idle-only motion: ${idle.join(', ')}`);
     asset = { ...asset, code: applySharedWorld(asset.code, continuity?.sharedWorld) };
   }
-  const code = composeAssetScene(asset, storyboard, index);
+  const code = composeAssetScene(asset, storyboard, index, continuity?.previous);
   const validation = validateSceneCode(code, `Scene${index + 1}.tsx`, { svgOnly: storyboard.preset === 'story-svg' });
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
   return { asset, code };

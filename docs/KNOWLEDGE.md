@@ -158,6 +158,7 @@ Perkiraan per adegan: SVG sekitar $0,05 tanpa gambar ulang, $0,13 dengan satu ga
 - **Setelah `.next` dihapus,** `npx tsc --noEmit` mengeluh `TS6053` dari `tsbuildinfo` lama. Pakai `--incremental false`.
 - **esbuild menghapus import yang tidak dipakai.** Validator memakai `verbatimModuleSyntax` supaya import terlarang tetap terbaca.
 - **Validator AST bukan batas keamanan penuh.** Akses properti hasil gabungan string tidak bisa dideteksi statis, jadi sandbox iframe tetap diperlukan.
+- **Job generate bisa mati saat tahap pemeriksaan akhir** (misalnya server dev dimulai ulang). Project tertahan `generating` dengan semua adegan `ready`, dan UI menampilkan tombol Lanjutkan. Route generate harus tetap menerima status `generating` tanpa job aktif, bukan hanya project yang punya adegan gagal. Kredit tidak terpotong dua kali karena `chargeForVideo` unik per project.
 - **Skrip uji harus menunggu server siap.** Request pertama ke route dev bisa mendapat HTML, bukan JSON.
 - **WebGL butuh `chromiumOptions.gl`.** Skrip uji memakai `angle` di Mac. Server tanpa GPU memakai `swangle`, sekitar 6 kali lebih lambat tetapi masih jauh lebih cepat dari durasi video. Opsi yang sama harus dipakai `selectComposition`, `renderStill`, `renderMedia`, dan `openBrowser`.
 - **Garis tepi Three.js punya dua lapis.** `LineSegments2` untuk lipatan, karena garis WebGL biasa selalu 1 piksel, dan hull belakang untuk siluet benda melengkung. Hull harus memakai vertex gabungan supaya tidak terbelah di sudut.
@@ -210,6 +211,17 @@ Sebelum menjual layanan, cek syarat komersial Remotion dan Gemini TTS preview.
 - Aksi yang tidak dibaca kode lewat `actionProgress` ditolak dan masuk repair (`unanimatedActions`). Pemeriksaan ini hanya membuktikan nilainya dibaca, bukan bahwa gerakannya bagus.
 - Tanpa `wordTimings`, prompt dan compose memakai pembagian rata yang sama dari `narrationWords`.
 - Karena tidak ada bidikan per bagian, Full SVG tidak punya label bagian dan partikel alur. Teks bergantung pada headline dan caption.
+
+## Kamera nyambung Full SVG (9 November 2026)
+
+- Keluhan user pada video gedung tahan gempa: adegan 1 bagus, tetapi pindah ke adegan 2 terasa kasar. Jika yang dijelaskan bagian dari gedung, kamera seharusnya zoom ke bagian itu.
+- Penyebab: gedung sudah identik lewat `SHARED-WORLD`, tetapi kamera Full SVG selalu lebar dan diam per adegan, setiap potongan diberi fade, dan penggambar menampilkan detail sebagai "blueprint mat" besar yang menutupi gedung, bukan di lokasi aslinya.
+- Aturan dari diskusi dengan user: tempat yang sama berarti kamera nyambung tanpa fade, sedangkan tempat atau jenis gambar yang berbeda berarti fade. Yang menentukan adalah apakah penonton masih di tempat yang sama, bukan apakah ini adegan baru.
+- Manifest kini punya `camera: { link, focus }` (opsional, skala 1–4). `scenePath` di [continuity.ts](../src/lib/explainer/continuity.ts) mengambil kamera awal dari adegan sebelumnya. `scenePathCamera` di `AssetStage` menggerakkannya dengan skala log selama 1,3 detik, lalu diam agar aksi terbaca. Adegan tanpa `camera` tetap lebar seperti dulu.
+- `generateMainVideoCode` menerima daftar adegan `continue` dan menulis `fadeIn={false}`/`fadeOut={false}` hanya jika dua adegan itu bersebelahan dan keduanya siap. Gambar ulang kritik menyusun ulang adegan berikutnya, karena kamera awalnya ikut berubah.
+- Jebakan: arahan "kamera masuk ke bagian yang sama" di prompt director membuat Gemini menulis "Kamera bergerak menembus…" di `voiceoverText` (2 dari 6 adegan). Aturan director sekarang menyatakan arahan kamera hanya untuk visualPrompt. Uji 3 draf, 17 adegan: 0 narasi menyebut kamera, dan 14 visualPrompt memuat gerak kamera.
+- Hasil frame `proj_1794187214510_job`: zoom ke sambungan rangka, turun ke fondasi, dan mundur ke gedung utuh terbaca. Tanpa fade, perbedaan gambar di potongan terlihat sebagai lompatan langsung, misalnya bentuk gedung di akhir adegan 1 tidak sama dengan awal adegan 2. Close-up pada zoom 3x masih cukup polos.
+- Jebakan saat mengedit: server dev mengompilasi `scene-revision.ts` di antara dua langkah edit (pemakaian `continuedScenes` sudah ada, import belum), sehingga `/revise` sempat gagal dengan `ReferenceError`. Tambahkan import dan pemakaian dalam satu edit.
 
 ## Perbandingan model penggambar Full SVG (7 November 2026)
 
@@ -526,3 +538,197 @@ Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada ben
 - Jebakan tata letak yang ditemukan dari frame: (1) label yang diletakkan di atas titiknya membuat garis penunjuk bersilangan, sehingga "Tangki bensin" tampak menunjuk mesin. Sekarang label ditaruh di tepi layar pada sisi titiknya, dan garis digambar lebih dulu dari kotak label. (2) Close-up zoom 1,9× memotong mobil terlalu banyak; sekarang 1,55× dan hanya bergeser sebagian ke tengah. (3) Dua mobil di jalan saling menutupi; sekarang lajur digeser maju-mundur 150 unit. (4) Label yang sama dengan nama mobil di layout `side-by-side` disembunyikan.
 - Gerakan yang menyangkut fisika diambil alih renderer: di jalan, putaran roda selalu dihitung dari `distance`, dan `energyPhase` dihitung dari frame (tidak lagi `animatable`). Gemini sempat memilih `energyPhase` 0→250 dalam 6 detik (titik berkedip) dan roda berputar berlawanan dengan arah jalan. Aliran energi disembunyikan pada tampilan `exterior` karena tergambar di atas bodi.
 - Masih terlihat: narasi kadang menyebut hal yang tidak bisa ditampilkan aset ("mobil listrik lebih senyap"), caption tampil satu kalimat penuh tanpa sorotan kata, area atas layar banyak kosong, dan belum ada judul atau transisi kamera antaradegan. Kualitas akhir belum dinilai user.
+
+## Paket E pertama: pemilahan sampah (8 November 2026)
+
+- `IsoWasteSorting`, registry `environment.waste-sorting@0.1.0`, status experimental.
+  Tiga wadah dan objek daun/kertas/botol dengan tujuan tetap; `progress` 0–1
+  menggerakkan objek secara deterministik. Warna wadah per instance bisa diedit;
+  ikon tetap membedakan kategori. Anchor berasal dari komponen, bukan salinan registry.
+- `PlanVideo` mendukung aset ini pada single, side-by-side, dan close-up; layout
+  road menolak objek selain mobil dan jalan. Ukuran objek dibatasi tinggi panggung
+  agar bidikan 16:9 tidak terpotong atau menimpa caption.
+- Bukti: `npx tsx scripts/assets/preview-waste-sorting.tsx` berhasil mengekspor
+  MP4 6 detik, tiga adegan tanpa audio, dan sembilan frame pada 9:16, 4:5, 16:9.
+  Hasil lokal: `storage/assets/waste-sorting/`. Frame perwakilan ketiga rasio diperiksa.
+  23 uji registry/pemilahan lulus, typecheck dan lint file terkait lulus.
+  Tidak ada panggilan model, TTS, gambar eksternal, atau angka data dekoratif.
+- Batasan: ilustrasi kategori, bukan standar warna pengumpulan setempat atau
+  jaminan daur ulang. Belum ada sungai, pengolahan air, mesin sortir, aset 2D,
+  organ, toko, ekonomi, karakter, maupun alur prompt/studio/simpan/reload.
+
+## Gerak bawaan renderer aset (8 November 2026)
+
+- Masalah dari uji pertama: video terasa statis. Gemini hanya memilih putaran puli atau poros motor yang terlalu kecil untuk terlihat, sedangkan renderer belum punya gerak sendiri dan perubahan tampilan terjadi seketika.
+- Gerak yang sekarang diurus `PlanVideo`, semuanya dihitung dari frame:
+  - Kamera: setiap bidikan memakai push-in pelan (`drift`), lalu condong dan zoom ke titik tengah label fokus antara detik 0,4 dan 1,8. Kekuatannya per layout ada di tabel `CAMERA`. Label dipetakan dengan transformasi yang sama, jadi garis penunjuknya tetap menempel ke anchor.
+  - Mobil masuk: mobil yang tampil pertama kali melaju masuk di sepanjang sumbu depannya selama 1,1 detik dengan roda berputar. Mobil kedua terlambat 0,25 detik. Nama mobil di layout `side-by-side` tetap di posisi akhirnya dan baru muncul setelah mobil tiba.
+  - Transisi tampilan: `sceneStates` mencatat keadaan masuk adegan, dan `viewTransition` memudarkan bodi selama 0,9 detik. Dari `exterior` ke `cutaway`, bodi memudar sampai 10% lalu berganti tampilan, supaya tidak ada lompatan.
+- Validator punya opsi `requireVisibleChange`. Setiap adegan wajib punya aksi yang bukan `subtle`, perubahan `view`, layout `road`, atau objek yang tampil pertama kali. `wheelRotation`, `engineRotation`, dan `motorRotation` ditandai `subtle` di registry.
+- Hasil `ev3` (topik sama): rencana lolos di percobaan pertama (33 detik), video 33 detik, total 79 detik. Setiap adegan bergerak: kap terbuka saat intro, bodi memudar ke sasis lalu roda memudar, tutup baterai terbuka, dan mobil melaju di jalan dengan aliran energi.
+- Celah yang tersisa: aksi `bodyOpacity` pada tampilan `chassis` dihitung sebagai perubahan terlihat padahal bodinya sudah tersembunyi. Narasi juga masih bisa menyebut hal yang tidak tampil, misalnya gas buang.
+- Catatan kerja bersamaan: pada sesi yang sama, ada pekerjaan lain yang menambahkan `environment.waste-sorting` (`IsoWasteSorting`) ke registry dan `PlanVideo`. Uji snapshot registry sekarang memakai `toMatchObject`.
+
+## Lanjutan paket Lingkungan: sungai dan pengolahan air (8 November 2026)
+
+- Registry experimental: `environment.water-channel@0.1.0` dengan river/canal
+  yang geometrinya berbeda, serta `environment.water-treatment@0.1.0` dengan
+  koagulasi/flokulasi digabung, pengendapan, filtrasi, dan simbol disinfeksi.
+  Rujukan proses: https://www.cdc.gov/drinking-water/about/how-water-treatment-works.html
+  (diakses 8 November 2026). Semua geometri SVG dibuat lokal; tidak menyalin gambar.
+- API: warna air/tebing/bak per instance, `flowPhase`, `flowing`, `settling`,
+  anchor dunia untuk masukan/keluaran dan proses. Animasi dari frame/rencana;
+  tidak memakai timer, random, atau ID SVG. Penanda mengikuti jalur; partikel
+  pengendapan bergerak ke bawah. Tidak ada angka kapasitas/debit/mutu rekaan.
+- Renderer memakai komponen terdaftar; entrance mobil dibatasi ke mobil agar
+  sungai/bak tidak meluncur masuk dan menerima prop roda. Bidikan lingkungan
+  memakai margin kamera lebih lebar. Label di dekat atas layar digeser bersama
+  agar tidak terpotong dan tetap terpisah, diuji dengan empat label dua sisi.
+- Bukti: `scripts/assets/preview-water-environment.tsx` menghasilkan rencana
+  tervalidasi, MP4 18 detik tanpa audio, serta 18 frame di tiga rasio. Run akhir
+  18.54 detik termasuk bundling, still, dan export, tanpa panggilan model/gambar/TTS.
+  Hasil: `storage/assets/water-environment/`, termasuk `evidence.json`.
+  Enam adegan pada tiga rasio diperiksa; label 16:9 dan tepi 9:16 diperbaiki,
+  lalu diperiksa ulang. 37 uji pada lima file terkait lulus, typecheck dan lint
+  file terkait lulus; bukan klaim suite penuh aplikasi.
+- Batasan: skema pengolahan air permukaan, bukan air limbah atau bukti air layak
+  minum. Tidak ada dosis, hidraulika, pompa, backwash, atau penanganan lumpur.
+  Sungai dan instalasi belum terhubung fisik otomatis. Belum ada aset 2D atau
+  verifikasi prompt/studio/revisi/simpan/reload. Tetap experimental.
+
+## Draf aset dan halaman admin pustaka (8 November 2026)
+
+- Keputusan user: permintaan yang belum didukung pustaka menjadi **draf aset** di admin. Admin memperbaiki kualitasnya sebelum menerbitkan, dan permintaan tidak pernah langsung menjadi aset global. Alasannya: aset buatan AI yang langsung dipakai mengulang masalah jalur lama (bentuk balok atau blob yang berubah-ubah), kebenaran mekanismenya tidak bisa dicek validator, dan aset global harus jelas lisensinya.
+- Laporan cakupan: rencana punya kolom `unsupported` (subjek, jenis objek/aksi/lingkungan, alasan). Prompt meminta model melaporkan hal yang tidak bisa ditampilkan, berdasarkan kemampuan dan batasan aset, bukan sekadar nama, dan tidak membahasnya di narasi. Uji "Mobil listrik melaju, belok di tikungan, lalu berhenti di lampu merah": rencana lolos di percobaan pertama (63 detik) dan melaporkan tikungan (lingkungan), belok (aksi), serta lampu merah (objek). Video tetap jadi (20 detik) tanpa pengganti palsu. Klip ada di `storage/spike/asset-plan/belok/`.
+- Sebelum kolom ini ada, prompt hanya berkata "jangan bahas yang tidak ada di katalog", sehingga permintaan user hilang diam-diam.
+- Data: `asset_requests` (satu baris per subjek per rencana, subjek dinormalkan huruf kecil dan spasi tunggal) dan `asset_drafts` (status `draft`, `review`, `published`, `rejected`; `UNIQUE(asset_id, version)`). Draf yang ditolak tetap memegang `asset_id`-nya, jadi percobaan baru mendapat akhiran `-2`. Pencatatan permintaan tidak pernah menggagalkan video.
+- `plan-schema.ts` tidak boleh mengimpor `library-db.ts`, karena `PlanVideo` ikut dibundel Remotion dan `library-db` memakai `node:crypto` dan database. Skema kolom (`CoverageGapSchema`) ada di `plan-schema`, dan `library-db` memakainya ulang.
+- Preview admin memakai `ASSET_RENDERERS` bertipe `Record<AssetRendererKey, …>`, sehingga aset dengan renderer baru membuat type check gagal sampai preview-nya ditambahkan.
+- Uji Chrome `/admin/assets` dengan akun admin (8 November 2026): ketiga tab, Jadikan draf, Tolak, dan Pulihkan berjalan. Server dev di port 3000 memakai `storage/gmotion.db` yang sama dengan skrip, dan tabel baru sudah dibuat oleh migrasi saat skrip berjalan.
+- Jebakan preview: setiap renderer yang membedakan varian lewat prop (`IsoCar` lewat `powertrain`, `IsoWaterChannel` lewat `variant`) harus dipetakan di `variantRendererProps`. Kalau tidak, semua varian tampil sama. Test membandingkan markup antarvarian untuk setiap aset yang punya lebih dari satu varian.
+- Saat uji, satu klik mengenai baris yang salah karena halaman sudah berpindah tab, sehingga terbentuk draf `draft.tikungan@0.0.1` yang tidak diminta. Draf itu dibiarkan untuk diputuskan user.
+
+## Teks opsional pada rencana aset (8 November 2026)
+
+- `presentation` opsional pada rencana dan adegan: `captions`, `labels`, `names`
+  berupa boolean, divalidasi schema strict. Override adegan menang atas rencana;
+  nilai yang tidak diisi tetap true untuk kompatibilitas demo/rencana lama.
+- `PlanVideo` memisahkan caption narasi, callout (teks/garis/titik), dan nama otomatis
+  layout berdampingan. Tanpa caption, panggung memakai tinggi 84% dan dipusatkan
+  kembali. Fokus kamera tetap mengikuti anchor meski label dimatikan.
+- Teks tidak masuk geometri atau registry material aset. Menyembunyikannya tidak
+  menghapus narasi/audio, mengubah aksi, atau memanggil ulang TTS/model/gambar.
+  JSON reload dan `retimePlan` mempertahankan pengaturan video serta adegan.
+- Bukti: 42 uji pada enam file terkait lulus (termasuk render React dengan dan
+  tanpa teks, override adegan, audio tetap ada, reload, retiming, validasi),
+  typecheck dan lint file terkait lulus. Bukan pemeriksaan lengkap aplikasi.
+- `npx tsx scripts/assets/preview-water-environment.tsx --no-text` menghasilkan
+  MP4 18 detik tanpa audio, 18 PNG, plan.json, evidence.json di
+  `storage/assets/water-environment/no-text/`. Run 21.06 detik, tanpa panggilan
+  model/gambar/TTS. Frame perwakilan 9:16, 4:5, dan 16:9 diperiksa tanpa teks
+  terlihat. Demo berteks tidak ditimpa. Belum tersedia kontrol pengaturan di studio.
+
+## Paket Usaha: toko, rak, kasir, kemasan dan POS (8 November 2026)
+
+- Lima entri experimental `0.1.0`: `business.shop`, `business.shelf`,
+  `business.checkout`, `business.product`, `business.pos`. Komponen lokal di
+  `IsoShop.tsx`; metadata di `src/lib/assets/business.ts`. Geometri buatan GMotion,
+  proprietary untuk penggunaan komersial; tanpa gambar/model/brand eksternal.
+- Toko exterior/cutaway, pintu berengsel dan handle; rak tiga tingkat dengan 0–6
+  slot ilustratif; meja kasir dengan scanner, gerak produk dan laci; kemasan
+  box/bottle/can yang berbeda bentuk; layar POS mati/menyala dengan baris abstrak.
+  Material per instance, anchor publik dan aksi tercatat di katalog. Bentuk di
+  interior toko memakai komponen bagian yang sama dengan aset standalone.
+- PlanVideo kini memilih dari map ASSET_RENDERERS yang juga dipakai preview admin,
+  sehingga renderer baru tidak perlu didaftarkan ke dua map. Anchor kemasan
+  mengikuti lift. Aturan energyFlow exterior dibatasi ke mobil agar prop mekanik
+  tidak bocor ke toko. Alias produk tidak memakai kata Inggris umum "can".
+- Tidak ada caption, merek, harga, nominal uang, QR, struk, atau total transaksi
+  bawaan. POS aktif tidak berarti pembayaran berhasil. Label dan harga mengikuti
+  konten adegan. Gerak scan tidak mengubah inventori atau memproses pembayaran.
+- `npx tsx scripts/assets/preview-business.tsx`: MP4 tanpa teks/audio 24 detik,
+  sembilan adegan, 27 frame di tiga rasio, plan.json dan evidence.json di
+  `storage/assets/business/`. Run 25.93 detik termasuk bundle/still/video;
+  panggilan model/gambar/TTS nol. Semua frame ditinjau dalam contact sheet;
+  storefront dan kemasan diperiksa juga pada ukuran asli. Tidak ada bagian terpotong.
+- 55 uji pada delapan file terkait lulus, termasuk seluruh renderer/varian pada
+  preview admin, validasi, pencarian, properti, keadaan dan determinisme.
+  Typecheck dan lint file terkait lulus; bukan klaim pemeriksaan lengkap aplikasi.
+- Batasan: belum aset 2D, manusia/genggaman, pickup/restock, transaksi nyata,
+  susunan toko bebas, atau alur studio prompt/revisi/simpan/reload sampai export.
+  Status tidak dinaikkan menjadi ready. Paket Tubuh, Ekonomi, dan Manusia tetap backlog.
+
+## Kurasi draf aset dengan AI (8 November 2026)
+
+- Kontrak draf: komponen default export yang mengembalikan satu `<svg viewBox="0 0 760 480">`, hanya boleh mengimpor `react` dan `@/motion-kit/isometric/draft-kit`. Kit ini berisi proyeksi pustaka (`projectPoint`, `points`), `Surface`, `Block`, `Pipe`, `Bolt`, `Cylinder`, `SideDisc`, dan `shade`. Varian dikirim sebagai prop `variant`. Metadata (`DraftMetaSchema`) memuat varian, prop keadaan/angka/warna, titik label, kemampuan, dan batasan.
+- `validateSceneCode` sekarang menerima `allowedImports`: daftar persis tanpa impor relatif, dipakai untuk draf bersama `svgOnly`.
+- Render pratinjau di server memakai `node:vm` (`codeGeneration.strings: false`), dengan satu skrip dan batas 1 detik per render. Setelah satu render melebihi batas, render sisanya dilewati. Uji loop tanpa akhir sempat menahan 12 detik saat batas waktu dihitung untuk semua keadaan sekaligus. VM bukan batas keamanan; kode masuk ke sana hanya setelah lolos validator, dan hanya admin yang bisa memicunya.
+- Jebakan: Next.js 15 menolak `react-dom/server` di kode app router, termasuk route handler ("You're importing a component that imports react-dom/server"). Test Vitest tidak menangkapnya; error baru muncul saat server dev mengompilasi route. Solusinya `renderSvgMarkup`: serializer kecil untuk elemen SVG dan komponen fungsi murni. Hook, context, dan class component gagal di sana, sesuai kontrak draf.
+- SVG draf disimpan bersama versinya dan ditampilkan sebagai `<img src="data:image/svg+xml;base64,…">`. Gambar SVG tidak menjalankan skrip, jadi kode buatan AI tidak pernah berjalan di halaman admin.
+- Uji nyata Gemini (`ag/gemini-3.8-flash-high`) untuk "Lampu merah": versi 1 butuh 161 detik dan 3 percobaan. Percobaan 1 ditolak karena nama titik label `red_light` belum diizinkan, percobaan 2 karena nilai keadaan tidak cocok pola. Format nama lalu dilonggarkan (boleh `_`). Hasilnya 2 varian (tiang tunggal, tiang lengan) × 5 keadaan (merah, kuning, hijau, kuning berkedip, mati), dan 9/9 pemeriksaan lolos. Bentuk lampu terbaca dan warna keadaan benar, tetapi lampu hanya setengah tinggi mobil di panel skala. Revisi "tiang sekitar dua kali tinggi mobil" (126 detik, 1 percobaan) membuatnya kira-kira setinggi mobil, jadi model belum patuh pada skala yang diminta.
+- Saat uji di Chrome, tab berpindah kembali ke halaman daftar tanpa aksi dari sesi ini, dan sekali tab hilang dari grup. Ini pola yang sama dengan salah klik sebelumnya. Untuk uji berikutnya, pembuatan draf dijalankan lewat `scripts/assets/generate-draft.ts` (fungsi yang sama dengan tombol), dan Chrome hanya dipakai untuk melihat hasil.
+
+## Terbitkan aset dari draf (8 November 2026)
+
+- Terbit = salin versi aktif ke `published_assets` dan kunci. Baris tidak pernah diubah; perbaikan diterbitkan sebagai versi baru (`0.1.0` → `0.2.0`) dengan `asset_id` yang sama per draf. Proyek yang memakai versi lama tetap merender gambar yang sama.
+- Pemeriksaan dijalankan ulang saat terbit, bukan memakai laporan tersimpan, supaya versi yang disimpan sebelum aturan berubah tidak lolos dengan laporan lama.
+- `AssetEntry.renderer` sekarang bisa bernilai `'Published'`. Tipe ini sengaja membuat TypeScript gagal di setiap tempat yang mengindeks `ASSET_RENDERERS` langsung, sehingga semua tempat itu dipaksa memakai `assetComponent(entry, published)`. Komponen aset terbit tidak ada di bundel tetap: titik masuk render menulis kodenya sebagai file, memvalidasinya ulang, lalu memberikannya ke `PlanVideo` lewat prop `published` dengan kunci `assetId@version`.
+- Katalog untuk rencana baru hanya berisi versi aktif terbaru tiap aset terbit. Versi lama dan yang usang dicari langsung lewat `getPublishedVersions` saat merender proyek yang menyebutnya.
+- Admin menampilkan aset terbit dari pratinjau SVG yang disimpan saat terbit, sebagai gambar.
+- Tombol "Revisi dengan AI" sudah dipakai user lewat klik nyata (versi 3 Lampu merah: "tiang lebih tinggi dari mobil", 9/9 lolos).
+
+## Video pertama dengan aset terbit (8 November 2026)
+
+- Topik: "Mobil listrik dan mobil bensin berhenti saat lampu merah, lalu jalan lagi saat lampu hijau." Katalog yang cocok: mobil (2 varian), jalan, dan `custom.lampu-merah@0.1.0` hasil kurasi user. Hasil: 4 adegan, 22,4 detik, rencana 43 detik dalam 1 percobaan, total 77 detik. Klip ada di `storage/spike/asset-plan/lampu2/`.
+- Jebakan 1: alias aset terbit berasal dari model ("lampu lalu lintas", "traffic light", "lampu bangjo") dan tidak memuat subjek permintaan ("lampu merah"). Sekarang subjek draf ditambahkan sebagai alias saat aset dibaca, tanpa mengubah baris terbit.
+- Jebakan 2: aturan validator dari pekerjaan paralel melarang objek selain mobil di layout `road`, karena renderer memang belum menggambarnya. Akibatnya model melaporkan lampu yang sudah ada sebagai "belum tersedia" dan tercatat sebagai permintaan palsu (baris itu dihapus dari database dev). Sekarang layout `road` menerima maksimal 2 objek tepi jalan dan minimal 1 mobil, dan renderer menggambarnya di tepi jalan sisi dekat, sedikit di depan mobil, dengan urutan kedalaman.
+- Jebakan 3: `IsoRoad` hanya menyediakan ruang sekitar 220 unit di atas aspal, sehingga kepala lampu terpotong. Pembungkus jalan dan objek tepi jalan kini memakai `overflow: visible`.
+- Jebakan 4, yang terpenting: komponen draf buatan AI tidak meneruskan `x`, `y`, `width`, dan `height` ke `<svg>`-nya, jadi aset terbit selalu digambar di titik nol dan perubahan posisi tidak berefek. Label yang dihitung dari posisi jadi tidak menempel. `placeAsset` sekarang membungkus aset terbit dengan `<svg>` berposisi dan viewBox 760×480 sendiri, sehingga renderer tidak bergantung pada kode model.
+
+## Pustaka aset tersambung ke Isometrik di aplikasi (8 November 2026)
+
+- Video Isometrik di aplikasi tetap berupa satu `MainVideo.tsx` yang dikompilasi di browser untuk pratinjau dan dibundel untuk export. Jalur pustaka menulis file itu dengan `PlanVideo`, dan setiap aset terbit menjadi `AssetN.tsx`. Nama file `AssetN.tsx` diterima `isVirtualFileName` (untuk bundel), tetapi tidak oleh `ProjectUpdateSchema`, jadi user tidak bisa mengedit kode aset lewat editor.
+- `browser-compiler` hanya memetakan `@/motion-kit`, jadi impor `@/motion-kit/isometric/draft-kit` dari aset terbit perlu dipetakan khusus. `PlanVideo`, `planDurationInFrames`, dan `LIBRARY_ASSETS` diekspor dari `@/motion-kit` supaya `MainVideo.tsx` lolos validator kode adegan.
+- Audio adegan di aplikasi berupa URL `/api/projects/{id}/assets/...`, sedangkan `staticFile` hanya cocok untuk nama file. `PlanVideo` sekarang memakai URL apa adanya bila diawali `/` atau `http`. Saat export, URL itu ditulis ulang menjadi `/public/` oleh `bundleProject`.
+- Pelajaran utama: narasi draf ditulis sebelum pustaka dipakai. Tanpa petunjuk, Director menulis "persimpangan", "garis setop", dan "mendahului", sehingga 100% topik mobil jatuh ke gambar AI. Dengan `libraryDraftNote` (daftar aset, kemampuan, batasan, dan larangan menyebut hal di luar daftar kecuali diminta user), topik yang sama lolos memakai pustaka. Aturan jatuh ke gambar AI saat ada satu saja kebutuhan yang tidak didukung itu ketat, tetapi jujur terhadap narasi yang sudah disetujui.
+- Area aman: `PlanVideo` memakai `useSafeInsets` (konteks dari `SocialSafeFrame`, generic jika platform tidak dipilih). Caption ditambatkan ke `bottom: insets.bottom`, panggung berada di antara inset atas dan cadangan caption 3 baris, dan `layoutCallouts` menerima batas area. Di TikTok batas kanan 17%, sehingga caption 3 baris pas di batas (piksel 895 dari 896). Nama mobil di layout berdampingan semula di kiri atas dan bertabrakan dengan label sisi kiri; sekarang di kanan bawah tiap mobil.
+- Belum: revisi chat, petunjuk pustaka untuk "ubah draf dengan AI", dan laporan cakupan di layar draf.
+
+## Kebutuhan aset dari topik tanpa aset yang cocok (8 November 2026)
+
+- Sebelumnya, topik yang sama sekali tidak cocok dengan pustaka langsung jatuh ke gambar AI tanpa catatan, padahal topik itulah sinyal paling jelas soal aset yang belum ada. Sekarang `buildLibraryFiles` memanggil `extractVisualNeeds` pada kasus itu: satu panggilan Gemini (maks 800 token keluar) yang mengembalikan maksimal 6 item `{subject, kind}` dari topik dan narasi, divalidasi dengan `CoverageGapSchema`, lalu dicatat ke `asset_requests`. Kegagalan panggilan dicatat ke log dan video tetap jalan.
+- Uji Gemini: 8–10 detik per panggilan. Hasilnya relevan, tetapi model kadang menggabungkan objek dan aksi ("orang berlari") walau prompt meminta kata paling umum. Sinonim ("orang" / "pejalan kaki") belum digabung, jadi rekap di tab Diminta bisa terpecah.
+
+## Pencarian aset dengan embedding (8 November 2026)
+
+- Router menyediakan `/embeddings` untuk `gemini/gemini-embedding-001` (3072 dimensi, sekitar 0,9 detik, dilaporkan 0 token). Prefiks `ag/` (antigravity) tidak mendukung embedding.
+- Ukuran nyata kemiripan kata tunggal: lampu merah~lampu lalu lintas 0,859, sedan listrik~mobil listrik 0,836, kasir~meja kasir 0,807, tetapi orang~pejalan kaki 0,633 sama dengan pasangan yang tidak berhubungan (0,62–0,65). Jadi embedding dipakai untuk mencari aset dari teks panjang, bukan untuk memutuskan sinonim kata tunggal; penggabungan permintaan diputuskan Gemini.
+- Kalibrasi topik terhadap deskripsi aset: aset relevan 0,63–0,75, topik tanpa aset maksimal 0,57. Batas: skor ≥ 0,60 dan ≥ skor terbaik − 0,10. Margin itu membuang "toko" (0,602) untuk topik lampu merah (terbaik 0,720). Batas bisa diatur lewat `ASSET_SEMANTIC_THRESHOLD`.
+- Vektor disimpan sebagai JSON dengan 5 desimal di `asset_embeddings`, dengan kunci hash model dan teks. Perhitungan cosine dilakukan di memori; cukup untuk ribuan aset sebelum perlu layanan vektor.
+- Kasus user (proyek `proj_e91b…`, "air sungai dijernihkan"): alias lama hanya menemukan aset sungai karena "dijernihkan" tidak cocok dengan "penjernihan air". Director dan perencana lalu menganggap koagulan, bak sedimentasi, pasir silika, dan klorin tidak ada, padahal tercakup aset pengolahan air. Tujuh permintaan tercatat ke tab Diminta, lima di antaranya keliru. Pencarian baru menemukan pengolahan air (0,746). Tetapi "pipa bawah tanah" dan "keran rumah" memang belum ada, jadi aturan semua-atau-tidak tetap akan menjatuhkan video ini ke gambar AI.
+
+## Video air dari pustaka dan fase berulang (8 November 2026)
+
+- Prompt user "air sungai dijernihkan" lewat jalur aplikasi dengan pencarian semantik: draf 5 adegan tanpa pipa/keran, generate 107 detik memakai sungai dan pengolahan air, export 15 detik. Pemeriksa gerak mencatat 5 bagian hampir diam.
+- Penyebab: `flowPhase` satu satuan = satu putaran, dan model menganimasikannya 0→300 dalam 5 detik (sekitar 2 putaran per frame), sehingga gerak teraliasing menjadi diam. Kasus yang sama dengan `energyPhase` mobil. Sekarang `AssetPropSpec.driven = { speed, activeWhen }`: renderer memajukan fase dari frame (aliran 0,8 putaran/detik, energi 0,6), plan tidak boleh menganimasikannya, dan aliran yang aktif dihitung sebagai perubahan terlihat oleh `requireVisibleChange`. Katalog untuk model menandainya `movesByItself`.
+- Penanda aliran yang bergerak hanya mengubah sekitar 1,3% piksel, dan pemeriksa gerak (frame 120×80) tidak menangkapnya. Yang menurunkan bagian diam dari 5 ke 2 adalah kamera: aset lingkungan kini punya `ENVIRONMENT_CAMERA` sendiri (close-up zoom 0,95, lean 0,75), dan dengan dua titik fokus kamera berpindah dari fokus pertama ke terakhir selama adegan. Label yang bagiannya keluar frame disembunyikan.
+- Nama aset lingkungan yang panjang di layout berdampingan kini mengecil supaya muat di area aman. Di adegan pertama video air, nama "Sungai berkelok ringan" masih sedikit tertimpa kotak label.
+
+## Hibrida per objek di Isometrik (8 November 2026)
+
+- Keputusan user: aset pustaka hanya untuk bentuk yang sulit; sisanya tetap dibuat per video. Untuk Isometrik, objek sederhana yang kurang tidak ditempel di atas gambar dunia Gemini (sudut, skala, dan cahaya tidak akan cocok), melainkan digambar AI sebagai SVG dengan kit draf dan proyeksi yang sama, lalu ikut dirender `PlanVideo` sebagai aset sementara `drawn.<nama>@0.0.0` di file `AssetN.tsx`.
+- Urutan: rencana pertama → kebutuhan digabung dan dicatat → maksimal 3 objek digambar paralel (`generateProp`, maks 2 percobaan, 8000 token) → yang lolos pemeriksaan render ditambahkan ke katalog → rencana kedua. Jika rencana kedua gagal, rencana pertama dipakai. Aturan "lebih dari separuh adegan" dihitung dari kekurangan rencana yang dipakai.
+- Uji nyata: generate naik dari 107 ke 291 detik karena gambar objek dan perencanaan ulang. Model menggabungkan "pipa bawah tanah" dan "keran rumah" menjadi satu objek, dan hasilnya terbaca serta sewarna dengan pustaka. "Mikroorganisme" tetap dilaporkan sebagai kekurangan.
+
+## Isometrik satu dunia untuk video pustaka (8 November 2026)
+
+- Masukan user: video pustaka Isometrik berpindah antaradegan dengan fade, padahal Isometrik seharusnya satu dunia. Sekarang `WorldPlanVideo` menata semua instance sekali (`layoutWorld`: urutan kemunculan pertama, langkah 720 unit di sumbu x iso, mobil di lajur satu jalan, objek lain di tepi jalan), dan setiap adegan menjadi gerak kamera: pembuka dari gambaran seluruh dunia (1,6 detik), perpindahan antaradegan 1,1 detik tanpa potongan, close-up ke titik fokus, dan tur dari fokus pertama ke terakhir. Keadaan objek bertahan di dunia. `library-video` kini menulis `WorldPlanVideo` untuk Isometrik.
+- Uji render ulang 2 proyek: frame menunjukkan satu dunia menyambung (sungai → instalasi → pipa dan keran; mobil di jalan dengan lampu merah). Pemeriksa gerak masih mencatat 3 (air) dan 5 (mobil) bagian hampir diam, karena kamera berhenti setelah tiba. Perlu gerak kamera yang lebih hidup saat bertahan.
+
+## Gambar dunia Isometrik dicek sudut pandangnya (8 November 2026)
+
+- Laporan user (`proj_7e4620…`, "mobil ngebut di tikungan limbung"): gaya Isometrik dipilih, tetapi videonya bukan isometrik. Jalur pustaka batal karena 4 dari 6 adegan butuh aksi yang belum ada (bodi miring, roda terangkat, selip, terpelanting), lalu `buildWorldFiles` memakai gambar AI. `gemini-3.1-flash-lite-image` menggambar perspektif biasa dengan langit, gunung di cakrawala, dan mobil mirip merek nyata berikut emblemnya, padahal prompt meminta "30 degree isometric".
+- Penyebab di prompt: aturan "seperempat atas adalah lanjutan sekitar yang tenang" dibaca model sebagai langit untuk topik luar ruang, dan langit membawa cakrawala serta titik hilang. Kata "isometric" saja tidak cukup kuat.
+- Perbaikan: `STYLE` meminta proyeksi ortografis (garis sejajar tetap sejajar, tanpa titik hilang, tanpa langit, cakrawala, atau gunung jauh) serta kendaraan dan produk tanpa merek. Seperempat atas diminta berupa tanah yang sama dilihat dari atas. Perencana juga dilarang menulis langit atau pemandangan jauh di `setting`.
+- `checkIsometricView` bertanya ke model visi (model yang sama dengan pencari bagian) apakah gambar isometrik, ada langit/cakrawala, atau ada tulisan/logo. Jika gagal, dunia digambar ulang sekali dari kanvas kosong (bukan dari gambar yang ditolak, supaya perspektifnya tidak ikut tersalin) dengan alasan penolakan di prompt. Hasil ulang dipakai jika masalahnya tidak lebih banyak. Jika masih gagal, chat editor menyebutnya. Cek yang error dianggap lolos.
+- Uji nyata dengan narasi proyek yang sama (`spike_isoview_car`, 1 kali): gambar pertama ditolak, gambar ulang lolos, 66 detik untuk rencana dan 3 gambar. Hasilnya dilihat dari atas, tanpa langit, tanpa emblem. Catatan: seluruh bingkai berupa aspal abu-abu gelap karena perencana memilih ground `#3B424C`, dan bagian "suspensi-luar" tetap tidak ditemukan. Close-up tidak ikut dicek.

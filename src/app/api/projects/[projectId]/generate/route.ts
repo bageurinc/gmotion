@@ -23,7 +23,10 @@ export async function POST(
   if (isGenerationActive(projectId)) {
     return NextResponse.json({ error: 'Video ini sedang dibuat.' }, { status: 409 });
   }
-  if (project.status !== 'draft' && !hasRetryableScenes(project)) {
+  // A job that died mid-run (e.g. dev server restart during the final checks) leaves the
+  // project stuck in 'generating' with every scene ready; resuming must still be allowed.
+  const interrupted = project.status === 'generating';
+  if (project.status !== 'draft' && !interrupted && !hasRetryableScenes(project)) {
     return NextResponse.json({ error: 'Video ini sudah dibuat.' }, { status: 409 });
   }
 

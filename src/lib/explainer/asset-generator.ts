@@ -78,7 +78,7 @@ CHOREOGRAPHY MODE (when the request says FULL SVG CHOREOGRAPHY MODE):
 - Add "choreography": [{"id":"actionName","description":"visible causal action","startWord":0,"endWord":4}]. Use only word indexes supplied in the request.
 - The component props ALSO include actionProgress: Record<string, number>. Destructure it and drive real geometry from actionProgress.actionName ?? 0, in [0,1]. The stage handles timing and easing; time is only for secondary motion.
 - No dissolving between before/after drawings. Draw each physical object once, animate its actual geometry/transform, retain the final state after each action. No automatic looping of the main action.
-- The request adds SHARED WORLD rules. Follow them exactly: the same world must carry across every scene of the video.
+- The request adds SHARED WORLD and CAMERA rules. Follow them exactly: the same world must carry across every scene of the video, and the manifest gets a "camera" entry.
 - Parts still identify the visible structures and react to highlight. Flows must describe a real route in the one view. Keep 3-10 parts, 1-6 flows.
 
 Manifest rules (in choreography mode, the view count rule above replaces the view rules here):

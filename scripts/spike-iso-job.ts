@@ -2,12 +2,13 @@
  * Runs the Isometric path the app uses, without the login step: real draft, generation job, and MP4 export.
  *
  * npx tsx --env-file=.env scripts/spike-iso-job.ts --prompt "Gimana cara kerja paru-paru?"
+ * npx tsx --env-file=.env scripts/spike-iso-job.ts --preset story-svg --owner-from proj_x --prompt "..."
  */
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
 import { prepareGeneration, runGeneration } from '@/lib/pipeline/generation-job';
 import { renderProvider } from '@/lib/render/render-service';
 import { getProject, saveProject } from '@/lib/storage/project-store';
-import type { StudioProject } from '@/types/studio';
+import type { StylePreset, StudioProject } from '@/types/studio';
 
 const argument = (name: string, fallback: string) => {
   const index = process.argv.indexOf(`--${name}`);
@@ -17,10 +18,17 @@ const argument = (name: string, fallback: string) => {
 async function main() {
   const prompt = argument('prompt', 'Gimana cara kerja paru-paru?');
   const startedAt = Date.now();
-  const storyboard = await generateStoryboard(prompt, 'world', '9:16', { strict: true });
+  const preset = argument('preset', 'world') as StylePreset;
+  // Copying the owner lets the account that owns that project open the new one in the studio.
+  const ownerFrom = argument('owner-from', '');
+  const ownerId = ownerFrom ? getProject(ownerFrom)?.ownerId : undefined;
+  const storyboard = await generateStoryboard(prompt, preset, '9:16', { strict: true });
   const draftSeconds = (Date.now() - startedAt) / 1000;
-  const id = `proj_${Date.now()}_isojob`;
-  const draft: StudioProject = { id, createdAt: Date.now(), updatedAt: Date.now(), userPrompt: prompt, storyboard, files: {}, chatHistory: [], status: 'draft' };
+  const id = `proj_${Date.now()}_${preset === 'world' ? 'isojob' : 'job'}`;
+  const draft: StudioProject = {
+    id, ...(ownerId ? { ownerId } : {}), createdAt: Date.now(), updatedAt: Date.now(),
+    userPrompt: prompt, storyboard, files: {}, chatHistory: [], status: 'draft',
+  };
   saveProject(draft);
 
   const generatedAt = Date.now();

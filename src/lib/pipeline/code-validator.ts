@@ -94,11 +94,13 @@ function isElementFactory(node: AstNode): boolean {
   return callee.type === 'MemberExpression' && memberName(callee) === 'createElement';
 }
 
-function isAllowedImport(source: string): boolean {
+function isAllowedImport(source: string, allowedImports?: readonly string[]): boolean {
+  // A custom list is exact: no relative imports, for code that lives outside a project folder.
+  if (allowedImports) return allowedImports.includes(source);
   return ALLOWED_IMPORTS.has(source) || source.startsWith('./') || source.startsWith('../');
 }
 
-function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: boolean) {
+function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: boolean, allowedImports?: readonly string[]) {
   const declared = declaredNames(ast);
   const report = (message: string) => {
     if (!errors.includes(message)) errors.push(message);
@@ -121,8 +123,9 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: b
 
     if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
       const source = (node.source as AstNode | null)?.value;
-      if (typeof source === 'string' && !isAllowedImport(source)) {
-        report(`Forbidden import '${source}' in ${fileName}. Only 'react', 'remotion', 'lucide-react', and '@/motion-kit' are permitted.`);
+      if (typeof source === 'string' && !isAllowedImport(source, allowedImports)) {
+        const permitted = allowedImports ? allowedImports.map((name) => `'${name}'`).join(', ') : "'react', 'remotion', 'lucide-react', and '@/motion-kit'";
+        report(`Forbidden import '${source}' in ${fileName}. Only ${permitted} are permitted.`);
       }
     }
 
@@ -168,7 +171,7 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: b
   });
 }
 
-export function validateSceneCode(code: string, fileName = 'Scene.tsx', options: { svgOnly?: boolean } = {}): ValidationResult {
+export function validateSceneCode(code: string, fileName = 'Scene.tsx', options: { svgOnly?: boolean; allowedImports?: readonly string[] } = {}): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -187,7 +190,7 @@ export function validateSceneCode(code: string, fileName = 'Scene.tsx', options:
       logLevel: 'silent',
       tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
     });
-    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false);
+    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false, options.allowedImports);
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     errors.push(`Export compilation error in ${fileName}: ${errorMsg}`);

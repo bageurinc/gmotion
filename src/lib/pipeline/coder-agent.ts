@@ -990,7 +990,9 @@ export default ${compName};
  */
 export function generateMainVideoCode(
   storyboard: Storyboard,
-  sceneIndexes: number[] = storyboard.scenes.map((_, index) => index)
+  sceneIndexes: number[] = storyboard.scenes.map((_, index) => index),
+  /** Scene indexes whose camera carries on from the scene right before them, so that cut has no fade. */
+  continued: ReadonlySet<number> = new Set(),
 ): string {
   const sceneImports = sceneIndexes
     .map((i) => `import Scene${i + 1} from './Scene${i + 1}';`)
@@ -1000,8 +1002,12 @@ export function generateMainVideoCode(
     .map((i, position) => {
       const s = storyboard.scenes[i];
       const cue = position === 0 ? 'none' : s.sfxCue === 'none' ? 'whoosh' : s.sfxCue;
+      const next = sceneIndexes[position + 1];
+      const joinsPrevious = position > 0 && sceneIndexes[position - 1] === i - 1 && continued.has(i);
+      const joinsNext = next === i + 1 && continued.has(next);
+      const fades = `${joinsPrevious ? ' fadeIn={false}' : ''}${joinsNext ? ' fadeOut={false}' : ''}`;
       return `      <Series.Sequence durationInFrames={${s.durationInFrames}}>
-        <SceneTransition color={palette.background} first={${position === 0}}>
+        <SceneTransition color={palette.background} first={${position === 0}}${fades}>
           <Scene${i + 1} palette={palette} />
         </SceneTransition>
         ${s.audioUrl ? `<Audio src="${s.audioUrl}" volume={1.0} />` : ''}

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { generateText } from 'ai';
 import { getDirectorModel, isApiKeyConfigured } from '@/lib/ai/llm-client';
+import { continuedScenes } from '@/lib/explainer/continuity';
 import { dataVisualStart, spokenDataVisual } from '@/lib/explainer/data-visual';
 import { guardRevisedScenes, type RevisionCheckOutcome, type RevisionCheckTools } from '@/lib/render/scene-check';
 import { isValidProjectId } from '@/lib/security/project-input';
@@ -320,7 +321,8 @@ export async function reviseScenes(
     const storyboard = { ...project.storyboard, scenes: project.storyboard.scenes.map((item, i) => specs.get(i) ?? item) };
     const files = { ...project.files, ...Object.fromEntries([...codes].map(([i, code]) => [`Scene${i + 1}.tsx`, code])) };
     const next = { ...project, storyboard, files };
-    return { ...next, files: { ...files, 'MainVideo.tsx': generateMainVideoCode(storyboard, readyIndexes(next)) } };
+    const continued = continuedScenes(storyboard.scenes, next.sceneAssets);
+    return { ...next, files: { ...files, 'MainVideo.tsx': generateMainVideoCode(storyboard, readyIndexes(next), continued) } };
   };
 
   const candidate = build(new Map(changed.map((item) => [item.index, item.scene])), new Map(changed.map((item) => [item.index, item.code])));

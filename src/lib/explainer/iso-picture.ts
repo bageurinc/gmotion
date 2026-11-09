@@ -49,6 +49,8 @@ SETTING RULES
 - To show something hidden, use a cutaway of its real context, such as a person's chest drawn with the skin and ribs cut open, or a car with its hood removed.
 - Describe every part the story explains, its real shape, real proportions, real colors, and where it sits, so each one is clearly recognizable. Mention what surrounds it.
 - The picture fills the whole frame from edge to edge. The subject sits in the middle and lower part. The top quarter stays calm, because a headline panel covers it.
+- The view looks down on the ground at an isometric angle, so ground, floor, terrain, or water fills the frame. Never describe sky, a horizon, distant mountains, or scenery far behind the subject. Outer space or the deep sea may surround the subject, but without a horizon.
+- Vehicles, devices, and products are generic and unbranded.
 - Write the setting in English, 60 to 160 words.
 
 PART RULES
@@ -71,18 +73,19 @@ COLOR RULES
 ${COPY_ANTI_SLOP_RULES}`;
 
 const STYLE = `Detailed isometric illustration seen from above at the classic 30 degree isometric angle, like a high quality explainer infographic.
+Strict orthographic isometric projection: parallel edges stay parallel, objects far away are drawn the same size as near ones, and there is no vanishing point. No sky, no horizon line, no distant mountains or scenery. The ground plane fills the whole picture.
 Clean shapes with crisp dark outlines, soft flat shading with two or three tones per surface, and rich true-to-life colors. Correct anatomy and real proportions.
-Absolutely no text, letters, numbers, labels, arrows, logos, or watermarks. Screens, paper, and signs show only pictures, icons, colored blocks, and blank lines, never digits or writing.
+Absolutely no text, letters, numbers, labels, arrows, logos, brand emblems, or watermarks. Vehicles and products are generic and unbranded. Screens, paper, and signs show only pictures, icons, colored blocks, and blank lines, never digits or writing.
 No base, tile, plinth, platform, or floating slab under the subject.`;
 
-export function worldImagePrompt(plan: IsoPicturePlan): string {
+export function worldImagePrompt(plan: IsoPicturePlan, correction?: string): string {
   return `Paint over this entire canvas, keeping its exact shape. Its color is only a tone reference, and no blank area may remain.
 
 ${STYLE}
 
 Show: ${plan.setting}
 
-The scene fills the canvas edge to edge in its real surroundings. The top quarter is a calm, light continuation of the surroundings with no important objects.`;
+The scene fills the canvas edge to edge in its real surroundings. The top quarter is more of the same ground seen from above, calm and light with no important objects, never sky.${correction ? `\n\nA previous attempt was rejected: ${correction} Fix this.` : ''}`;
 }
 
 export function detailImagePrompt(detail: IsoPicturePlan['details'][number]): string {
@@ -232,10 +235,60 @@ export function pictureFlows(plan: IsoPicturePlan, boxes: Record<string, ImageBo
   });
 }
 
+const ViewCheckSchema = z.object({
+  isometric: z.boolean(),
+  horizon: z.boolean(),
+  writing: z.boolean(),
+});
+
+/** Plain-language reasons a painted world breaks the isometric style; empty when it passes. */
+export function viewProblems(answer: unknown): string[] {
+  const check = ViewCheckSchema.safeParse(answer);
+  if (!check.success) return [];
+  const problems: string[] = [];
+  if (!check.data.isometric) problems.push('The picture used a perspective view instead of a strict isometric projection.');
+  if (check.data.horizon) problems.push('The picture showed sky or a horizon.');
+  if (check.data.writing) problems.push('The picture contained text, a logo, or a brand emblem.');
+  return problems;
+}
+
+/**
+ * Asks a vision model whether the world is truly isometric. The image model often ignores
+ * the angle for outdoor topics and paints a perspective view with sky. A failed check passes,
+ * because a broken checker must not block a video.
+ */
+export async function checkIsometricView(model: string, image: Buffer): Promise<string[]> {
+  try {
+    const { text } = await callChat({
+      model,
+      system: 'You inspect illustrations. Output only JSON.',
+      maxTokens: 2000,
+      content: [
+        {
+          type: 'text',
+          text: 'Answer three questions about this illustration.\n'
+            + 'isometric: true only if it uses an isometric or axonometric projection seen from above, where parallel edges stay parallel and far objects are not smaller. False for a perspective view with a vanishing point.\n'
+            + 'horizon: true if any sky, horizon line, or distant mountains are visible.\n'
+            + 'writing: true if any readable text, letters, digits, logo, or brand emblem is visible.\n'
+            + 'Output {"isometric":true,"horizon":false,"writing":false}',
+        },
+        { type: 'image_url', image_url: { url: `data:image/png;base64,${image.toString('base64')}` } },
+      ],
+    });
+    const json = text.match(/\{[\s\S]*\}/);
+    return json ? viewProblems(JSON.parse(json[0])) : [];
+  } catch (error) {
+    console.error('[IsoPicture] View check failed:', error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
 export interface IsoPictureBuild {
   picture: IsoPicture;
   images: number;
   missing: string[];
+  /** Style problems still visible after one repaint, empty when the world passed the check. */
+  viewProblems: string[];
   seconds: number;
 }
 
@@ -249,8 +302,26 @@ export async function buildIsoPicture(
 ): Promise<IsoPictureBuild> {
   const startedAt = Date.now();
   const canvas = await blankCanvas(storyboard.aspectRatio, plan.palette.ground);
-  const world = await generateImage(worldImagePrompt(plan), storyboard.aspectRatio, canvas);
+  let world = await generateImage(worldImagePrompt(plan), storyboard.aspectRatio, canvas);
   if (!(await matchesAspect(world, storyboard.aspectRatio))) throw new Error('World picture came back in the wrong shape');
+  let problems = await checkIsometricView(locateModel, world);
+  let painted = 1;
+  if (problems.length) {
+    // One repaint from the blank canvas, never from the rejected picture, so its perspective is not copied.
+    painted += 1;
+    try {
+      const retry = await generateImage(worldImagePrompt(plan, problems.join(' ')), storyboard.aspectRatio, canvas);
+      if (await matchesAspect(retry, storyboard.aspectRatio)) {
+        const retryProblems = await checkIsometricView(locateModel, retry);
+        if (retryProblems.length <= problems.length) {
+          world = retry;
+          problems = retryProblems;
+        }
+      }
+    } catch (error) {
+      console.error(`[IsoPicture] Repaint failed for ${projectId}, keeping the first world:`, error instanceof Error ? error.message : error);
+    }
+  }
   const details = await Promise.all(plan.details.map(async (detail) => {
     const image = await generateImage(detailImagePrompt(detail), storyboard.aspectRatio, world);
     return (await matchesAspect(image, storyboard.aspectRatio)) ? image : world;
@@ -281,8 +352,9 @@ export async function buildIsoPicture(
       accent: plan.palette.accent,
       ink: plan.palette.ink,
     },
-    images: images.length,
+    images: images.length + painted - 1,
     missing,
+    viewProblems: problems,
     seconds: (Date.now() - startedAt) / 1000,
   };
 }

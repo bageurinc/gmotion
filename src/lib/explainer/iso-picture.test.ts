@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { imageCameraAt } from '../../motion-kit/explainer/image-camera';
-import { blankTopShare, IsoPicturePlan, IsoPicturePlanSchema, pictureFlows, pictureShots, worldImagePrompt } from './iso-picture';
+import { blankTopShare, IsoPicturePlan, IsoPicturePlanSchema, pictureFlows, pictureShots, viewProblems, worldImagePrompt } from './iso-picture';
 
 const beat = (focus: string | null, label: string | null = null) => ({
   text: 'Kalimat', headline: 'Judul', accent: '', value: null, status: '', clock: null, focus, label, sticker: null,
@@ -44,6 +44,22 @@ describe('painted isometric world', () => {
     expect(prompt).toContain(plan.setting);
     expect(prompt).toMatch(/No base, tile, plinth, platform/);
     expect(prompt).toMatch(/never digits/);
+  });
+
+  it('forbids sky, horizon, and perspective, and passes a rejection back on repaint', () => {
+    const prompt = worldImagePrompt(plan);
+    expect(prompt).toMatch(/no vanishing point/);
+    expect(prompt).toMatch(/No sky, no horizon/);
+    expect(prompt).toMatch(/never sky/);
+    expect(prompt).not.toMatch(/previous attempt/);
+    expect(worldImagePrompt(plan, 'The picture showed sky or a horizon.')).toMatch(/previous attempt was rejected: The picture showed sky/);
+  });
+
+  it('reads the isometric check and lets an unreadable answer pass', () => {
+    expect(viewProblems({ isometric: true, horizon: false, writing: false })).toEqual([]);
+    expect(viewProblems({ isometric: false, horizon: true, writing: true })).toHaveLength(3);
+    expect(viewProblems({ isometric: 'yes' })).toEqual([]);
+    expect(viewProblems(null)).toEqual([]);
   });
 
   it('rejects a plan without parts', () => {

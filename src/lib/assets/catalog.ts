@@ -56,6 +56,7 @@ export function describeForPrompt(matches: readonly CatalogMatch[]) {
           ...(spec.type === 'enum' ? { values: spec.values } : {}),
           ...(spec.variants ? { variants: spec.variants } : {}),
           ...(spec.animatable ? { animatable: true } : {}),
+          ...(spec.type === 'number' && spec.driven ? { movesByItself: true } : {}),
         }])),
       limitations: entry.limitations,
     };

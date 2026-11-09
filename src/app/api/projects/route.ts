@@ -2,6 +2,7 @@ import { runWithUsage } from '@/lib/billing/usage';
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
+import { libraryDraftNote } from '@/lib/pipeline/library-video';
 import { canAccessProject, requireUser } from '@/lib/auth/project-access';
 import { CREDITS_PER_VIDEO } from '@/lib/billing/credits';
 import {
@@ -97,7 +98,11 @@ export async function POST(req: NextRequest) {
     const promise = (async (): Promise<StudioProject> => {
       const storyboard = await runWithUsage(
         { userId: auth.user.id, projectId, preset, stage: 'draft' },
-        () => generateStoryboard(prompt, preset, aspectRatio, { strict: true }),
+        async () => generateStoryboard(prompt, preset, aspectRatio, {
+          strict: true,
+          // Library-first isometric drafts are written knowing which assets can draw them.
+          libraryNote: preset === 'world' ? await libraryDraftNote(prompt).catch(() => undefined) : undefined,
+        }),
       );
       const project: StudioProject = {
         id: projectId,
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
         files: {},
         chatHistory: [],
         status: 'draft',
+        ...(preset === 'world' ? { visualPolicy: 'library-first' as const } : {}),
       };
 
       saveProject(project);

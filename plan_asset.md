@@ -136,8 +136,47 @@ Demo lokal:
 - [ ] Label yang menempel pada bagian, garis penunjuk, sorotan, dan pemotongan tampilan.
 - [ ] Jalur aliran mengikuti anchor, dengan arah, kecepatan ilustratif, dan waktu aktif.
 - [ ] Panel angka, grafik, urutan, dan legenda tanpa data bawaan yang dikarang.
+- [ ] (uji coba) Caption, label penunjuk, dan nama objek dapat dimatikan secara
+  terpisah lewat `presentation.captions`, `presentation.labels`, dan
+  `presentation.names` di rencana video atau override per adegan. Teks bukan
+  bagian dari geometri aset. Narasi/audio dan aksi tidak dihapus saat teks
+  disembunyikan; panggung memakai ruang lebih luas saat caption mati. Rencana
+  lama tanpa pengaturan tetap menampilkan teks seperti sebelumnya. Belum ada
+  kontrol untuk pengaturan ini di studio.
 - [ ] Komponen teks dan caption yang konsisten dengan tema dan area aman.
 - [ ] Galeri aset internal berisi preview, keadaan yang didukung, dan contoh video.
+  Sebagian ada di `/admin/assets` (tab Terbit: preview SVG default per varian); belum ada
+  preview per keadaan dan contoh video.
+
+### A2. Alur draf aset dari permintaan user
+
+Keputusan 8 November 2026: permintaan user yang belum didukung tidak langsung menjadi
+aset global. Permintaan dicatat, admin memilih yang dibuat, dan draf baru dipakai video
+setelah admin memperbaiki kualitasnya lalu menerbitkannya.
+
+1. Rencana AI mendaftar hal yang tidak bisa ditampilkan (`unsupported`), lalu dicatat ke `asset_requests`.
+2. `/admin/assets` tab Diminta merekap permintaan per gaya dan objek.
+3. Admin memilih Jadikan draf, lalu baris baru dibuat di `asset_drafts` (status `draft`).
+4. AI membuat isi draf: komponen SVG dan metadata registry, divalidasi lalu dirender ke preview. Belum ada.
+5. Admin memperbaiki kualitas: revisi lewat instruksi, edit kode atau metadata, dan cek frame per rasio. Belum ada.
+6. Admin menerbitkan draf: entri pustaka berversi dibaca pipeline dari database tanpa deploy. Belum ada.
+
+Penyimpanan hibrida (keputusan 8 November 2026): aset inti tetap berupa file komponen di
+repositori (riwayat git, TypeScript, test). Aset hasil kurasi admin disimpan sebagai kode
+komponen dan metadata berversi di database, dengan preview di object storage. Kode dari
+database wajib lolos validator sebelum disimpan dan dirender. Aset database yang matang
+dan sering dipakai boleh dipromosikan menjadi file. Aset disimpan sebagai komponen yang
+menghasilkan SVG, bukan file `.svg` statis, supaya warna, keadaan, dan gerak tetap bisa diatur.
+
+- [ ] (uji coba) Langkah 1–3 tersedia: kolom `unsupported` di rencana, tabel dan migrasi
+  `0004_asset_library.sql`, serta halaman `/admin/assets`. Belum diverifikasi di browser.
+- [ ] (uji coba) Langkah 4–5: isi draf oleh AI, pratinjau, pemeriksaan, revisi, edit, dan
+  riwayat versi di `/admin/assets/draft/[id]`. Uji nyata pada draf Lampu merah.
+- [ ] (uji coba) Langkah 6: terbitkan draf ke katalog tanpa deploy (`published_assets`,
+  `loadAssetCatalog`, render lewat `PlanVideo`). Belum dibuktikan sampai MP4, dan belum
+  dipakai pembuatan video di aplikasi.
+- Media yang diunggah user (logo, foto produk) tetap milik proyek user itu dan tidak
+  masuk pustaka global.
 
 ### B. Transportasi dan energi kendaraan, prioritas pertama
 
@@ -145,6 +184,13 @@ Demo lokal:
   suspensi, dan rem. Sudah ada demo; belum dipilih otomatis di aplikasi.
 - [ ] (uji coba) Mobil listrik: baterai, motor, inverter, pengisi daya, port,
   pendinginan, dan kabel tegangan tinggi. Sudah ada demo; belum ada alur pengisian terpasang.
+- [ ] (uji coba) Mobil LMPV 7-Seater Keluarga: `vehicle.lmpv@0.1.0`.
+  Aset mobil keluarga 7 penumpang 3 baris kursi yang sangat detail (terinspirasi dari LMPV populer seperti Suzuki Ertiga, generik dan aman komersial):
+  1. Eksterior: Fasad aerodinamis, grille krom multi-slat, lampu depan proyektor LED dengan alis DRL kristal, 3 baris kaca samping (kaca depan + delta A-pillar, kaca baris 2, quarter glass baris 3), velg alloy two-tone diamond-cut 5-split-spoke, spion dengan sein LED, sirip hiu antena, spoiler belakang dengan stop lamp LED, dan pintu bagasi terangkat (`tailgateOpen`).
+  2. Interior Kabin 7-Seater: 3 baris kursi (baris 1 bucket seat + dasbor floating touchscreen 8 inci + setir D-cut 3-spoke + tuas transmisi; baris 2 jok 3 penumpang split 60:40 dengan sandaran tangan tengah; AC double blower di plafon dengan 4 kisi louver udara; baris 3 jok 2 penumpang split 50:50 dengan bagasi lantai rata).
+  3. Ruang Mesin FWD Melintang 1.5L (`hoodOpen`): Mesin 4-silinder DOHC 16V melintang (FWD), 4 koil busi ber-wiring harness, intake manifold dengan box filter udara samping, radiator crossflow twin-fan + selang coolant, aki 12V dengan terminal positif merah, tabung booster minyak rem, tabung washer kaca, dan sabuk puli alternator/AC berputar.
+  4. Sasis & Kolong (`view: 'chassis'`): Monocoque FWD, transaxle depan + CV drive half-shafts dengan karet boot, suspensi depan MacPherson strut, tangki bensin aman di bawah baris 2, knalpot lengkap (downpipe, catalytic converter, resonator, muffler belakang, ujung knalpot krom), dan suspensi belakang torsion beam dengan per keong dan shockbreaker terpisah.
+  Demo MP4 dan 15 stills tersimpan di `storage/assets/lmpv/`.
 - [ ] (uji coba) Jalan lurus: jumlah lajur, warna permukaan, bahu, dan marka bergerak.
 - [ ] Kemasan aset mesin dan motor sebagai close-up publik dengan API yang terdokumentasi.
 - [ ] Pengaturan warna kabin, kaca, trim, roda, logam, kabel, dan aksen proses.
@@ -184,7 +230,15 @@ Demo lokal:
 | Conveyor | Sabuk, roller, motor, objek yang diangkut |
 | Rumah atau ruangan | Dinding, lantai, pintu, jendela, potongan untuk melihat bagian dalam |
 
-- [ ] Bangun paket air dan rumah dari tabel setelah integrasi aset kendaraan stabil.
+- [ ] (uji coba) Paket **Rumah dan Sanitasi Air**: `building.house@0.1.0` dan `building.sink@0.1.0`.
+  `building.house` menyediakan dua varian bangunan lengkap:
+  1. `residential`: Rumah keluarga standar (atap pelana segitiga, cerobong, pintu berengsel `doorOpen`, jendela 4-panel, taman rumput hijau depan bersemak bunga dan batu pijakan, carport dengan mobil terparkir, serta potongan interior dapur lengkap, kamar mandi ubin, dan ruang tamu).
+  2. `luxury`: Rumah mewah / villa modern 2 lantai kontemporer dengan garasi beratap kanopi dan mobil mewah terparkir, taman lanskap asri dengan semak hias dan batu pijakan, teras deck kayu, kolam renang depan (*plunge pool*), balkon kaca lantai 2 (*glass balustrade*), jendela besar *floor-to-ceiling*, pintu pivot modern, serta interior 2 lantai: dapur gourmet dengan *kitchen island waterfall marble* + wastafel ganda + keran emas, kamar mandi spa marmer dengan bathtub berdiri + double vanity, dan master suite atas.
+  `waterRunning` mengalirkan air dari keran dapur dan kamar mandi secara bersamaan.
+  `building.sink` (`IsoSink`) menyediakan tampilan close-up wastafel dan keran air untuk varian dapur (`kitchen`) dan kamar mandi (`bathroom`).
+  Terdaftar di registry dan dapat dirender oleh `PlanVideo`.
+  Demo: `npx tsx scripts/assets/preview-house.tsx`, menghasilkan video MP4 15 detik dan 15 frame pada rasio 9:16, 4:5, dan 16:9 di `storage/assets/house/`. Status tetap uji coba; belum terhubung ke alur pembuatan video di aplikasi.
+- [ ] Bangun kelanjutan paket air dan mesin umum (sistem air, kulkas, AC, lift, conveyor) dari tabel setelah integrasi aset kendaraan stabil.
 
 ### E. Biologi, lingkungan, dan layanan
 
@@ -196,7 +250,39 @@ Demo lokal:
 | Ekonomi | Uang, barang, gudang, pengiriman, grafik | Metafora diberi konteks; tidak mengganti data dengan angka dekoratif |
 | Manusia | Karakter, pose kerja, tangan memegang objek | Pose dan titik genggam konsisten |
 
-- [ ] Pilih satu paket sesuai permintaan nyata sebelum membuat seluruh daftar.
+- [ ] (uji coba) Paket awal **Lingkungan: pemilahan sampah**, dipilih untuk permintaan
+  bagian E pada 8 November 2026. `environment.waste-sorting@0.1.0` menyediakan
+  tiga wadah dengan ikon daun, kertas, dan botol, objek generik, warna wadah per
+  instance, anchor label, serta aksi `progress` menuju wadah sesuai jenis objek.
+  Terdaftar di katalog dan dirender oleh `PlanVideo`; belum terhubung ke alur aplikasi.
+  Demo: `npx tsx scripts/assets/preview-waste-sorting.tsx`, menghasilkan MP4 6 detik
+  dan frame 9:16, 4:5, 16:9 di `storage/assets/waste-sorting/` (diabaikan Git).
+  Bentuk dan warna ilustratif, bukan standar pengumpulan setempat. Tidak mencakup
+  sampah berbahaya, mesin sortir, sungai, pengolahan air, atau proses daur ulang.
+- [ ] (uji coba) Lanjutan Lingkungan: `environment.water-channel@0.1.0`
+  (varian sungai dan saluran lurus) serta `environment.water-treatment@0.1.0`
+  (potongan pengolahan air permukaan). Tersedia arah aliran, material per instance,
+  pengadukan ilustratif, partikel mengendap, lapisan filter, simbol pemberian
+  disinfektan, dan anchor antarbagian. Koagulasi/flokulasi digabung dalam satu bak.
+  Urutan mengacu pada [CDC](https://www.cdc.gov/drinking-water/about/how-water-treatment-works.html).
+  Tidak mencakup pengolahan air limbah, dosis, hidraulika, atau jaminan air layak minum.
+  Sungai/saluran dan instalasi adalah aset terpisah, belum tersambung fisik otomatis.
+  Skrip `scripts/assets/preview-water-environment.tsx` menghasilkan demo 18 detik
+  dan frame tiga rasio di `storage/assets/water-environment/`. Masih isometrik;
+  alur studio, prompt sampai export, dan aset 2D belum diverifikasi.
+- [ ] (uji coba) Paket **Usaha**: `business.shop`, `business.shelf`,
+  `business.checkout`, `business.product`, dan `business.pos`, versi `0.1.0`.
+  Lima komponen terpisah tersedia di katalog, renderer video, dan renderer preview
+  admin. Toko memiliki exterior/cutaway dan pintu berengsel; rak tiga tingkat;
+  kasir dengan pemindai, laci, dan gerak produk; kemasan kotak/botol/kaleng;
+  POS layar mati/menyala tanpa angka. Material dan aksi sesuai metadata registry.
+  Tidak ada merek, harga, label teks, mata uang, atau transaksi bawaan. Label dan
+  harga hanya boleh datang dari konten adegan. Tidak mencakup karakter, genggaman,
+  pickup, restock, barcode nyata, atau pemrosesan pembayaran.
+  Demo tanpa teks: `npx tsx scripts/assets/preview-business.tsx`, hasil lokal di
+  `storage/assets/business/`. Status tetap uji coba; seluruh alur studio belum diuji.
+- [ ] Paket Tubuh, Ekonomi, dan Manusia menunggu kebutuhan berikutnya;
+  belum ada komponen atau klaim ketepatan anatomi dari pekerjaan ini.
 - [ ] Pisahkan aset 2D dan isometrik; jangan mengklaim satu sudut mendukung semua gaya.
 
 ## Kontrak aset reusable
@@ -454,6 +540,7 @@ Kontrak reusable melengkapi kontrak ilustrasi yang sudah ada. Jangan mengganti
 - [ ] (uji coba) Prompt pembuktian: perbandingan mobil listrik dan bensin, tanpa angka yang
   dikarang. Lewat skrip `scripts/spike-asset-plan.ts` dan renderer `PlanVideo`, belum lewat
   aplikasi. Dua run berhasil sampai MP4; hasil dan jebakan dicatat di KNOWLEDGE.md.
+  Run ketiga (`ev3`) menambah gerak bawaan renderer: kamera, mobil masuk, dan transisi bodi.
 - [ ] Periksa cakupan sebelum generate dan tampilkan batasan di review draf.
 - [ ] Buat rencana dari katalog, validasi, lalu render melalui komponen yang sama.
 - [ ] Buktikan tidak ada panggilan generate image atau SVG objek bebas dalam mode pustaka.

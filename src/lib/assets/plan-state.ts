@@ -11,24 +11,57 @@ const EASINGS: Record<Action['easing'], (t: number) => number> = {
   'ease-out': (t) => 1 - (1 - t) ** 3,
 };
 
+export interface SceneState {
+  /** Props as the previous scene left them, before this scene's `set`. Absent on first appearance. */
+  entry: Record<string, InstanceProps>;
+  /** Props after this scene's `set`, before its actions run. */
+  start: Record<string, InstanceProps>;
+  /** Instances shown for the first time in this scene. */
+  firstAppearance: ReadonlySet<string>;
+}
+
 /**
- * Props each instance starts every scene with. A scene's `set` and the end values of its
- * actions carry into later scenes, so an opened hood stays open until a plan closes it.
+ * Per-scene state. A scene's `set` and the end values of its actions carry into later
+ * scenes, so an opened hood stays open until a plan closes it.
  */
-export function sceneStartStates(plan: AssetPlan, registry: readonly AssetEntry[] = ASSET_REGISTRY): Array<Record<string, InstanceProps>> {
+export function sceneStates(plan: AssetPlan, registry: readonly AssetEntry[] = ASSET_REGISTRY): SceneState[] {
   const current: Record<string, InstanceProps> = {};
   for (const instance of plan.instances) {
     const entry = getAsset(instance.assetId, instance.assetVersion, registry);
     if (entry) current[instance.id] = resolveInstanceProps(entry, instance);
   }
+  const shown = new Set<string>();
   return plan.scenes.map((scene) => {
+    const firstAppearance = new Set(scene.instances.filter((id) => !shown.has(id)));
+    scene.instances.forEach((id) => shown.add(id));
+    const entry = structuredClone(Object.fromEntries(Object.entries(current).filter(([id]) => !firstAppearance.has(id))));
     for (const change of scene.set) current[change.instanceId] = { ...current[change.instanceId], ...change.props };
     const start = structuredClone(current);
     for (const action of [...scene.actions].sort((a, b) => a.endSec - b.endSec)) {
       current[action.instanceId] = { ...current[action.instanceId], [action.prop]: action.to };
     }
-    return start;
+    return { entry, start, firstAppearance };
   });
+}
+
+export const sceneStartStates = (plan: AssetPlan, registry: readonly AssetEntry[] = ASSET_REGISTRY) =>
+  sceneStates(plan, registry).map((state) => state.start);
+
+export const VIEW_TRANSITION_SEC = 0.9;
+
+/**
+ * Opening or closing the shell plays as a fade instead of a cut: the shell fades out in the
+ * old view before switching, or fades in on the exterior view.
+ */
+export function viewTransition(entryView: unknown, startView: unknown, seconds: number): { view?: string; shellOpacity: number } {
+  if (entryView === undefined || entryView === startView) return { shellOpacity: 1 };
+  const progress = Math.min(1, Math.max(0, seconds / VIEW_TRANSITION_SEC));
+  const eased = EASINGS['ease-in-out'](progress);
+  // Cutaway keeps a 10% ghost shell, so fading to that level makes the switch seamless.
+  const ghost = (view: unknown) => (view === 'cutaway' ? 0.1 : 0);
+  if (entryView === 'exterior') return progress < 1 ? { view: 'exterior', shellOpacity: 1 - eased * (1 - ghost(startView)) } : { shellOpacity: 1 };
+  if (startView === 'exterior') return { view: 'exterior', shellOpacity: ghost(entryView) + eased * (1 - ghost(entryView)) };
+  return { shellOpacity: 1 };
 }
 
 /** Props at `seconds` into a scene. Before an action starts, its `from` value already applies. */

@@ -22,13 +22,22 @@ const ActionSchema = z.object({
   easing: z.enum(['linear', 'ease-in-out', 'ease-out']).default('ease-in-out'),
 }).strict();
 
+export const AssetPresentationSchema = z.object({
+  captions: z.boolean().optional(),
+  labels: z.boolean().optional(),
+  names: z.boolean().optional(),
+}).strict();
+export type AssetPresentation = z.infer<typeof AssetPresentationSchema>;
+
 const SceneSchema = z.object({
   id: ID,
   layout: SceneLayoutSchema,
+  camera: z.object({ zoom: z.number().finite().min(1).max(16) }).strict().optional(),
   durationSec: z.number().positive().max(PLAN_LIMITS.sceneSeconds),
   instances: z.array(ID).min(1).max(PLAN_LIMITS.instances),
-  /** Spoken line for this scene; also shown as the caption. */
+  /** Spoken line; optional presentation decides whether it is also shown on screen. */
   narration: z.string().trim().min(1).max(400),
+  presentation: AssetPresentationSchema.optional(),
   /** Static props applied from this scene on, for non-animatable changes such as the view. */
   set: z.array(z.object({ instanceId: ID, props: z.record(z.string(), z.unknown()) }).strict()).max(PLAN_LIMITS.instances).default([]),
   focus: z.array(z.object({ instanceId: ID, anchor: z.string().max(40), label: z.string().trim().min(1).max(40) }).strict()).max(4).default([]),
@@ -43,10 +52,26 @@ const InstanceSchema = z.object({
   props: z.record(z.string(), z.unknown()).default({}),
 }).strict();
 
+/** Something the prompt asked for that the registered assets cannot show. Reported, never drawn. */
+export const CoverageGapSchema = z.object({
+  subject: z.string().transform((text) => text.toLowerCase().replace(/\s+/g, ' ').trim()).pipe(z.string().min(2).max(60)),
+  kind: z.enum(['object', 'action', 'environment']),
+  reason: z.string().trim().max(200).optional(),
+  /** Scenes whose narration needs it; those scenes show the closest registered asset instead. */
+  sceneIds: z.array(z.string().max(40)).max(12).optional(),
+}).strict();
+export type CoverageGap = z.infer<typeof CoverageGapSchema>;
+
 export const AssetPlanSchema = z.object({
   schemaVersion: z.literal(1),
   visualPolicy: VisualPolicySchema,
+  presentation: AssetPresentationSchema.optional(),
+  unsupported: z.array(CoverageGapSchema).max(10).default([]),
   instances: z.array(InstanceSchema).min(1).max(PLAN_LIMITS.instances),
+  connections: z.array(z.object({
+    from: z.object({ instanceId: ID, anchor: z.string().max(40) }).strict(),
+    to: z.object({ instanceId: ID, anchor: z.string().max(40) }).strict(),
+  }).strict()).max(16).optional(),
   scenes: z.array(SceneSchema).min(1).max(PLAN_LIMITS.scenes),
 }).strict();
 
@@ -83,7 +108,7 @@ const LAYOUT_COUNTS: Record<z.infer<typeof SceneLayoutSchema>, [number, number]>
   single: [1, 1],
   'close-up': [1, 1],
   'side-by-side': [2, 2],
-  road: [2, 5],
+  road: [2, 7],
 };
 
 const issues = (error: z.ZodError, prefix: string) =>
@@ -93,7 +118,15 @@ const issues = (error: z.ZodError, prefix: string) =>
  * Validates a model-produced plan against the pinned registry. The model may only pick
  * registered IDs, variants, props, anchors, and animatable props; nothing is passed through.
  */
-export function validateAssetPlan(input: unknown, registry: readonly AssetEntry[] = ASSET_REGISTRY): AssetPlanResult {
+export interface AssetPlanOptions {
+  /**
+   * Every scene must show a visible change: a non-subtle action, a view change, a road, or a
+   * car appearing for the first time. Camera motion alone does not count.
+   */
+  requireVisibleChange?: boolean;
+}
+
+export function validateAssetPlan(input: unknown, registry: readonly AssetEntry[] = ASSET_REGISTRY, options: AssetPlanOptions = {}): AssetPlanResult {
   const parsed = AssetPlanSchema.safeParse(input);
   if (!parsed.success) return { ok: false, errors: issues(parsed.error, '') };
   const plan = parsed.data;
@@ -112,9 +145,46 @@ export function validateAssetPlan(input: unknown, registry: readonly AssetEntry[
     instances.set(instance.id, { entry, instance });
   }
 
+  for (const [index, connection] of (plan.connections ?? []).entries()) {
+    for (const endpoint of [connection.from, connection.to]) {
+      const member = instances.get(endpoint.instanceId);
+      if (!member?.entry.variants[member.instance.variant].anchors[endpoint.anchor]) {
+        errors.push(`connection ${index}: unknown endpoint ${endpoint.instanceId}.${endpoint.anchor}`);
+      }
+    }
+  }
+
   const sceneIds = new Set<string>();
+  const shown = new Set<string>();
   for (const scene of plan.scenes) {
     const where = `scene ${scene.id}: `;
+    if (options.requireVisibleChange) {
+      const appears = scene.instances.some((id) => !shown.has(id));
+      const changesView = scene.set.some((change) => 'view' in change.props);
+      const visibleAction = scene.actions.some((action) => {
+        const member = instances.get(action.instanceId);
+        const spec = member?.entry.props[action.prop];
+        return spec !== undefined && !spec.subtle;
+      });
+      // A looping phase the renderer drives (flow markers, energy dots) moves on its own.
+      const drivenMotion = scene.instances.some((id) => {
+        const member = instances.get(id);
+        if (!member) return false;
+        const setProps = Object.assign({}, ...scene.set.filter((change) => change.instanceId === id).map((change) => change.props)) as Record<string, unknown>;
+        return Object.values(member.entry.props).some((spec) => {
+          if (spec.type !== 'number' || !spec.driven) return false;
+          const flag = spec.driven.activeWhen;
+          if (!flag) return true;
+          const flagSpec = member.entry.props[flag];
+          const value = setProps[flag] ?? member.instance.props[flag] ?? (flagSpec?.type === 'boolean' ? flagSpec.default : false);
+          return value === true;
+        });
+      });
+      if (!appears && !changesView && !visibleAction && !drivenMotion && scene.layout !== 'road') {
+        errors.push(`${where}shows no visible change; add an action such as hoodOpen, windowOpen, bodyOpacity, batteryCoverOpacity, or wheelOpacity tied to the narration`);
+      }
+    }
+    scene.instances.forEach((id) => shown.add(id));
     if (sceneIds.has(scene.id)) errors.push(`${where}duplicate id`);
     sceneIds.add(scene.id);
     if (new Set(scene.instances).size !== scene.instances.length) errors.push(`${where}lists an instance twice`);
@@ -126,6 +196,11 @@ export function validateAssetPlan(input: unknown, registry: readonly AssetEntry[
       errors.push(`${where}layout ${scene.layout} needs ${min === max ? min : `${min}-${max}`} instances`);
     }
     const roads = members.filter((member) => member?.entry.assetId === 'environment.road').length;
+    // Cars drive in the lanes; up to two other objects stand on the far shoulder (PlanVideo).
+    const roadside = members.filter((member) => member && !['IsoRoad', 'IsoCar'].includes(member.entry.renderer)).length;
+    const roadCars = members.filter((member) => member?.entry.renderer === 'IsoCar').length;
+    if (scene.layout === 'road' && roadside > 2) errors.push(`${where}layout road places at most 2 roadside objects besides cars`);
+    if (scene.layout === 'road' && roadCars < 1) errors.push(`${where}layout road needs at least one car`);
     if (scene.layout === 'road' && roads !== 1) errors.push(`${where}layout road needs exactly one road instance`);
     if (scene.layout !== 'road' && roads > 0) errors.push(`${where}a road is only placed by the road layout`);
 

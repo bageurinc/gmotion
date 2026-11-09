@@ -2,8 +2,9 @@ import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurr
 import { captureSceneSheets, opensWithPreviousScene } from '@/lib/render/scene-check';
 import type { StudioProject } from '@/types/studio';
 import { AssetCritique, critiqueAsset, GeneratedAsset, repairAsset, reviseAsset } from './asset-generator';
-import { continuityFor } from './continuity';
-import { assetModel, buildAssetScene, sceneTopicPrompt } from './scene-generator';
+import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
+import { continuedScenes, continuesCamera, continuityFor } from './continuity';
+import { assetModel, buildAssetScene, composeAssetScene, sceneTopicPrompt } from './scene-generator';
 
 /** The critic is strict: clips viewers accepted scored about 5, so only clearly weak scenes are redrawn. */
 export const QUALITY_THRESHOLD = 5.5;
@@ -91,6 +92,23 @@ export async function improveWeakScenes(project: StudioProject, tools: QualityTo
   });
 }
 
+/**
+ * Stores a redrawn scene. Its camera may have moved, so the next scene, which starts from it,
+ * is composed again, and MainVideo is rebuilt in case the scene now cuts instead of continuing.
+ */
+function redrawnFiles(project: StudioProject, index: number, draft: { code: string; asset: GeneratedAsset }) {
+  const { scenes } = project.storyboard;
+  const sceneAssets = { ...project.sceneAssets, [scenes[index].id]: draft.asset };
+  const files = { ...project.files, [`Scene${index + 1}.tsx`]: draft.code };
+  const following = scenes[index + 1] && sceneAssets[scenes[index + 1].id];
+  if (following && continuesCamera(following, index + 1)) {
+    files[`Scene${index + 2}.tsx`] = composeAssetScene(following, project.storyboard, index + 1, draft.asset);
+  }
+  const ready = scenes.flatMap((scene, position) => (project.sceneProgress?.[scene.id]?.stage === 'ready' ? [position] : []));
+  files['MainVideo.tsx'] = generateMainVideoCode(project.storyboard, ready, continuedScenes(scenes, sceneAssets));
+  return { files, sceneAssets };
+}
+
 export function qualityTools(
   current: () => StudioProject,
   commit: (changes: (project: StudioProject) => Partial<StudioProject>) => void
@@ -122,12 +140,7 @@ export function qualityTools(
         const sceneId = project.storyboard.scenes[index].id;
         return {
           sceneProgress: { ...project.sceneProgress, [sceneId]: { ...project.sceneProgress?.[sceneId], stage: 'ready', score: average, issues } },
-          ...(draft
-            ? {
-                files: { ...project.files, [`Scene${index + 1}.tsx`]: draft.code },
-                sceneAssets: { ...project.sceneAssets, [sceneId]: draft.asset },
-              }
-            : {}),
+          ...(draft ? redrawnFiles(project, index, draft) : {}),
         };
       });
     },

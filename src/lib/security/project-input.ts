@@ -3,10 +3,13 @@ import { ArtStyleSchema, AspectRatioSchema, DrawingModelSchema, SocialPlatformSc
 
 const PROJECT_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const VIRTUAL_FILE_NAME = /^(?:Scene\d{1,2}|MainVideo)\.tsx$/;
+/** Published library assets a library video bundles. Written by the job only, never edited by users. */
+const ASSET_FILE_NAME = /^(?:Asset\d{1,2}|Environment)\.tsx$/;
 const MAX_FILE_LENGTH = 200_000;
 
 export const isValidProjectId = (id: string) => PROJECT_ID.test(id);
-export const isVirtualFileName = (name: string) => VIRTUAL_FILE_NAME.test(name);
+export const isVirtualFileName = (name: string) => VIRTUAL_FILE_NAME.test(name) || ASSET_FILE_NAME.test(name);
+export const isAssetFileName = (name: string) => ASSET_FILE_NAME.test(name);
 
 export const CreateProjectSchema = z.object({
   requestId: z.string().uuid().optional(),

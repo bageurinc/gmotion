@@ -3,7 +3,7 @@ import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { buildImageScene } from '@/lib/explainer/image-scene';
 import { planSceneMoments, ScenePlan, singlePictureScene } from '@/lib/explainer/scene-moments';
-import { continuityFor } from '@/lib/explainer/continuity';
+import { continuedScenes, continuityFor } from '@/lib/explainer/continuity';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
@@ -13,7 +13,9 @@ import { generateMainVideoCode, reviseSceneCode, simpleSceneCode } from './coder
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from './concurrency';
 import { hasFailedScene, normalizeSceneOrder } from './draft';
 import { generateSceneAudio } from './tts-engine';
-import { buildWorldFiles } from './world-video';
+import { buildWorldFiles, WORLD_VIEW_REPAIR } from './world-video';
+import { buildLibraryFiles, type LibraryBuild } from './library-video';
+import { isAssetFileName } from '@/lib/security/project-input';
 
 const globalJobs = globalThis as typeof globalThis & { __gmotionGenerationJobs?: Set<string> };
 const activeJobs = (globalJobs.__gmotionGenerationJobs ??= new Set<string>());
@@ -49,10 +51,22 @@ function finishedMessage(project: StudioProject): string {
   if (!usesWorldEngine(project.storyboard.preset)) {
     return 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.';
   }
-  const repairs = project.worldRepairs?.length ?? 0;
-  return repairs
-    ? `Dunia selesai dibuat. Ada ${repairs} objek yang disesuaikan otomatis karena tidak muat. Tonton hasilnya di player.`
-    : 'Dunia selesai dibuat. Tonton hasilnya di player.';
+  const library = project.libraryReport;
+  if (library?.used) {
+    const drawn = library.generated?.length ? ` Objek sederhana yang belum ada di pustaka digambar AI khusus untuk video ini: ${library.generated.join(', ')}.` : '';
+    const made = `Video selesai dibuat dari pustaka aset (${library.assets.map((asset) => asset.split('@')[0]).join(', ')}).${drawn}`;
+    if (!library.unsupported.length) return `${made} Tonton hasilnya di player.`;
+    const scenes = [...new Set(library.unsupported.flatMap((gap) => gap.sceneIds ?? []))]
+      .map((id) => project.storyboard.scenes.findIndex((scene) => scene.id.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40) === id) + 1)
+      .filter((number) => number > 0).sort((a, b) => a - b);
+    return `${made} Belum ada aset untuk ${library.unsupported.map((gap) => gap.subject).join(', ')}${scenes.length ? `, jadi adegan ${scenes.join(', ')} memakai aset terdekat` : ', jadi bagian itu memakai aset terdekat'}. Kebutuhannya sudah dicatat untuk pustaka. Tonton hasilnya di player.`;
+  }
+  const libraryNote = library?.fallbackReason ? ` Pustaka aset tidak dipakai: ${library.fallbackReason} Gambar dunia dibuat dengan AI.` : '';
+  const viewNote = project.worldRepairs?.includes(WORLD_VIEW_REPAIR) ? ' Model gambar belum menghasilkan sudut isometrik yang rapi, coba buat ulang bila hasilnya kurang pas.' : '';
+  const repairs = project.worldRepairs?.filter((note) => note !== WORLD_VIEW_REPAIR).length ?? 0;
+  return libraryNote ? `Dunia selesai dibuat.${libraryNote}${viewNote}` : repairs
+    ? `Dunia selesai dibuat. Ada ${repairs} objek yang disesuaikan otomatis karena tidak muat.${viewNote} Tonton hasilnya di player.`
+    : `Dunia selesai dibuat.${viewNote} Tonton hasilnya di player.`;
 }
 
 export function completionMessage(project: StudioProject): string {
@@ -97,12 +111,34 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
     for (const scene of current().storyboard.scenes) setStage(scene.id, 'failed', message);
   };
   try {
-    const { code, repairs } = await buildWorldFiles(assetModel(current().drawingModel), current());
-    commit((project) => ({
-      files: { ...project.files, 'MainVideo.tsx': code },
-      worldRepairs: repairs,
-      sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
-    }));
+    // Library-first: projects that opted in try registered assets before the painted world.
+    let library: LibraryBuild | null = null;
+    if (current().visualPolicy === 'library-first') {
+      try {
+        library = await buildLibraryFiles(assetModel(current().drawingModel), current());
+      } catch (err: unknown) {
+        console.error(`[GenerationJob] Library plan failed for ${current().id}:`, err);
+        library = { used: false, report: { used: false, assets: [], unsupported: [], fallbackReason: `Rencana pustaka gagal: ${err instanceof Error ? err.message : 'kesalahan tidak dikenal'}` } };
+      }
+    }
+    if (library?.used) {
+      const files = library.files;
+      commit((project) => ({
+        // Earlier library assets are replaced, so a retry never keeps a stale Asset file.
+        files: { ...Object.fromEntries(Object.entries(project.files).filter(([name]) => !isAssetFileName(name))), ...files },
+        worldRepairs: [],
+        libraryReport: library.report,
+        sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
+      }));
+    } else {
+      const { code, repairs } = await buildWorldFiles(assetModel(current().drawingModel), current());
+      commit((project) => ({
+        files: { ...Object.fromEntries(Object.entries(project.files).filter(([name]) => !isAssetFileName(name))), 'MainVideo.tsx': code },
+        worldRepairs: repairs,
+        ...(library ? { libraryReport: library.report } : {}),
+        sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
+      }));
+    }
   } catch (err: unknown) {
     console.error(`[GenerationJob] World failed for ${current().id}:`, err);
     failAll(err instanceof Error ? err.message : 'Dunia gagal dibuat.');
@@ -219,14 +255,19 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
           ...current.sceneProgress,
           [sceneId]: { stage: 'ready' as const, ...(simplified ? { simplified } : {}) },
         };
+        const sceneAssets = sceneAsset ? { ...current.sceneAssets, [sceneId]: sceneAsset } : current.sceneAssets;
         const next = { ...current, sceneProgress };
         return {
           sceneProgress,
-          sceneAssets: sceneAsset ? { ...current.sceneAssets, [sceneId]: sceneAsset } : current.sceneAssets,
+          sceneAssets,
           files: {
             ...current.files,
             [`Scene${index + 1}.tsx`]: code,
-            'MainVideo.tsx': generateMainVideoCode(current.storyboard, readyIndexes(next)),
+            'MainVideo.tsx': generateMainVideoCode(
+              current.storyboard,
+              readyIndexes(next),
+              continuedScenes(current.storyboard.scenes, sceneAssets),
+            ),
           },
         };
       });

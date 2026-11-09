@@ -1,3 +1,8 @@
+import { BUSINESS_ASSETS } from './business';
+import { waterChannelAsset, waterTreatmentAsset } from './water-environment';
+import { wasteSortingAsset } from './waste-sorting';
+import { houseAsset, sinkAsset } from './house';
+import { lmpvAsset } from './lmpv';
 import { ISO_CAR_ANCHORS } from '@/motion-kit/isometric/IsoCar';
 import { ISO_ELECTRIC_CAR_ANCHORS } from '@/motion-kit/isometric/ElectricCarMechanics';
 import type { AssetEntry } from './types';
@@ -71,19 +76,19 @@ const vehicleCar: AssetEntry = {
     color: { type: 'color', default: '#CF5A3C', material: 'material.body', description: 'Body paint; shades are derived' },
     view: { type: 'enum', values: ['exterior', 'cutaway', 'chassis'], default: 'exterior', description: 'exterior, see-through shell, or shell and floor removed' },
     windowOpen: { type: 'number', min: 0, max: 1, default: 0, animatable: true, description: 'Both side windows, closed 0 to lowered 1' },
-    wheelRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, description: 'Wheel angle in degrees' },
+    wheelRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, subtle: true, description: 'Wheel angle in degrees' },
     bodyOpacity: { type: 'number', min: 0, max: 1, default: 1, animatable: true, description: 'Painted shell opacity' },
     hoodOpen: { type: 'number', min: 0, max: 1, default: 0, animatable: true, description: 'Hood closed 0 to raised 1' },
     wheelOpacity: { type: 'number', min: 0, max: 1, default: 1, animatable: true, description: 'Fade tires to expose brakes' },
     headlights: { type: 'boolean', default: false, description: 'Bright headlight lenses, no beam' },
     shadow: { type: 'boolean', default: true, description: 'Ground shadow' },
-    engineRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, variants: ['petrol'], description: 'Accessory pulley angle in degrees' },
-    motorRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, variants: ['electric'], description: 'Motor shaft detail angle in degrees' },
+    engineRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, subtle: true, variants: ['petrol'], description: 'Accessory pulley angle in degrees' },
+    motorRotation: { type: 'number', min: -1e6, max: 1e6, default: 0, animatable: true, subtle: true, variants: ['electric'], description: 'Motor shaft detail angle in degrees' },
     batteryCoverOpacity: { type: 'number', min: 0, max: 1, default: 0.15, animatable: true, variants: ['electric'], description: 'Battery lid opacity; 0 exposes the modules' },
     chargePortOpen: { type: 'boolean', default: false, variants: ['electric'], description: 'Open the charging socket flap' },
     energyFlow: { type: 'boolean', default: false, variants: ['electric'], description: 'Illustrative battery to wheel energy route' },
     // Driven by the renderer from the frame while energyFlow is on, so the dots keep a readable speed.
-    energyPhase: { type: 'number', min: -1e6, max: 1e6, default: 0, variants: ['electric'], description: 'Loop phase of the energy dots' },
+    energyPhase: { type: 'number', min: -1e6, max: 1e6, default: 0, variants: ['electric'], driven: { speed: 0.6, activeWhen: 'energyFlow' }, description: 'Loop phase of the energy dots' },
   },
   bounds: { viewBox: [760, 480], groundOrigin: [380, 300] },
   protectedMaterials: ['cable.high-voltage', 'flow.energy'],
@@ -124,7 +129,7 @@ const environmentRoad: AssetEntry = {
   provenance: PROVENANCE,
 };
 
-export const ASSET_REGISTRY: readonly AssetEntry[] = [vehicleCar, environmentRoad];
+export const ASSET_REGISTRY: readonly AssetEntry[] = [vehicleCar, lmpvAsset, environmentRoad, wasteSortingAsset, waterChannelAsset, waterTreatmentAsset, houseAsset, sinkAsset, ...BUSINESS_ASSETS];
 
 export function getAsset(assetId: string, version?: string, registry: readonly AssetEntry[] = ASSET_REGISTRY) {
   return registry.find((entry) => entry.assetId === assetId && (version === undefined || entry.version === version));

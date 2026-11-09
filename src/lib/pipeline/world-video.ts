@@ -86,6 +86,9 @@ export default MainVideo;
 `;
 }
 
+/** Repair note for a world that still fails the isometric check after one repaint. */
+export const WORLD_VIEW_REPAIR = 'Gambar dunia belum sepenuhnya isometrik setelah digambar ulang';
+
 export async function buildWorldFiles(model: string, project: StudioProject): Promise<{ code: string; repairs: string[] }> {
   const story = project.storyboard.scenes.map((scene) => scene.voiceoverText);
   const result = await generateIsoPicturePlan(model, project.userPrompt, story);
@@ -94,6 +97,8 @@ export async function buildWorldFiles(model: string, project: StudioProject): Pr
   const code = worldPictureVideoCode(project.storyboard, result.plan, built.picture);
   const validation = validateSceneCode(code, 'MainVideo.tsx');
   if (!validation.valid) throw new Error(`Kode dunia tidak valid: ${validation.errors.join('; ')}`);
-  console.log(`[World] ${project.id}: ${result.attempts} attempts, ${result.usage.promptTokens} in, ${result.usage.completionTokens} out, ${Math.round(result.usage.seconds)}s plan, ${built.images} images in ${Math.round(built.seconds)}s, missing parts: ${built.missing.join(',') || 'none'}`);
-  return { code, repairs: built.missing.map((id) => `Bagian "${id}" tidak ditemukan di gambar, adegannya memakai bidikan lebar`) };
+  console.log(`[World] ${project.id}: ${result.attempts} attempts, ${result.usage.promptTokens} in, ${result.usage.completionTokens} out, ${Math.round(result.usage.seconds)}s plan, ${built.images} images in ${Math.round(built.seconds)}s, missing parts: ${built.missing.join(',') || 'none'}, view problems: ${built.viewProblems.length}`);
+  const repairs = built.missing.map((id) => `Bagian "${id}" tidak ditemukan di gambar, adegannya memakai bidikan lebar`);
+  if (built.viewProblems.length) repairs.push(WORLD_VIEW_REPAIR);
+  return { code, repairs };
 }

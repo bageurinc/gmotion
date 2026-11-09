@@ -182,6 +182,25 @@ export interface StudioProject {
   draftBeforeRevision?: Storyboard;
   /** Post caption for social media, written on request from the final narration. */
   socialCaption?: SocialCaption;
+  /**
+   * Isometric projects created after the asset library was connected try it first and fall
+   * back to the painted world. Absent on older projects, which keep their original engine.
+   */
+  visualPolicy?: 'library-first';
+  /** What the asset library did for this video, so the editor can say it plainly. */
+  libraryReport?: LibraryReport;
+}
+
+export interface LibraryReport {
+  used: boolean;
+  /** Registered assets the video draws, as "assetId@version". */
+  assets: string[];
+  /** Things the narration mentions that the library cannot show. */
+  unsupported: Array<{ subject: string; kind: string; reason?: string; sceneIds?: string[] }>;
+  /** Simple objects drawn by AI for this video only, because the library lacked them. */
+  generated?: string[];
+  /** Why the painted world was used instead, when it was. */
+  fallbackReason?: string;
 }
 
 export interface SocialCaption {
