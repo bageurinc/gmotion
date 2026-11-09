@@ -8,6 +8,7 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { POST as createProject } from '@/app/api/projects/route';
 import { POST as generateProject } from '@/app/api/projects/[projectId]/generate/route';
+import { POST as reviewObjectDraft } from '@/app/api/projects/[projectId]/object-draft/route';
 import { PATCH as updateDraft } from '@/app/api/projects/[projectId]/storyboard/route';
 import { GET as projectEvents } from '@/app/api/projects/[projectId]/events/route';
 import { POST as projectRender } from '@/app/api/projects/[projectId]/render/route';
@@ -183,6 +184,51 @@ describe('draft review flow', () => {
       expect(project.status).toBe('ready');
       return project;
     }, { timeout: 5000, interval: 25 });
+
+  it('pauses Full SVG for corrections and requires approval of the latest draft', async () => {
+    const project = await createDraft('story-svg');
+    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+    vi.stubEnv('OPENAI_BASE_URL', 'https://drawing.example/v1');
+    const draftResponse = (fill: string) => {
+      const sharedWorld = [
+        '// SHARED-WORLD:START',
+        'function WorldBase() { return <g />; }',
+        `function CoffeeBean() { return <circle r={40} fill="${fill}" />; }`,
+        '// SHARED-WORLD:END',
+      ].join('\n');
+      const sceneObjects = project.storyboard.scenes.map((scene) => scene.role === 'cta' ? [] : ['CoffeeBean']);
+      const content = JSON.stringify({ sharedWorld, sceneObjects });
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+    };
+    vi.mocked(fetch).mockResolvedValueOnce(draftResponse('brown')).mockResolvedValueOnce(draftResponse('red'));
+
+    expect((await generateProject(request(), context(project.id))).status).toBe(202);
+    const pending = await vi.waitFor(() => {
+      const saved = getProject(project.id)!;
+      expect(saved.storySvgReviewPending).toBe(true);
+      return saved;
+    });
+    expect(pending.status).toBe('idle');
+    expect(pending.files).toEqual({});
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect((await generateProject(request(), context(project.id))).status).toBe(409);
+    expect((await projectRender(request(), context(project.id))).status).toBe(409);
+
+    const corrected = await reviewObjectDraft(request({
+      action: 'revise', version: pending.updatedAt, instruction: 'Ubah warna biji kopi menjadi merah.',
+    }), context(project.id));
+    expect(corrected.status).toBe(200);
+    const { project: revised } = await corrected.json();
+    expect(revised.storySvgDraft.sharedWorld).toContain('fill="red"');
+    expect(revised.storySvgReviewPending).toBe(true);
+    expect((await reviewObjectDraft(request({ action: 'approve', version: pending.updatedAt }), context(project.id))).status).toBe(409);
+
+    vi.stubEnv('OPENAI_API_KEY', '');
+    expect((await reviewObjectDraft(request({ action: 'approve', version: revised.updatedAt }), context(project.id))).status).toBe(202);
+    const result = await finished(project.id);
+    expect(result.storySvgReviewPending).toBeUndefined();
+    expect(result.storySvgDraft?.sharedWorld).toContain('fill="red"');
+  });
 
   it('saves edits and generates from the edited draft in the background', async () => {
     const project = await createDraft();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth/session';
+import { PASSWORD_SETTINGS_PATH } from '@/lib/auth/password';
 import {
   appUrl,
   exchangeCodeForProfile,
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   try {
     const profile = await exchangeCodeForProfile(code, pending.verifier);
     const user = await upsertGoogleUser(profile);
-    const { token, expiresAt } = await createSession(user.id);
+    const { token, expiresAt } = await createSession(user.id, pending.next === PASSWORD_SETTINGS_PATH);
 
     const res = NextResponse.redirect(`${appUrl()}${pending.next}`);
     res.cookies.delete(OAUTH_COOKIE);

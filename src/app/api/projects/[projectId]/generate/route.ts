@@ -10,7 +10,7 @@ import {
 import { requireProject } from '@/lib/auth/project-access';
 import { chargeForVideo, creditsForVideo } from '@/lib/billing/credits';
 import { isElevenLabsConfigured } from '@/lib/audio/elevenlabs';
-import { saveProject } from '@/lib/storage/project-store';
+import { getProject, saveProject } from '@/lib/storage/project-store';
 
 export async function POST(
   req: NextRequest,
@@ -20,6 +20,9 @@ export async function POST(
   const access = await requireProject(projectId);
   if ('response' in access) return access.response;
   const { project, user } = access;
+  if (project.storySvgReviewPending) {
+    return NextResponse.json({ error: 'Setujui draf objek sebelum melanjutkan animasi.' }, { status: 409 });
+  }
   if (isGenerationActive(projectId)) {
     return NextResponse.json({ error: 'Video ini sedang dibuat.' }, { status: 409 });
   }
@@ -45,6 +48,10 @@ export async function POST(
   // Charging awaits the database, so a parallel request may have started the job.
   if (isGenerationActive(projectId)) {
     return NextResponse.json({ error: 'Video ini sedang dibuat.' }, { status: 409 });
+  }
+  const latest = getProject(projectId);
+  if (!latest || latest.updatedAt !== project.updatedAt || latest.storySvgReviewPending) {
+    return NextResponse.json({ error: 'Proyek sudah berubah. Muat ulang sebelum melanjutkan.' }, { status: 409 });
   }
 
   const prepared = prepareGeneration(project);

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getProject } from '@/lib/storage/project-store';
 import { StudioProject } from '@/types/studio';
-import { getCurrentUser, User } from './session';
+import { getCurrentUser, hasVerifiedEmail, User } from './session';
 
 /**
  * Projects created before accounts existed have no owner. They stay hidden unless
@@ -10,7 +10,7 @@ import { getCurrentUser, User } from './session';
 export function canAccessProject(user: User, project: StudioProject): boolean {
   if (project.ownerId) return project.ownerId === user.id;
   const legacyOwner = process.env.LEGACY_PROJECT_OWNER_EMAIL?.trim().toLowerCase();
-  return Boolean(legacyOwner) && user.email.toLowerCase() === legacyOwner;
+  return Boolean(legacyOwner) && hasVerifiedEmail(user) && user.email.toLowerCase() === legacyOwner;
 }
 
 export async function requireUser(): Promise<{ user: User } | { response: NextResponse }> {

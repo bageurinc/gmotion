@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { getDb } from '@/lib/db/client';
-import type { User } from '@/lib/auth/session';
+import { hasVerifiedEmail, type User } from '@/lib/auth/session';
 
 /** Admins are listed by email in ADMIN_EMAILS, comma separated. Nobody is an admin by default. */
-export function isAdmin(user: Pick<User, 'email'> | null): boolean {
-  if (!user) return false;
+export function isAdmin(user: Pick<User, 'email' | 'google_sub'> | null): boolean {
+  if (!user || !hasVerifiedEmail(user)) return false;
   const admins = (process.env.ADMIN_EMAILS ?? '')
     .split(',')
     .map((email) => email.trim().toLowerCase())

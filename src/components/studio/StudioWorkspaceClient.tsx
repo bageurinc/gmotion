@@ -9,6 +9,10 @@ import { ART_STYLE_LABELS, DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, u
 import { readExportStream } from '@/lib/render/export-stream';
 import { GenerationProgress } from './GenerationProgress';
 
+const StorySvgDraftPreview = dynamic(
+  () => import('./StorySvgDraftPreview').then((mod) => mod.StorySvgDraftPreview),
+  { ssr: false },
+);
 const RemotionPreviewPlayer = dynamic(
   () => import('./RemotionPreviewPlayer').then((mod) => mod.RemotionPreviewPlayer),
   {
@@ -43,6 +47,10 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   initialProject,
 }) => {
   const [project, setProject] = useState<StudioProject>(initialProject);
+  const [showObjectDraft, setShowObjectDraft] = useState(false);
+  const [objectCorrection, setObjectCorrection] = useState('');
+  const [objectDraftAction, setObjectDraftAction] = useState<'revise' | 'approve' | null>(null);
+  const [objectDraftError, setObjectDraftError] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'storyboard' | 'code'>('chat');
   const [selectedFile, setSelectedFile] = useState<string>('Scene1.tsx');
   const [editingCode, setEditingCode] = useState<string>(
@@ -73,8 +81,32 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   const [isRetrying, setIsRetrying] = useState(false);
   const isGenerating = project.status === 'generating';
   const previewScenes = readyScenes(project);
-  const showProgress = isGenerating || hasFailedScene(project);
-  const isBusy = isGenerating || hasFailedScene(project);
+  const showProgress = isGenerating || hasFailedScene(project) || project.storySvgReviewPending;
+  const isBusy = showProgress;
+  const waitingForObjects = isGenerating && project.storyboard.preset === 'story-svg' && !project.storySvgDraft
+    && project.storyboard.scenes.every(({ id }) => project.sceneProgress?.[id]?.stage === 'queued');
+  let previewStatus = 'Adegan pertama sedang dibuat. Pratinjaunya muncul di sini begitu selesai.';
+  if (interrupted) {
+    previewStatus = 'Pembuatan video terhenti. Pilih Lanjutkan untuk meneruskan.';
+  } else if (!isGenerating && hasFailedScene(project)) {
+    previewStatus = Object.values(project.sceneProgress ?? {}).find((scene) => scene.error)?.error
+      ?? 'Adegan gagal dibuat. Pilih Coba lagi.';
+  } else if (waitingForObjects) {
+    previewStatus = 'Menyiapkan draf objek SVG untuk kamu periksa sebelum animasi.';
+  }
+  let objectDraftStatus = 'Objek ini dipakai dalam video. Pilih Lihat video untuk kembali ke pratinjau adegan.';
+  if (interrupted || hasFailedScene(project) && !isGenerating) {
+    objectDraftStatus = previewStatus;
+  } else if (project.checkingScenes) {
+    objectDraftStatus = 'Adegan sudah dibuat. Studio sedang memeriksa hasilnya.';
+  } else if (isGenerating) {
+    objectDraftStatus = previewScenes.length
+      ? 'Studio sedang melanjutkan animasi secara otomatis. Pilih Lihat video untuk menonton adegan yang sudah siap.'
+      : 'Studio lanjut membuat animasi secara otomatis. Pratinjau video muncul begitu adegan pertama siap.';
+  }
+  if (project.storySvgReviewPending) {
+    objectDraftStatus = 'Periksa objek di bawah. Kamu bisa memberi koreksi. Animasi baru dimulai setelah kamu menyetujui draf ini.';
+  }
 
   useEffect(() => {
     if (!isGenerating || interrupted) return;
@@ -102,6 +134,28 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       setProject(data.project);
     }
     setIsRetrying(false);
+  };
+
+  const handleObjectDraft = async (action: 'revise' | 'approve') => {
+    if (objectDraftAction) return;
+    setObjectDraftAction(action);
+    setObjectDraftError('');
+    try {
+      const response = await fetch(`/api/projects/${project.id}/object-draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, version: project.updatedAt, instruction: objectCorrection }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Draf objek gagal diproses.');
+      setProject(data.project);
+      setObjectCorrection('');
+      setInterrupted(false);
+    } catch (error) {
+      setObjectDraftError(error instanceof Error ? error.message : 'Draf objek gagal diproses.');
+    } finally {
+      setObjectDraftAction(null);
+    }
   };
 
   const totalFrames = previewScenes.reduce(
@@ -569,10 +623,42 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
 
         {/* Right Panel: Interactive Remotion Canvas & Studio Timeline */}
         <div className="studio-canvas h-[75dvh] min-h-[540px] md:min-h-0 md:h-auto shrink-0 md:shrink md:flex-1 flex flex-col overflow-auto">
-          <div className="flex-1 w-full h-full flex flex-col items-center justify-center overflow-hidden">
-            {previewScenes.length === 0 ? (
-              <p className="max-w-xs text-center text-sm text-slate-300">
-                Adegan pertama sedang dibuat. Pratinjaunya muncul di sini begitu selesai.
+          {project.storySvgDraft && previewScenes.length > 0 && (
+            <button type="button" aria-pressed={showObjectDraft} onClick={() => setShowObjectDraft((shown) => !shown)}
+              className="m-3 self-end rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+              {showObjectDraft ? 'Lihat video' : 'Lihat draf objek'}
+            </button>
+          )}
+          <div className="flex-1 w-full min-h-0 flex flex-col items-center justify-center overflow-hidden">
+            {(showObjectDraft || previewScenes.length === 0) && project.storySvgDraft ? (
+              <StorySvgDraftPreview draft={project.storySvgDraft} background={project.storyboard.palette.surface}
+                status={objectDraftStatus}>
+                {project.storySvgReviewPending && (
+                  <form className="mt-5 space-y-3 border-t border-slate-700 pt-4"
+                    onSubmit={(event) => { event.preventDefault(); void handleObjectDraft('revise'); }}>
+                    <label htmlFor="object-correction" className="block text-sm font-medium text-slate-100">Koreksi objek</label>
+                    <textarea id="object-correction" rows={3} maxLength={1000} value={objectCorrection}
+                      onChange={(event) => setObjectCorrection(event.target.value)} disabled={Boolean(objectDraftAction)}
+                      placeholder="Contoh: buat canting lebih ramping dan pertahankan motif kain."
+                      className="w-full rounded-md border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100" />
+                    {objectDraftError && <p role="alert" className="text-sm text-red-300">{objectDraftError}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="submit" disabled={Boolean(objectDraftAction) || objectCorrection.trim().length < 3}
+                        className="rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50">
+                        {objectDraftAction === 'revise' ? 'Menerapkan koreksi…' : 'Terapkan koreksi'}
+                      </button>
+                      <button type="button" disabled={Boolean(objectDraftAction) || Boolean(objectCorrection.trim())}
+                        onClick={() => void handleObjectDraft('approve')}
+                        className="rounded-md bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">
+                        {objectDraftAction === 'approve' ? 'Memulai animasi…' : 'Setujui & lanjutkan animasi'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </StorySvgDraftPreview>
+            ) : previewScenes.length === 0 ? (
+              <p role="status" className="max-w-xs text-center text-sm text-slate-300">
+                {previewStatus}
               </p>
             ) : <RemotionPreviewPlayer project={project} platform={project.safeAreaPlatform || 'tiktok'}
               onPlatformChange={safeAreaPlatform => {

@@ -22,6 +22,7 @@ interface BillingClientProps {
   initialCredits: number;
   packages: CreditPackage[];
   testMode: boolean;
+  showGooglePasswordSettings: boolean;
 }
 
 function formatRemaining(ms: number): string {
@@ -32,7 +33,7 @@ function formatRemaining(ms: number): string {
   return hours > 0 ? `${hours} jam ${minutes} menit` : `${minutes}:${seconds}`;
 }
 
-export function BillingClient({ email, initialCredits, packages, testMode }: BillingClientProps) {
+export function BillingClient({ email, initialCredits, packages, testMode, showGooglePasswordSettings }: BillingClientProps) {
   const [credits, setCredits] = useState(initialCredits);
   const [payment, setPayment] = useState<PublicPayment | null>(null);
   const [qrImage, setQrImage] = useState('');
@@ -126,6 +127,11 @@ export function BillingClient({ email, initialCredits, packages, testMode }: Bil
         <p className="mt-2 text-slate-400">
           Saldo kamu <strong className="font-semibold text-white">{credits} kredit</strong>. Biaya pembuatan video ditampilkan sebelum kamu mulai.
         </p>
+        {showGooglePasswordSettings && (
+          <Link href="/account/password" className="mt-2 inline-block text-sm text-emerald-300 hover:underline">
+            Kata sandi akun
+          </Link>
+        )}
 
         {error && (
           <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">

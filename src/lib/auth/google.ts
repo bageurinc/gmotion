@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db/client';
-import { randomToken, User } from './session';
+import { PASSWORD_ACCOUNT_PREFIX, randomToken, User } from './session';
 
 const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -31,7 +31,7 @@ function googleCredentials(): { clientId: string; clientSecret: string } {
 
 /** Accepts same-site paths only, so a crafted ?next= cannot redirect off the site. */
 export function safeNextPath(next: string | null | undefined): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/';
+  if (!next || !next.startsWith('/') || next.startsWith('//') || /[\\\x00-\x1f\x7f]/.test(next)) return '/';
   return next;
 }
 
@@ -98,12 +98,14 @@ export async function exchangeCodeForProfile(
 
 /** The Google subject is the identity. Email can change, so it is only refreshed. */
 export async function upsertGoogleUser(profile: GoogleProfile): Promise<User> {
+  if (profile.sub.startsWith(PASSWORD_ACCOUNT_PREFIX)) throw new Error('Invalid Google subject');
   const user = await getDb().first<User>(
     `INSERT INTO users (id, google_sub, email, name, avatar_url, created_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT (google_sub) DO UPDATE SET
-       email = excluded.email, name = excluded.name, avatar_url = excluded.avatar_url
-     RETURNING *`,
+       email = excluded.email, name = excluded.name, avatar_url = excluded.avatar_url,
+       password_hash = CASE WHEN lower(users.email) = lower(excluded.email) THEN users.password_hash END
+     RETURNING id, google_sub, email, name, avatar_url, credits, created_at`,
     [crypto.randomUUID(), profile.sub, profile.email, profile.name ?? null, profile.picture ?? null, Date.now()]
   );
   if (!user) throw new Error('Failed to save user');

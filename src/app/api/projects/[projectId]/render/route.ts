@@ -16,7 +16,7 @@ export async function POST(
     if ('response' in access) return access.response;
     const { project } = access;
 
-    if (project.status === 'generating' || hasFailedScene(project)) {
+    if (project.storySvgReviewPending || project.status === 'generating' || hasFailedScene(project)) {
       return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
     }
 

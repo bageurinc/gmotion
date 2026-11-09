@@ -3,8 +3,9 @@ import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { buildImageScene } from '@/lib/explainer/image-scene';
 import { planSceneMoments, ScenePlan, singlePictureScene } from '@/lib/explainer/scene-moments';
-import { continuedScenes, continuityFor } from '@/lib/explainer/continuity';
+import { applySharedWorld, continuedScenes, continuityFor } from '@/lib/explainer/continuity';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
+import { generateStorySvgDraft } from '@/lib/explainer/story-svg-draft';
 import { isApiKeyConfigured } from '@/lib/ai/llm-client';
 import { improveWeakScenes, qualityTools } from '@/lib/explainer/scene-quality';
 import { describeStillStretches } from '@/lib/render/motion-check';
@@ -157,6 +158,7 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
 }
 
 export async function runGeneration(initial: StudioProject): Promise<void> {
+  if (initial.storySvgReviewPending) return;
   let project = initial;
   activeJobs.add(project.id);
 
@@ -203,8 +205,22 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
   const chained = project.storyboard.preset === 'story-svg';
   const audioFirst = usesMoments || chained;
   const audioFailures = new Map<number, string>();
+  let draftError: string | undefined;
   let plans: ScenePlan[] | null = null;
-  if (audioFirst) {
+  // Prepare the art before spending time on narration or drawing any scenes.
+  if (chained && isApiKeyConfigured() && !project.storySvgDraft && !readyIndexes(project).length
+    && pending.some((index) => project.storyboard.scenes[index].role !== 'cta')) {
+    try {
+      const storySvgDraft = await generateStorySvgDraft(assetModel(project.drawingModel), project.storyboard);
+      commit(() => ({ storySvgDraft, storySvgReviewPending: true, status: 'idle' }));
+      activeJobs.delete(project.id);
+      return;
+    } catch (error) {
+      console.error('[GenerationJob] Story SVG draft failed:', error);
+      draftError = 'Draf objek SVG gagal dibuat. Coba lagi.';
+    }
+  }
+  if (audioFirst && !draftError) {
     await mapWithConcurrency(pending, PIPELINE_CONCURRENCY, async (index) => {
       try {
         await makeAudio(index);
@@ -228,7 +244,8 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     const plan = plans?.[index];
     const { drawingModel } = project;
     if (chained) {
-      const continuity = continuityFor(project.storyboard.scenes, project.sceneAssets, index);
+      if (draftError) throw new Error(draftError);
+      const continuity = continuityFor(project.storyboard.scenes, project.sceneAssets, index, project.storySvgDraft);
       return generateVideoSceneFile(project.storyboard, index, { drawingModel, continuity });
     }
     if (plan?.kind !== 'image') return generateVideoSceneFile(project.storyboard, index, { drawingModel });
@@ -289,18 +306,51 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
     try {
       await repairCrashedScenes(project, {
         findCrashes: findSceneCrashes,
-        reviseScene: (current, crash) =>
-          reviseSceneCode(
-            current.files[`Scene${crash.index + 1}.tsx`],
+        reviseScene: async (current, crash) => {
+          const original = current.files[`Scene${crash.index + 1}.tsx`];
+          const revised = await reviseSceneCode(
+            original,
             current.storyboard.scenes[crash.index],
             `Fix this runtime crash and keep the same visual: ${crash.message}`,
             current.storyboard.palette,
             { svgOnly: current.storyboard.preset === 'story-svg' }
-          ),
+          );
+          const draft = current.storySvgDraft;
+          const required = draft?.sceneObjects[crash.index];
+          if (!draft || !required?.length) return revised;
+          try {
+            return applySharedWorld(revised, draft.sharedWorld, required);
+          } catch (error) {
+            console.warn('[GenerationJob] Runtime repair did not preserve drafted objects:', error);
+            return original;
+          }
+        },
         replaceWithSimpleScene: (current, crash) =>
           simpleSceneCode(current.storyboard, crash.index),
         saveScene: (index, code, simplified) => {
           const sceneId = project.storyboard.scenes[index].id;
+          if (simplified && project.storySvgDraft?.sceneObjects[index]?.length) {
+            commit((current) => {
+              const sceneAssets = { ...current.sceneAssets };
+              delete sceneAssets[sceneId];
+              const sceneProgress = {
+                ...current.sceneProgress,
+                [sceneId]: { stage: 'failed' as const, error: 'Adegan gagal dirender dengan objek draf. Coba buat ulang adegan.' },
+              };
+              return {
+                sceneProgress,
+                sceneAssets,
+                files: {
+                  ...current.files,
+                  'MainVideo.tsx': generateMainVideoCode(
+                    current.storyboard, readyIndexes({ ...current, sceneProgress }),
+                    continuedScenes(current.storyboard.scenes, sceneAssets),
+                  ),
+                },
+              };
+            });
+            return;
+          }
           commit((current) => ({
             files: { ...current.files, [`Scene${index + 1}.tsx`]: code },
             sceneProgress: simplified

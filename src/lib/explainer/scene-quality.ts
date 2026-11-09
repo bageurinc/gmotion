@@ -3,7 +3,7 @@ import { captureSceneSheets, opensWithPreviousScene } from '@/lib/render/scene-c
 import type { StudioProject } from '@/types/studio';
 import { AssetCritique, critiqueAsset, GeneratedAsset, repairAsset, reviseAsset } from './asset-generator';
 import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
-import { continuedScenes, continuesCamera, continuityFor } from './continuity';
+import { continuedScenes, continuesCamera, continuityFor, hasContinuousCut } from './continuity';
 import { assetModel, buildAssetScene, composeAssetScene, sceneTopicPrompt } from './scene-generator';
 
 /** The critic is strict: clips viewers accepted scored about 5, so only clearly weak scenes are redrawn. */
@@ -28,7 +28,10 @@ export interface QualityTools {
 }
 
 const PREVIOUS_FRAME_NOTE = 'The first frame belongs to the previous scene and is only a reference for the cut.';
-const sheetNote = (project: StudioProject, index: number) => (opensWithPreviousScene(project, index) ? PREVIOUS_FRAME_NOTE : '');
+const sheetNote = (project: StudioProject, index: number) => {
+  if (hasContinuousCut(project, index)) return PREVIOUS_FRAME_NOTE + ' Compare its exact final pose with the next frame, the exact opening pose.';
+  return opensWithPreviousScene(project, index) ? PREVIOUS_FRAME_NOTE : '';
+};
 
 const settled = async <T,>(task: () => Promise<T>): Promise<T | null> => {
   try {
@@ -55,7 +58,8 @@ export async function improveWeakScenes(project: StudioProject, tools: QualityTo
   });
 
   const scored = reviews.flatMap((review) => (review ? [review] : []));
-  const weak = scored.filter((review) => review.critique.average < qualityThreshold(project));
+  const weak = scored.filter(({ index, critique }) => critique.average < qualityThreshold(project)
+    || (hasContinuousCut(project, index) && critique.scores.viewConsistency < FULL_SVG_QUALITY_THRESHOLD));
   for (const review of scored) {
     console.log(`[SceneQuality] Scene ${review.index + 1}: ${review.critique.average}`);
     tools.saveScene(review.index, null, review.critique);
@@ -72,20 +76,22 @@ export async function improveWeakScenes(project: StudioProject, tools: QualityTo
   if (!candidates.length) return;
 
   const current = tools.current();
-  const trial: StudioProject = {
-    ...current,
-    files: {
-      ...current.files,
-      ...Object.fromEntries(candidates.map(({ index, draft }) => [`Scene${index + 1}.tsx`, draft.code])),
-    },
-  };
+  const trial = candidates.reduce(
+    (project, { index, draft }) => ({ ...project, ...redrawnFiles(project, index, draft) }),
+    current,
+  );
   const trialSheets = await tools.capture(trial, candidates.map((candidate) => candidate.index));
 
   await mapWithConcurrency(candidates, PIPELINE_CONCURRENCY, async ({ index, draft, critique }) => {
     const sheet = trialSheets.get(index);
     if (!sheet) return;
     const retry = await settled(() => tools.critique(trial, index, draft.asset, sheet));
-    if (retry && retry.average > critique.average) {
+    const respectsCut = !hasContinuousCut(project, index) || (
+      hasContinuousCut(trial, index) && (retry?.scores.viewConsistency ?? 0) >= critique.scores.viewConsistency
+    );
+    const improvedCut = hasContinuousCut(project, index) && retry
+      && retry.scores.viewConsistency > critique.scores.viewConsistency && retry.average >= critique.average;
+    if (retry && respectsCut && (retry.average > critique.average || improvedCut)) {
       console.log(`[SceneQuality] Scene ${index + 1} improved: ${critique.average} -> ${retry.average}`);
       tools.saveScene(index, draft, retry);
     }
@@ -122,7 +128,7 @@ export function qualityTools(
       (await critiqueAsset(criticModel(), sceneTopicPrompt(project.storyboard, index), asset, sheet, sheetNote(project, index))).critique,
     redraw: async (project, index, asset, critique, sheet) => {
       const continuity = project.storyboard.preset === 'story-svg'
-        ? continuityFor(project.storyboard.scenes, project.sceneAssets, index)
+        ? continuityFor(project.storyboard.scenes, project.sceneAssets, index, project.storySvgDraft)
         : undefined;
       const prompt = sceneTopicPrompt(project.storyboard, index, continuity);
       const model = assetModel(project.drawingModel);

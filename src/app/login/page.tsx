@@ -1,13 +1,18 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton';
+import { GoogleSignInLink } from '@/components/auth/GoogleSignInLink';
 import { getCurrentUser } from '@/lib/auth/session';
 import { safeNextPath } from '@/lib/auth/google';
+import { MAX_PASSWORD_LENGTH, PASSWORD_SETTINGS_PATH } from '@/lib/auth/password';
+import { signInWithPassword } from './actions';
 
 const ERROR_MESSAGES: Record<string, string> = {
   config: 'Login Google belum dikonfigurasi di server.',
   state: 'Sesi login sudah kedaluwarsa. Coba lagi.',
   google: 'Login Google gagal. Coba lagi.',
+  password: 'Email atau kata sandi tidak cocok, atau terlalu banyak percobaan. Coba lagi nanti atau masuk dengan Google.',
 };
 
 export const metadata: Metadata = { title: 'Masuk' };
@@ -21,7 +26,7 @@ export default async function LoginPage({
   const target = safeNextPath(next);
   if (await getCurrentUser()) redirect(target);
 
-  const message = error ? ERROR_MESSAGES[error] : undefined;
+  const message = error && Object.hasOwn(ERROR_MESSAGES, error) ? ERROR_MESSAGES[error] : undefined;
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-5 py-12 text-slate-100">
@@ -47,8 +52,7 @@ export default async function LoginPage({
             Masuk ke studio
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-300">
-            Gunakan akun Google untuk menyimpan dan melanjutkan proyek. Akun
-            gmotion dibuat otomatis saat pertama kali masuk.
+            Masuk dengan Google atau gunakan email dan kata sandi akun gmotion kamu.
           </p>
 
           {message && (
@@ -60,10 +64,7 @@ export default async function LoginPage({
             </p>
           )}
 
-          <a
-            href={`/api/auth/google?next=${encodeURIComponent(target)}`}
-            className="mt-6 flex min-h-12 w-full items-center justify-center gap-2.5 rounded-md bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition-colors duration-150 hover:bg-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-          >
+          <GoogleSignInLink href={`/api/auth/google?next=${encodeURIComponent(target)}`}>
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
@@ -87,9 +88,48 @@ export default async function LoginPage({
               />
             </svg>
             Masuk dengan Google
-          </a>
-          <p className="mt-4 text-xs leading-6 text-slate-400">
-            Draf dan video tersimpan di akun yang kamu gunakan.
+          </GoogleSignInLink>
+
+          <p className="my-4 text-center text-xs text-slate-400">atau</p>
+          <form action={signInWithPassword} className="space-y-3">
+            <input type="hidden" name="next" value={target} />
+            <label className="block text-sm text-slate-200">
+              Email
+              <input
+                name="email"
+                type="email"
+                autoComplete="username"
+                maxLength={254}
+                required
+                className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2"
+              />
+            </label>
+            <label className="block text-sm text-slate-200">
+              Kata sandi
+              <input
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                maxLength={MAX_PASSWORD_LENGTH}
+                required
+                className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2"
+              />
+            </label>
+            <AuthSubmitButton label="Masuk dengan email" pendingLabel="Sedang masuk…" />
+          </form>
+          <p className="mt-4 text-sm text-slate-300">
+            Belum punya akun?{' '}
+            <Link href={`/register?next=${encodeURIComponent(target)}`} className="text-emerald-300 hover:underline">
+              Daftar dengan email
+            </Link>
+          </p>
+          <p className="mt-2 text-xs leading-6 text-slate-400">
+            <a
+              href={`/api/auth/google?next=${encodeURIComponent(PASSWORD_SETTINGS_PATH)}`}
+              className="text-emerald-300 hover:underline"
+            >
+              Atur kata sandi untuk akun Google
+            </a>
           </p>
         </section>
       </div>

@@ -4,6 +4,7 @@ import path from 'path';
 import { makeCancelSignal, openBrowser, renderFrames, renderStill, selectComposition } from '@remotion/renderer';
 import sharp from 'sharp';
 import { buildActionCues, narrationWords } from '@/lib/explainer/choreography';
+import { hasContinuousCut } from '@/lib/explainer/continuity';
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import type { StudioProject } from '@/types/studio';
 import {
@@ -134,7 +135,8 @@ export function sheetFrames(project: StudioProject, index: number): number[] {
   const { scenes, fps } = project.storyboard;
   const scene = scenes[index];
   const start = scenes.slice(0, index).reduce((sum, item) => sum + item.durationInFrames, 0);
-  const firstClear = index === 0 ? 2 : Math.min(SCENE_FADE_FRAMES, scene.durationInFrames - 1);
+  const continuous = hasContinuousCut(project, index);
+  const firstClear = continuous ? 0 : Math.min(index === 0 ? 2 : SCENE_FADE_FRAMES, scene.durationInFrames - 1);
   const lastClear = Math.max(firstClear, scene.durationInFrames - 1 - SCENE_FADE_FRAMES);
   const clamp = (frame: number) => Math.min(lastClear, Math.max(firstClear, frame));
 
@@ -143,7 +145,9 @@ export function sheetFrames(project: StudioProject, index: number): number[] {
   const own = [firstClear, clamp(Math.floor(scene.durationInFrames / 2)), lastClear, ...poses].sort((a, b) => a - b);
   const spaced = own.filter((frame, position) => position === 0 || frame - own[position - 1] >= SHEET_MIN_GAP);
   const frames = spaced.map((frame) => start + frame);
-  return opensWithPreviousScene(project, index) ? [start - 1 - SCENE_FADE_FRAMES, ...frames] : frames;
+  if (!opensWithPreviousScene(project, index)) return frames;
+  const previousLastClear = Math.max(start - scenes[index - 1].durationInFrames, start - 1 - SCENE_FADE_FRAMES);
+  return [continuous ? start - 1 : previousLastClear, ...frames];
 }
 
 /** Renders contact sheets per scene. A scene that crashes is simply left out. */

@@ -7,6 +7,9 @@ import { GET as listProjectsRoute, POST as createProject } from '@/app/api/proje
 import { GET as getAsset } from '@/app/api/projects/[projectId]/assets/[...assetPath]/route';
 import { POST as generate } from '@/app/api/projects/[projectId]/generate/route';
 import { exchangeCodeForProfile, safeNextPath, upsertGoogleUser } from '@/lib/auth/google';
+import { authenticateWithPassword, registerPasswordAccount, setAccountPassword } from '@/lib/auth/password';
+import { canAccessProject } from '@/lib/auth/project-access';
+import { isAdmin } from '@/lib/billing/costs';
 import { createSession, deleteSession, findUserBySessionToken, getCurrentUser, sha256Hex } from '@/lib/auth/session';
 import { createD1HttpDb, getDb } from '@/lib/db/client';
 import { saveProject } from '@/lib/storage/project-store';
@@ -66,7 +69,7 @@ describe('Google sign-in', () => {
     process.env.GOOGLE_CLIENT_SECRET = 'secret';
   });
 
-  it.each(['https://evil.example', '//evil.example', '/\\evil.example', '', null])('rejects next=%s', (next) => {
+  it.each(['https://evil.example', '//evil.example', '/\\evil.example', '/\t/evil.example', '', null])('rejects next=%s', (next) => {
     expect(safeNextPath(next)).toBe('/');
   });
 
@@ -98,6 +101,76 @@ describe('Google sign-in', () => {
     await getDb().run('UPDATE users SET credits = 7 WHERE id = ?', [first.id]);
     const second = await upsertGoogleUser({ sub: 'stable', email: 'new@example.com' });
     expect(second).toMatchObject({ id: first.id, email: 'new@example.com', credits: 7 });
+  });
+});
+
+describe('email and password sign-in', () => {
+  const password = 'correct horse battery staple';
+
+  it('registers without Google and rejects duplicate email addresses', async () => {
+    const email = 'email-only@example.com';
+    expect(await registerPasswordAccount('invalid', password, password)).toEqual({ error: 'invalid' });
+    expect(await registerPasswordAccount(email, password, 'different')).toEqual({ error: 'invalid' });
+    const registered = await registerPasswordAccount(email.toUpperCase(), password, password);
+    expect(registered.userId).toEqual(expect.any(String));
+    expect(await registerPasswordAccount(email, password, password)).toEqual({ error: 'unavailable' });
+    expect(await registerPasswordAccount(TEST_USER.email, password, password)).toEqual({ error: 'unavailable' });
+    const userId = await authenticateWithPassword(email, password);
+    expect(userId).toBe(registered.userId);
+    const { token } = await createSession(userId!);
+    expect(await findUserBySessionToken(token)).toMatchObject({ id: userId, email, credits: 0 });
+  });
+
+  it('keeps unverified email accounts separate from Google and email-based privileges', async () => {
+    const email = 'privileged@example.com';
+    const { userId } = await registerPasswordAccount(email, password, password);
+    const { token } = await createSession(userId!);
+    const passwordUser = (await findUserBySessionToken(token))!;
+    const googleUser = await upsertGoogleUser({ sub: 'privileged-google', email });
+    expect(googleUser.id).not.toBe(passwordUser.id);
+    const unownedProject = {} as StudioProject;
+    vi.stubEnv('ADMIN_EMAILS', email);
+    vi.stubEnv('LEGACY_PROJECT_OWNER_EMAIL', email);
+    try {
+      expect(isAdmin(passwordUser)).toBe(false);
+      expect(isAdmin(googleUser)).toBe(true);
+      expect(canAccessProject(passwordUser, unownedProject)).toBe(false);
+      expect(canAccessProject(googleUser, unownedProject)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('requires Google confirmation and signs into the same account with the verified email', async () => {
+    const profile = { sub: 'password-user', email: 'PasswordUser@example.com' };
+    const user = await upsertGoogleUser(profile);
+    const ordinary = await createSession(user.id);
+    const confirmed = await createSession(user.id, true);
+
+    expect(await authenticateWithPassword(user.email, password)).toBeNull();
+    expect(await setAccountPassword(user.id, user.email, await sha256Hex(ordinary.token), password)).toBe(false);
+    expect(await setAccountPassword(user.id, user.email, await sha256Hex(confirmed.token), password)).toBe(true);
+    expect(await authenticateWithPassword(user.email, 'incorrect password')).toBeNull();
+    expect(await authenticateWithPassword(' passworduser@example.com ', password)).toBe(user.id);
+
+    const updated = await upsertGoogleUser({ ...profile, email: 'changed@example.com' });
+    expect(updated.id).toBe(user.id);
+    expect(await authenticateWithPassword(user.email, password)).toBeNull();
+    expect(await authenticateWithPassword(updated.email, password)).toBeNull();
+  });
+
+  it('blocks attempts during the lockout window and permits login after it expires', async () => {
+    const user = await upsertGoogleUser({ sub: 'locked-user', email: 'locked@example.com' });
+    const confirmed = await createSession(user.id, true);
+    expect(await setAccountPassword(user.id, user.email, await sha256Hex(confirmed.token), password)).toBe(true);
+    await getDb().run(
+      'UPDATE users SET password_attempts = 9, password_window_until = ? WHERE id = ?',
+      [Date.now() + 60_000, user.id]
+    );
+    expect(await authenticateWithPassword(user.email, 'incorrect password')).toBeNull();
+    expect(await authenticateWithPassword(user.email, password)).toBeNull();
+    await getDb().run('UPDATE users SET password_window_until = 1 WHERE id = ?', [user.id]);
+    expect(await authenticateWithPassword(user.email, password)).toBe(user.id);
   });
 });
 

@@ -144,7 +144,7 @@ export function buildAssetScene(
     }
     const idle = unanimatedActions(asset.manifest.choreography, asset.code);
     if (idle.length) throw new Error(`Drive these actions from actionProgress instead of idle-only motion: ${idle.join(', ')}`);
-    asset = { ...asset, code: applySharedWorld(asset.code, continuity?.sharedWorld) };
+    asset = { ...asset, code: applySharedWorld(asset.code, continuity?.sharedWorld, continuity?.requiredObjects) };
   }
   const code = composeAssetScene(asset, storyboard, index, continuity?.adjacent ? continuity.previous : undefined);
   const validation = validateSceneCode(code, `Scene${index + 1}.tsx`, { svgOnly: storyboard.preset === 'story-svg' });
@@ -186,6 +186,9 @@ export async function generateVideoSceneFile(
       return { ...(await generateAssetScene(storyboard, index, options)), simplified: false };
     } catch (error) {
       console.warn(`[SceneGenerator] Asset for scene ${index + 1} failed on attempt ${attempt}:`, error);
+      if (attempt === attempts && options.continuity?.requiredObjects?.length) {
+        throw new Error('Adegan SVG gagal dibuat dengan objek draf. Coba buat ulang adegan.', { cause: error });
+      }
     }
   }
   return { code: await generateSceneFile(storyboard, index), simplified: true };

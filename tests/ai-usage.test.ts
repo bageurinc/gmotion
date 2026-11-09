@@ -83,10 +83,11 @@ describe('cost summary', () => {
 describe('admin access', () => {
   it('only lists emails from ADMIN_EMAILS', () => {
     vi.stubEnv('ADMIN_EMAILS', ' Boss@Example.com, ops@example.com ');
-    expect(isAdmin({ email: 'boss@example.com' })).toBe(true);
-    expect(isAdmin({ email: TEST_USER.email })).toBe(false);
+    const boss = { ...TEST_USER, email: 'boss@example.com' };
+    expect(isAdmin(boss)).toBe(true);
+    expect(isAdmin(TEST_USER)).toBe(false);
     vi.stubEnv('ADMIN_EMAILS', '');
-    expect(isAdmin({ email: 'boss@example.com' })).toBe(false);
+    expect(isAdmin(boss)).toBe(false);
     expect(isAdmin(null)).toBe(false);
   });
 

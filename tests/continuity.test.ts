@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { applySharedWorld, continuityFor, continuityPrompt, extractSharedWorld } from '@/lib/explainer/continuity';
 import type { GeneratedAsset } from '@/lib/explainer/asset-generator';
+import { parseStorySvgDraft } from '@/lib/explainer/story-svg-draft';
+import type { Storyboard } from '@/types/studio';
 
 const block = (body: string) => `// SHARED-WORLD:START
 const WorldBase = () => <rect fill="${body}" />;
@@ -10,6 +12,26 @@ ${shared}
 export const Asset = () => <svg>${body}</svg>;
 export default Asset;`;
 const asset = (code: string) => ({ manifest: { choreography: [] }, code }) as unknown as GeneratedAsset;
+
+describe('parseStorySvgDraft', () => {
+  const storyboard = { scenes: [{ role: 'hook' }, { role: 'cta' }] } as Storyboard;
+  const sharedWorld = [
+    '// SHARED-WORLD:START',
+    'function WorldBase() { return <rect width={1000} height={1000} />; }',
+    'function Honeycomb() { return <ellipse rx={90} ry={70} />; }',
+    '// SHARED-WORLD:END',
+  ].join('\n');
+
+  it('accepts one shared SVG definition and a per-scene object list', () => {
+    const draft = { sharedWorld, sceneObjects: [['Honeycomb'], []] };
+    expect(parseStorySvgDraft(JSON.stringify(draft), storyboard)).toEqual(draft);
+  });
+
+  it('rejects an object list that names an undrawn asset', () => {
+    const draft = { sharedWorld, sceneObjects: [['StoryObjectBee'], []] };
+    expect(() => parseStorySvgDraft(JSON.stringify(draft), storyboard)).toThrow(/StoryObjectBee/);
+  });
+});
 
 describe('applySharedWorld', () => {
   it('replaces a drifted copy with the first scene block', () => {
@@ -40,6 +62,13 @@ describe('applySharedWorld', () => {
     expect(() => applySharedWorld(scene(block('#111111'), ''))).toThrow(/WorldBase/);
     expect(() => applySharedWorld(scene(block('#111111'), '<WorldBase tint="red" />'))).toThrow(/no props/);
   });
+
+  it('requires the drafted object in the scene rather than only in the shared definitions', () => {
+    const shared = block('#111111').replace('// SHARED-WORLD:END', 'function StoryObjectHive() { return <g />; }\n// SHARED-WORLD:END');
+    expect(() => applySharedWorld(scene(shared), shared, ['StoryObjectHive'])).toThrow(/StoryObjectHive/);
+    const code = applySharedWorld(scene(block('#222222'), '<WorldBase /><StoryObjectHive />'), shared, ['StoryObjectHive']);
+    expect(extractSharedWorld(code)).toBe(shared);
+  });
 });
 
 describe('continuityFor', () => {
@@ -49,6 +78,16 @@ describe('continuityFor', () => {
 
   it('starts empty on the first scene', () => {
     expect(continuityFor(scenes, undefined, 0)).toEqual({ sharedWorld: undefined, previous: undefined, adjacent: false });
+  });
+
+  it('uses the same saved draft on the first scene and subsequent scenes', () => {
+    const draft = { sharedWorld: block('#333333'), sceneObjects: [['StoryObjectHive'], ['StoryObjectBee']] };
+    expect(continuityFor(scenes, undefined, 0, draft)).toMatchObject({
+      sharedWorld: draft.sharedWorld, requiredObjects: ['StoryObjectHive'],
+    });
+    expect(continuityFor(scenes, { a: first }, 1, draft)).toMatchObject({
+      sharedWorld: draft.sharedWorld, requiredObjects: ['StoryObjectBee'], previous: first,
+    });
   });
 
   it('inherits the first block and the nearest earlier scene', () => {

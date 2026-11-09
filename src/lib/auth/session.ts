@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { getDb } from '@/lib/db/client';
 
 export const SESSION_COOKIE = 'gmotion_session';
+export const PASSWORD_ACCOUNT_PREFIX = 'password:';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface User {
@@ -12,6 +13,10 @@ export interface User {
   avatar_url: string | null;
   credits: number;
   created_at: number;
+}
+
+export function hasVerifiedEmail(user: Pick<User, 'google_sub'>): boolean {
+  return !user.google_sub.startsWith(PASSWORD_ACCOUNT_PREFIX);
 }
 
 export const sessionCookieOptions = {
@@ -30,22 +35,36 @@ export function randomToken(bytes = 32): string {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString('base64url');
 }
 
-export async function createSession(userId: string): Promise<{ token: string; expiresAt: number }> {
+export async function createSession(userId: string, allowPasswordSetup = false): Promise<{ token: string; expiresAt: number }> {
   const token = randomToken();
   const now = Date.now();
   const expiresAt = now + SESSION_TTL_MS;
-  await getDb().run('INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)', [
-    await sha256Hex(token),
-    userId,
-    expiresAt,
-    now,
-  ]);
+  await getDb().run(
+    'INSERT INTO sessions (id, user_id, expires_at, created_at, password_setup_until) VALUES (?, ?, ?, ?, ?)',
+    [await sha256Hex(token), userId, expiresAt, now, allowPasswordSetup ? now + 10 * 60 * 1000 : null]
+  );
   return { token, expiresAt };
+}
+
+export async function startPasswordSession(userId: string): Promise<void> {
+  const { token, expiresAt } = await createSession(userId);
+  (await cookies()).set(SESSION_COOKIE, token, { ...sessionCookieOptions, expires: new Date(expiresAt) });
+}
+
+export async function getPasswordSetupSessionId(userId: string): Promise<string | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const now = Date.now();
+  const session = await getDb().first<{ id: string }>(
+    'SELECT id FROM sessions WHERE id = ? AND user_id = ? AND expires_at > ? AND password_setup_until > ?',
+    [await sha256Hex(token), userId, now, now]
+  );
+  return session?.id ?? null;
 }
 
 export async function findUserBySessionToken(token: string): Promise<User | null> {
   return getDb().first<User>(
-    `SELECT users.* FROM sessions
+    `SELECT users.id, google_sub, email, name, avatar_url, credits, users.created_at FROM sessions
      JOIN users ON users.id = sessions.user_id
      WHERE sessions.id = ? AND sessions.expires_at > ?`,
     [await sha256Hex(token), Date.now()]

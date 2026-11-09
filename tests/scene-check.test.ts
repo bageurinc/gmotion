@@ -84,6 +84,15 @@ describe('sheetFrames', () => {
     expect(sheetFrames(project, 0)).toEqual([2, 50, 90]);
     expect(sheetFrames(project, 1)).toEqual([90, 109, 200, 290]);
   });
+
+  it('samples the exact frame pair at a continuous Full SVG cut', () => {
+    const project = withScenes('story-svg');
+    project.sceneAssets = {
+      a: { manifest: {} },
+      b: { manifest: { camera: { link: 'continue' } } },
+    } as unknown as StudioProject['sceneAssets'];
+    expect(sheetFrames(project, 1).slice(0, 2)).toEqual([99, 100]);
+  });
 });
 
 describe('stillness helpers', () => {

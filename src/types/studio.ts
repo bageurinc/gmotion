@@ -169,6 +169,8 @@ export interface StudioProject {
   sceneProgress?: Record<string, SceneProgress>;
   checkingScenes?: boolean;
   sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
+  storySvgDraft?: import('@/lib/explainer/story-svg-draft').StorySvgDraft;
+  storySvgReviewPending?: boolean;
   drawingModel?: DrawingModel;
   generationError?: string;
   /** Automatic world repairs, kept so the editor can report them. */

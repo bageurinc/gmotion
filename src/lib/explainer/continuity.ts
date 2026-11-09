@@ -1,13 +1,16 @@
+import type { StudioProject } from '@/types/studio';
 import type { GeneratedAsset } from './asset-generator';
 import type { AssetFocus } from './asset-contract';
+import type { StorySvgDraft } from './story-svg-draft';
 
 const START = '// SHARED-WORLD:START';
 const END = '// SHARED-WORLD:END';
 const BLOCK = /\/\/ SHARED-WORLD:START[\s\S]*?\/\/ SHARED-WORLD:END/;
 
 export interface SceneContinuity {
-  /** The first scene's shared block, copied unchanged into every later scene. */
+  /** The draft's shared block, or the first drawn scene's block on older projects. */
   sharedWorld?: string;
+  requiredObjects?: string[];
   /** The nearest earlier scene, whose final pose this scene continues from. */
   previous?: GeneratedAsset;
   /** True when previous is the scene right before this one, so the camera may carry on from it. */
@@ -21,23 +24,32 @@ export function continuityFor(
   scenes: Array<{ id: string }>,
   sceneAssets: Record<string, GeneratedAsset> | undefined,
   index: number,
+  draft?: StorySvgDraft,
 ): SceneContinuity {
   const assets = scenes.map((scene) => sceneAssets?.[scene.id]);
   const owner = assets.find((asset) => asset && extractSharedWorld(asset.code));
   const previous = assets.slice(0, index).reverse().find(Boolean);
-  return { sharedWorld: owner && extractSharedWorld(owner.code), previous, adjacent: Boolean(previous) && previous === assets[index - 1] };
+  return {
+    sharedWorld: draft?.sharedWorld ?? (owner && extractSharedWorld(owner.code)),
+    ...(draft ? { requiredObjects: draft.sceneObjects[index] } : {}),
+    previous,
+    adjacent: Boolean(previous) && previous === assets[index - 1],
+  };
 }
 
 /** Makes the shared block identical across scenes, so drift in the model's copy never reaches the video. */
-export function applySharedWorld(code: string, sharedWorld?: string): string {
+export function applySharedWorld(code: string, sharedWorld?: string, requiredObjects: string[] = []): string {
   const own = extractSharedWorld(code);
   if (!own) throw new Error(`Put the persistent world between ${START} and ${END}.`);
   const block = sharedWorld ?? own;
   if (!/\b(?:const|function)\s+WorldBase\b/.test(block)) throw new Error('The shared block must define a WorldBase component.');
   const applied = code.replace(BLOCK, () => block);
-  if (!/<WorldBase\s*\/>/.test(applied.replace(BLOCK, ''))) {
+  const sceneCode = applied.replace(BLOCK, '');
+  if (!/<WorldBase\s*\/>/.test(sceneCode)) {
     throw new Error('Asset must render <WorldBase /> with no props so the world stays identical across scenes.');
   }
+  const missing = requiredObjects.filter((object) => !new RegExp(`<${object}(?=[\\s/>])`).test(sceneCode));
+  if (missing.length) throw new Error(`Render these drafted SVG components directly: ${missing.join(', ')}.`);
   return applied;
 }
 
@@ -46,6 +58,13 @@ const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
 /** True when this scene's camera flies on from the previous scene instead of cutting to a new place. */
 export const continuesCamera = (asset: GeneratedAsset | undefined, index: number) =>
   index > 0 && asset?.manifest.camera?.link === 'continue';
+
+export function hasContinuousCut(project: StudioProject, index: number): boolean {
+  if (project.storyboard.preset !== 'story-svg' || index < 1) return false;
+  const { scenes } = project.storyboard;
+  return Boolean(project.sceneAssets?.[scenes[index - 1].id])
+    && continuesCamera(project.sceneAssets?.[scenes[index].id], index);
+}
 
 /**
  * Scene indexes whose camera carries on from the scene before them, for the fade-free cuts in MainVideo.
@@ -84,12 +103,13 @@ const CAMERA_RULES = `CAMERA (the stage moves it, your code never does):
 - The camera's window is 1000/S units wide around focus. The explained part and its full motion fill most of that window and stay inside it. The headline covers the top tenth of the window.`;
 
 /** Prompt section that makes one scene continue the sequence instead of starting a new drawing. */
-export function continuityPrompt({ sharedWorld, previous }: SceneContinuity): string {
+export function continuityPrompt({ sharedWorld, requiredObjects, previous, adjacent }: SceneContinuity): string {
   const rules = sharedWorld
-    ? `SHARED WORLD (already fixed by the first scene):
-- Copy this block unchanged directly after the imports. Any change you make to it is discarded.
+    ? `SHARED WORLD (${requiredObjects ? 'fixed by the object draft' : 'already fixed by the first scene'}):
+- Put the two SHARED-WORLD marker lines directly after the imports, with nothing between them. The renderer inserts the exact block below.
 - Render <WorldBase /> with no props in every frame, and draw recurring objects only through the components in this block.
 - Do not draw a second ground, surface, panel, or background. Keep the same scale, so objects stay the same size as in the block.
+${requiredObjects?.length ? `- Render each of these drafted objects directly in JSX: ${requiredObjects.join(', ')}. Place and animate instances with SVG group transforms or their documented props. Preserve object proportions and use the previous placement and pose for a continuous cut.` : ''}
 \`\`\`tsx
 ${sharedWorld}
 \`\`\``
@@ -99,7 +119,7 @@ ${sharedWorld}
 - The block also defines every recurring object as a component driven only by props, such as position, scale, and state, so later scenes can place it in any pose.
 - Code in the block reads only its own props. It must not use actionProgress, time, or anything declared outside the block. Prefix its gradient and filter ids with "asset-world-".
 - Asset renders <WorldBase /> with no props, then places the recurring objects. Design WorldBase for all scenes, not only this one, and leave room for every object in the sequence.`;
-  if (!previous) return `${rules}
+  if (!previous || adjacent === false) return `${rules}
 
 ${CAMERA_RULES}`;
   return `${rules}
@@ -111,6 +131,6 @@ PREVIOUS SCENE (continue from it):
 - Previous camera: ${JSON.stringify(previous.manifest.camera ?? { link: 'cut', focus: WIDE })}. With "continue", your camera starts there.
 - Previous actions: ${JSON.stringify(previous.manifest.choreography ?? [])}
 \`\`\`tsx
-${previous.code}
+${previous.code.replace(BLOCK, '')}
 \`\`\``;
 }
