@@ -124,6 +124,37 @@ function renderInSandbox(code: string, cases: ReadonlyArray<{ props: Record<stri
   return results;
 }
 
+/**
+ * Renders named function components from one validated block with their default props.
+ * Used by the Full SVG object draft, whose block has no imports, exports, or draft kit.
+ */
+export function renderNamedComponents(code: string, names: string[]): Record<string, { svg: string | null; error: string | null }> {
+  const compiled = transform(`${code}\n;__exports = { ${names.join(', ')} };`, {
+    transforms: ['jsx', 'typescript'], jsxRuntime: 'classic', production: true,
+  }).code;
+  const sandbox: Record<string, unknown> = {
+    React,
+    __exports: {},
+    __render: (component: React.ComponentType<Record<string, unknown>>) => renderSvgMarkup(React.createElement(component, {})),
+  };
+  const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false } });
+  vm.runInContext(compiled, context, { timeout: RENDER_TIMEOUT_MS, filename: 'StorySvgDraft.js' });
+  const exportsMap = sandbox.__exports as Record<string, unknown>;
+  return Object.fromEntries(names.map((name) => {
+    try {
+      if (typeof exportsMap[name] !== 'function') throw new Error(`${name} is not a component`);
+      sandbox.__current = exportsMap[name];
+      const svg = String(vm.runInContext('__render(__current)', context, { timeout: RENDER_TIMEOUT_MS, filename: 'StorySvgRender.js' }));
+      if (svg.length > MARKUP_LIMIT) throw new Error(`${name} renders more SVG than the limit`);
+      if (/NaN|Infinity|undefined/.test(svg)) throw new Error(`${name} renders broken numbers (NaN, Infinity, or undefined)`);
+      if (!/<(path|rect|circle|ellipse|polygon|polyline|line)\b/.test(svg)) throw new Error(`${name} renders no visible shapes`);
+      return [name, { svg, error: null }];
+    } catch (error) {
+      return [name, { svg: null, error: String(error instanceof Error ? error.message : error).slice(0, 300) }];
+    }
+  }));
+}
+
 /** Strips ids React generates, so two renders of the same state compare equal. */
 const comparable = (svg: string) => svg.replace(/\b(id|aria-labelledby)="[^"]*"|url\(#[^)]*\)|href="#[^"]*"/g, '');
 

@@ -211,12 +211,16 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
   if (chained && isApiKeyConfigured() && !project.storySvgDraft && !readyIndexes(project).length
     && pending.some((index) => project.storyboard.scenes[index].role !== 'cta')) {
     try {
-      const storySvgDraft = await generateStorySvgDraft(assetModel(project.drawingModel), project.storyboard);
-      commit(() => ({ storySvgDraft, storySvgReviewPending: true, status: 'idle' }));
+      const storySvgDraft = await generateStorySvgDraft(
+        assetModel(project.drawingModel), project.storyboard, undefined,
+        (storySvgDraftProgress) => commit(() => ({ storySvgDraftProgress })),
+      );
+      commit(() => ({ storySvgDraft, storySvgReviewPending: true, storySvgDraftProgress: undefined, status: 'idle' }));
       activeJobs.delete(project.id);
       return;
     } catch (error) {
       console.error('[GenerationJob] Story SVG draft failed:', error);
+      commit(() => ({ storySvgDraftProgress: undefined }));
       draftError = 'Draf objek SVG gagal dibuat. Coba lagi.';
     }
   }

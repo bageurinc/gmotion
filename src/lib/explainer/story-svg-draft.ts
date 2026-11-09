@@ -1,34 +1,410 @@
+import sharp from 'sharp';
 import { z } from 'zod';
 import type { Storyboard } from '@/types/studio';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
+import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
+import { renderNamedComponents } from '@/lib/assets/draft-runtime';
 import { callChat } from './asset-generator';
+import { worldViewBox } from './story-svg-shared';
+
+/**
+ * Full SVG object draft. The art is planned once, then the setting and every object are drawn
+ * in their own call with the whole token budget, checked by rendering, and reviewed from pictures.
+ * Scenes may only place and animate these components, so this step sets the video's visual ceiling.
+ */
+
+const START = '// SHARED-WORLD:START';
+const END = '// SHARED-WORLD:END';
+const WORLD = 'WorldBase';
 
 const componentName = z.string().regex(/^[A-Z][A-Za-z0-9]*$/).refine(
-  (name) => !['WorldBase', 'Asset', 'React'].includes(name),
+  (name) => ![WORLD, 'Asset', 'React'].includes(name),
   'Use the name of an object component.',
 );
-const draftSchema = z.object({
-  sharedWorld: z.string().min(1).max(40_000),
+
+export const DraftPlanSchema = z.object({
+  world: z.object({
+    label: z.string().min(1).max(40),
+    description: z.string().min(1),
+    groundY: z.number().min(200).max(980),
+  }),
+  objects: z.array(z.object({
+    name: componentName,
+    label: z.string().min(1).max(40),
+    description: z.string().min(1),
+    width: z.number().min(10).max(1000),
+    height: z.number().min(10).max(1000),
+    props: z.array(z.object({
+      name: z.string().regex(/^[a-z][A-Za-z0-9]*$/),
+      default: z.union([z.number(), z.string()]),
+      meaning: z.string().min(1),
+    })).max(6).default([]),
+    closeups: z.array(z.object({ part: z.string().min(1), scale: z.number().min(1).max(4) })).max(4).default([]),
+  })).min(1).max(8),
   sceneObjects: z.array(z.array(componentName)),
+});
+
+export type DraftPlan = z.infer<typeof DraftPlanSchema>;
+
+const draftSchema = z.object({
+  sharedWorld: z.string().min(1).max(200_000),
+  sceneObjects: z.array(z.array(componentName)),
+  /** Present on drafts drawn per object. Older drafts only have the joined block. */
+  plan: DraftPlanSchema.optional(),
+  pieces: z.record(z.string(), z.string()).optional(),
 });
 
 export type StorySvgDraft = z.infer<typeof draftSchema>;
 
-const DRAFT_SYSTEM = `You design reusable SVG art for an animated vertical explainer.
-Return a JSON object with "sharedWorld" (a TSX string) and "sceneObjects" (an array of arrays of component names, one per scene in order).
-The TSX must start with // SHARED-WORLD:START and end with // SHARED-WORLD:END. No imports or exports.
-Define WorldBase for the fixed setting in 1000 by 1000 coordinates. Define a separate named function for each focal subject and recurring prop, for example Honeycomb or SoapBar.
-Each object renders an SVG group around local origin (0,0). Draw a clear silhouette, accurate proportions and a few recognizable details, with consistent lighting and outline weights across the set.
-Use pure SVG geometry. No text, raster, time, actionProgress, external references, or React APIs. Prefix SVG definition IDs with asset-world-. Use inline SVG attributes.
-Components may take numeric or string props for articulated poses or state changes needed by the story. Give each prop a sensible default, and put the prop contract and approximate object dimensions in a short comment above the function.
-Each sceneObjects entry lists only the exact function names visible in that scene, for example [["Honeycomb","Bee"],["Honeycomb","Bee"]]. Include the focal subject even if it appears in one scene. Use [] for CTA scenes. Leave incidental scene-specific effects to the animator.`;
+const ART_STANDARD = `VISUAL STANDARD (premium editorial textbook illustration, not clip art)
+- Layer every major form: base gradient, core shadow, reflected light, rim light, and specular highlights, then an outline in a darker shade of that form's own color.
+- Light comes from the upper left in every piece of this video.
+- Use organic cubic Bezier paths. Do not build forms from plain circles and rectangles.
+- Add believable secondary detail: fibres, seams, panels, rivets, veins, droplets, grain, texture lines. Build repeated detail from data arrays with .map.
+- Real-world materials and colors. Accurate structure: every part the brief names is present and in the right place.
+- Pure SVG geometry. No text, raster images, foreignObject, CSS animation, filters that blur the subject into mush, Math.random, Date, time, or actionProgress.`;
 
-export function parseStorySvgDraft(response: string, storyboard: Storyboard): StorySvgDraft {
-  const json = response.trim().replace(/^\x60{3}(?:json)?\s*|\s*\x60{3}$/gi, '');
-  const draft = draftSchema.parse(JSON.parse(json));
+const CODE_RULES = (name: string) => `CODE
+Output exactly one \`\`\`tsx block and nothing else.
+- Start with one /** ... */ comment: the component name, its size and origin, each prop with its range and default, and "Parts:" with the local x,y of every named part.
+- Then exactly one top-level declaration: function ${name}(...). Put helpers and data arrays inside it.
+- No imports, exports, hooks, or React APIs. Return one <g>.
+- Prefix every gradient, clipPath, mask, and filter id with "asset-world-${name.toLowerCase()}-".
+- Use inline SVG attributes. Output is deterministic.
+- Keep the answer under 9000 tokens. Do not think out loud.`;
+
+const PLAN_SYSTEM = `You are the art director of an animated explainer drawn entirely in SVG. Read the storyboard and plan the fixed setting and the cast of objects before anything is drawn.
+Return only JSON in exactly this shape:
+{"world": {"label": "Tepi sungai", "description": "...", "groundY": 720},
+ "objects": [{"name": "WaterWheel", "label": "Kincir air", "description": "...", "width": 620, "height": 640,
+   "props": [{"name": "turn", "default": 0, "meaning": "rotation 0 to 1"}],
+   "closeups": [{"part": "axle bearing", "scale": 3}]}],
+ "sceneObjects": [["WaterWheel"], []]}
+- world.label: short Bahasa Indonesia name of the place. world.description: an English art brief of the real place: sky or wall, horizon, ground or floor material, layers below the surface when the story shows them, time of day. world.groundY: the canvas y of the main ground or floor line in the 1000 by 1000 canvas.
+- objects: every focal subject and recurring prop, 1 to 8. name: English PascalCase, never WorldBase, Asset, or React. label: short Bahasa Indonesia name the user reads. description: an English brief precise enough for an illustrator: silhouette, proportions, real materials and colors, every part the narration names, and how each state looks.
+- An object is a thing with its own silhouette. Ground, rock layers, faults, the sea, or tissue seen in cross-section belong to the world: describe them in world.description, below groundY, and never make them an object, because an object would be drawn as a box-shaped slice.
+- width and height: the object's size in canvas units. Sizes stay true to each other at one sensible scene scale, and the focal subject is large, about 500 to 850 units on its long side.
+- props: only the state or pose changes the story needs, such as openAmount from 0 to 1, each with a default and its meaning.
+- closeups: parts the visual directions zoom into, with the zoom scale from 1 to 4.
+- sceneObjects: one array per scene, in order, with the object names visible in that scene. [] for CTA scenes. Every other scene lists at least its focal object. Incidental one-off effects are left to the animator and are not objects.
+- Facts must be accurate.`;
+
+const WORLD_SYSTEM = `You are a senior editorial vector illustrator. Draw the fixed setting of an animated explainer as one SVG React component.
+
+${ART_STANDARD}
+
+SETTING RULES
+- Draw only the place. No story objects or subjects.
+- Draw the place at rest, as it looks in every scene. Events and effects such as shock waves, cracks spreading, fire, glow, arrows, or flowing particles are not part of the setting: the animator adds them in the scenes that need them. Permanent structure, such as rock layers or a fault line, stays.
+- The 1000 by 1000 canvas only marks where subjects stand. The video frame shows much more, and the camera may zoom anywhere in the canvas.
+- Fill the whole area from x=-1000 to x=2000 and from y=-1000 to y=2000 with no gaps: sky or wall above the ground line, the ground or floor surface at groundY across the full width, and everything below the surface down to y=2000. Never stop at the canvas edge, and never draw a box, card, or diorama slice.
+- Outdoors: sky with soft clouds, horizon, distant hills or buildings. Indoors: a real wall surface plus a window or shelf that fits. Other places get their own fitting setting.
+- The headline sits over the area above y=100. Keep it a calm, low-contrast tone with no clouds, objects, or strong patterns.
+- Keep the setting quieter and lower in contrast than the subjects that will stand in it.
+
+${CODE_RULES(WORLD)}
+- WorldBase takes no props. Its origin is the canvas origin.`;
+
+const OBJECT_SYSTEM = (name: string) => `You are a senior editorial vector illustrator. Draw one reusable object of an animated explainer as one SVG React component.
+
+${ART_STANDARD}
+
+OBJECT RULES
+- Draw only this object. No background, ground, panel, or card. A soft contact shadow under it is fine.
+- Origin (0,0) is the centre of the object's base, where it stands. It spans x from -width/2 to width/2 and y from -height to 0, at the planned size.
+- Use at least 40 meaningful shapes. The object is the star of the video and must hold up full screen.
+- Parts listed in closeups are seen up to that zoom scale S. Give them detail fine enough for it: strokes around 2/S units, small bolts, seams, and layers.
+- Every prop changes the drawing visibly. Destructure props with the planned defaults.
+
+${CODE_RULES(name)}`;
+
+const CRITIC_SYSTEM = `You are a strict art director reviewing the reusable art of an animated explainer before it is animated.
+The image is a contact sheet of cards in reading order, left to right, top to bottom. Card 1 is the setting; the others are objects.
+Score each card from 1 to 10 for overall quality: recognizable at a glance, accurate to its brief, premium layered illustration with light, depth, and detail. A flat icon, clip art, or basic shapes scores 4 or lower. A setting with visible gaps, a hard edge, or a plain empty backdrop scores 4 or lower.
+Return only JSON: {"imageVisible": true, "items": [{"name": "...", "score": 0, "issues": ["specific fix"]}]}. At most 4 issues per card, ordered by visual impact. Set imageVisible to false if you cannot see the cards.`;
+
+/** Cards below this score get one redraw before the user sees the draft. */
+export const DRAFT_REDRAW_BELOW = 7;
+const CARD = 360;
+const DRAW_TOKENS = 24_000;
+
+const fence = (text: string, lang: string) => text.match(new RegExp(`\`\`\`${lang}\\s*([\\s\\S]*?)\`\`\``))?.[1]?.trim();
+const parseJson = (text: string) => JSON.parse(fence(text, 'json') ?? text.trim().replace(/^`{3}(?:json)?\s*|\s*`{3}$/gi, ''));
+
+function storyBrief(storyboard: Storyboard): string {
+  return JSON.stringify({
+    title: storyboard.title,
+    aspectRatio: storyboard.aspectRatio,
+    palette: storyboard.palette,
+    scenes: storyboard.scenes.map(({ title, role, voiceoverText, visualPrompt }) => ({
+      title, role, narration: voiceoverText, visual: visualPrompt,
+    })),
+  });
+}
+
+/** Checks the plan against the storyboard, so every scene's objects exist before drawing starts. */
+export function checkPlan(plan: DraftPlan, storyboard: Storyboard): DraftPlan {
+  const names = new Set(plan.objects.map((object) => object.name));
+  if (names.size !== plan.objects.length) throw new Error('Object names must be unique.');
+  if (plan.sceneObjects.length !== storyboard.scenes.length) throw new Error('sceneObjects must cover every scene.');
+  plan.sceneObjects.forEach((objects, index) => {
+    if (storyboard.scenes[index].role !== 'cta' && !objects.length) throw new Error(`Scene ${index + 1} is missing its focal object.`);
+    const unknown = objects.filter((name) => !names.has(name));
+    if (unknown.length) throw new Error(`Scene ${index + 1} lists objects that are not planned: ${unknown.join(', ')}.`);
+  });
+  return plan;
+}
+
+async function planDraft(model: string, storyboard: Storyboard, extra = ''): Promise<DraftPlan> {
+  const content = `${storyBrief(storyboard)}${extra}`;
+  const ask = (text: string) => callChat({ model, system: PLAN_SYSTEM, content: text, maxTokens: 12_000, timeoutMs: 5 * 60_000 });
+  const first = await ask(content);
+  try {
+    return checkPlan(DraftPlanSchema.parse(parseJson(first.text)), storyboard);
+  } catch (error) {
+    const retry = await ask(`${content}\nThe previous answer failed: ${String(error)}\nPrevious answer:\n${first.text.slice(0, 20_000)}\nReturn the complete corrected JSON.`);
+    return checkPlan(DraftPlanSchema.parse(parseJson(retry.text)), storyboard);
+  }
+}
+
+const svgDocument = (markup: string, viewBox: string, size: { width: number; height: number }) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="${viewBox}">${markup}</svg>`;
+
+/** The world must reach x=-1000..2000 and y=-1000..2000; transparent probes there mean a gap or a hard edge. */
+async function worldGaps(markup: string): Promise<string[]> {
+  const { data, info } = await sharp(Buffer.from(svgDocument(markup, '-1000 -1000 3000 3000', { width: 300, height: 300 })))
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const probes: Array<[number, number]> = [[-950, -950], [500, -950], [1950, -950], [-950, 500], [1950, 500], [-950, 1950], [500, 1950], [1950, 1950]];
+  return probes
+    .filter(([x, y]) => {
+      const px = Math.min(info.width - 1, Math.round((x + 1000) / 10));
+      const py = Math.min(info.height - 1, Math.round((y + 1000) / 10));
+      return data[(py * info.width + px) * info.channels + 3] < 200;
+    })
+    .map(([x, y]) => `(${x}, ${y})`);
+}
+
+/** Validates and renders one drawn piece in isolation. Returns the error list, empty when it passes. */
+export async function checkPiece(name: string, code: string): Promise<{ errors: string[]; svg: string | null }> {
+  const errors: string[] = [];
+  const declarations = [...code.matchAll(/^(?:export\s+)?(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)].map((match) => match[1]);
+  if (!declarations.includes(name)) errors.push(`Declare function ${name} at the top level.`);
+  const others = declarations.filter((declared) => declared !== name);
+  if (others.length) errors.push(`Move these top-level declarations inside ${name}: ${others.join(', ')}.`);
+  if (/^[ \t]*(?:import|export)\b/m.test(code)) errors.push('Use no imports or exports.');
+  if (code.includes(START) || code.includes(END)) errors.push('Do not write SHARED-WORLD markers.');
+  const prefix = `asset-world-${name.toLowerCase()}-`;
+  const badIds = [...code.matchAll(/\bid=(?:"([^"]*)"|\{\s*['"`]([^'"`$]*))/g)]
+    .map((match) => match[1] ?? match[2]).filter((id) => !id.startsWith(prefix));
+  if (badIds.length) errors.push(`Prefix every id with "${prefix}": ${[...new Set(badIds)].slice(0, 5).join(', ')}.`);
+  const validation = validateSceneCode(code, `${name}.tsx`, { svgOnly: true, allowedImports: [] });
+  errors.push(...validation.errors);
+  if (errors.length) return { errors, svg: null };
+
+  let rendered: { svg: string | null; error: string | null };
+  try {
+    rendered = renderNamedComponents(code, [name])[name];
+  } catch (error) {
+    rendered = { svg: null, error: String(error instanceof Error ? error.message : error) };
+  }
+  if (!rendered.svg) return { errors: [`Rendering ${name} with default props failed: ${rendered.error}`], svg: null };
+  if (name === WORLD) {
+    const gaps = await worldGaps(rendered.svg).catch((error) => [`render error ${String(error)}`]);
+    if (gaps.length) {
+      errors.push(`The setting leaves gaps at ${gaps.join(', ')}. Fill x=-1000..2000 and y=-1000..2000 completely: sky or wall above the ground line, ground and everything below it down to y=2000.`);
+    }
+  }
+  return { errors, svg: errors.length ? null : rendered.svg };
+}
+
+interface PieceRequest {
+  name: string;
+  brief: string;
+  previous?: string;
+  note?: string;
+  image?: Buffer;
+}
+
+function pieceBrief(plan: DraftPlan, name: string, storyboard: Storyboard): string {
+  const story = `Video: "${storyboard.title}". Narration in order: ${storyboard.scenes.map((scene, index) => `${index + 1}. ${scene.voiceoverText}`).join(' ')}`;
+  if (name === WORLD) {
+    return `${story}\nSetting brief: ${plan.world.description}\nGround or floor line: y=${plan.world.groundY}.\nObjects that will stand in it: ${plan.objects.map((object) => `${object.name} ${object.width}x${object.height}`).join(', ')}.\nVideo palette for the sky or wall tone: ${JSON.stringify(storyboard.palette)}`;
+  }
+  const object = plan.objects.find((item) => item.name === name)!;
+  return `${story}\nObject: ${object.name}\nBrief: ${object.description}\nSize: ${object.width} wide, ${object.height} tall.\nProps: ${JSON.stringify(object.props)}\nCloseups: ${JSON.stringify(object.closeups)}\nOther objects in the same video, for consistent scale and style: ${plan.objects.filter((item) => item.name !== name).map((item) => `${item.name} ${item.width}x${item.height}`).join(', ') || 'none'}.\nThe setting: ${plan.world.description}`;
+}
+
+/** Draws one piece, with one repair when it fails the checks. */
+async function drawPiece(model: string, request: PieceRequest): Promise<{ code: string; svg: string }> {
+  const system = request.name === WORLD ? WORLD_SYSTEM : OBJECT_SYSTEM(request.name);
+  const base = [
+    request.brief,
+    request.previous && `Current code:\n\`\`\`tsx\n${request.previous}\n\`\`\``,
+    request.note,
+  ].filter(Boolean).join('\n\n');
+  const ask = (text: string) => callChat({
+    model, system, maxTokens: DRAW_TOKENS, timeoutMs: 10 * 60_000,
+    content: request.image
+      ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: `data:image/png;base64,${request.image.toString('base64')}` } }]
+      : text,
+  });
+
+  let answer = await ask(base);
+  for (let attempt = 0; ; attempt += 1) {
+    const code = fence(answer.text, 'tsx') ?? fence(answer.text, 'typescript') ?? '';
+    const checked = code ? await checkPiece(request.name, code) : { errors: ['Return one ```tsx block.'], svg: null };
+    if (!checked.errors.length && checked.svg) return { code, svg: checked.svg };
+    if (attempt >= 1) throw new Error(`${request.name} failed the draft checks: ${checked.errors.join(' ')}`);
+    answer = await ask(`${base}\n\nThe previous answer failed these checks:\n${checked.errors.map((error) => `- ${error}`).join('\n')}\n\nPrevious answer:\n${answer.text.slice(0, 40_000)}\n\nReturn the complete corrected tsx block.`);
+  }
+}
+
+const objectViewBox = (object: DraftPlan['objects'][number]) => {
+  const side = Math.max(object.width, object.height) * 1.5;
+  return `${-side / 2} ${-object.height / 2 - side / 2} ${side} ${side}`;
+};
+
+async function card(svg: string, viewBox: string, background: string): Promise<Buffer> {
+  return sharp(Buffer.from(svgDocument(`<rect x="-5000" y="-5000" width="10000" height="10000" fill="${background}"/>${svg}`, viewBox, { width: CARD, height: CARD })))
+    .png().toBuffer();
+}
+
+async function contactSheet(cards: Buffer[]): Promise<Buffer> {
+  const columns = Math.min(4, cards.length);
+  const rows = Math.ceil(cards.length / columns);
+  return sharp({ create: { width: CARD * columns, height: CARD * rows, channels: 3, background: '#000000' } })
+    .composite(cards.map((input, index) => ({ input, left: (index % columns) * CARD, top: Math.floor(index / columns) * CARD })))
+    .jpeg({ quality: 82 }).toBuffer();
+}
+
+interface CardReview { name: string; score: number; issues: string[] }
+
+async function reviewCards(storyboard: Storyboard, plan: DraftPlan, names: string[], cards: Buffer[]): Promise<Map<string, CardReview>> {
+  const model = process.env.CRITIC_MODEL || 'ag/gemini-3.8-flash-high';
+  const briefs = names.map((name, index) => {
+    const brief = name === WORLD ? plan.world.description : plan.objects.find((object) => object.name === name)?.description;
+    return `Card ${index + 1}: ${name}: ${brief}`;
+  }).join('\n');
+  const { text } = await callChat({
+    model, system: CRITIC_SYSTEM, maxTokens: 3_000, timeoutMs: 5 * 60_000,
+    content: [
+      { type: 'text', text: `Video: "${storyboard.title}"\n${briefs}` },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${(await contactSheet(cards)).toString('base64')}` } },
+    ],
+  });
+  const parsed = parseJson(text.match(/\{[\s\S]*\}/)?.[0] ?? text) as { imageVisible?: boolean; items?: CardReview[] };
+  if (parsed.imageVisible !== true || !Array.isArray(parsed.items)) throw new Error('Critic could not see the draft cards');
+  return new Map(parsed.items.filter((item) => names.includes(item.name)).map((item) => [item.name, item]));
+}
+
+/** What the user sees while the draft is made. percent runs from 0 to 100. */
+export interface DraftProgress {
+  percent: number;
+  label: string;
+}
+export type DraftProgressListener = (progress: DraftProgress) => void;
+
+const quiet: DraftProgressListener = () => {};
+
+export function joinPieces(plan: DraftPlan, pieces: Record<string, string>): string {
+  return [START, pieces[WORLD], ...plan.objects.map((object) => pieces[object.name]), END].join('\n\n').replace(`${START}\n\n`, `${START}\n`).replace(`\n\n${END}`, `\n${END}`);
+}
+
+async function drawAll(
+  model: string,
+  storyboard: Storyboard,
+  plan: DraftPlan,
+  requests: PieceRequest[],
+  pieces: Record<string, string>,
+  review: boolean,
+  /** Percent range this step fills, so planning before it and assembly after it keep their share. */
+  span: { from: number; to: number; report: DraftProgressListener },
+): Promise<Record<string, string>> {
+  const { from, to, report } = span;
+  const labelOf = (name: string) => (name === WORLD ? plan.world.label : plan.objects.find((object) => object.name === name)?.label ?? name);
+  // Drawing takes most of the time; the review and its redraws share what is left.
+  const drawEnd = review ? from + (to - from) * 0.7 : to;
+  const drawn = new Map<string, { code: string; svg: string }>();
+  report({ percent: from, label: `Menggambar ${requests.length > 1 ? `${requests.length} gambar` : labelOf(requests[0]?.name ?? WORLD)}` });
+  await mapWithConcurrency(requests, PIPELINE_CONCURRENCY, async (request) => {
+    drawn.set(request.name, await drawPiece(model, request));
+    report({
+      percent: from + (drawEnd - from) * (drawn.size / requests.length),
+      label: `${labelOf(request.name)} selesai digambar (${drawn.size} dari ${requests.length})`,
+    });
+  });
+  const next = { ...pieces, ...Object.fromEntries([...drawn].map(([name, piece]) => [name, piece.code])) };
+  if (!review || !drawn.size) return next;
+
+  const background = storyboard.palette.surface;
+  const cardFor = (name: string, svg: string) => name === WORLD
+    ? card(svg, worldViewBox(storyboard.aspectRatio), background)
+    : card(svg, objectViewBox(plan.objects.find((object) => object.name === name)!), background);
+
+  try {
+    const names = [...drawn.keys()].sort((a, b) => (a === WORLD ? -1 : b === WORLD ? 1 : 0));
+    report({ percent: drawEnd, label: 'Menilai kualitas gambar' });
+    const cards = await Promise.all(names.map((name) => cardFor(name, drawn.get(name)!.svg)));
+    const reviews = await reviewCards(storyboard, plan, names, cards);
+    const weak = names.filter((name) => (reviews.get(name)?.score ?? 10) < DRAFT_REDRAW_BELOW && reviews.get(name)?.issues.length);
+    if (!weak.length) return next;
+    console.log(`[StorySvgDraft] Redrawing ${weak.join(', ')}: ${weak.map((name) => reviews.get(name)!.score).join(' / ')}`);
+
+    const reviewEnd = drawEnd + (to - drawEnd) * 0.15;
+    const redrawEnd = drawEnd + (to - drawEnd) * 0.85;
+    let fixed = 0;
+    report({ percent: reviewEnd, label: `Memperbaiki ${weak.length} gambar yang kurang bagus` });
+    const redrawn = new Map<string, { code: string; svg: string }>();
+    await mapWithConcurrency(weak, PIPELINE_CONCURRENCY, async (name) => {
+      try {
+        const original = requests.find((request) => request.name === name)!;
+        redrawn.set(name, await drawPiece(model, {
+          ...original,
+          previous: drawn.get(name)!.code,
+          image: cards[names.indexOf(name)],
+          note: `The attached card shows the current render. Art director issues:\n${reviews.get(name)!.issues.map((issue) => `- ${issue}`).join('\n')}\nImprove the illustration substantially, fix every issue, and return the complete tsx block.`,
+        }));
+      } catch (error) {
+        console.warn(`[StorySvgDraft] Redraw of ${name} failed:`, error);
+      }
+      fixed += 1;
+      report({ percent: reviewEnd + (redrawEnd - reviewEnd) * (fixed / weak.length), label: `Memperbaiki gambar (${fixed} dari ${weak.length})` });
+    });
+    if (!redrawn.size) return next;
+    report({ percent: redrawEnd, label: 'Membandingkan gambar perbaikan' });
+
+    // The critic is noisy, so a redraw replaces the first drawing only when it scores higher.
+    const retryNames = [...redrawn.keys()];
+    const retryCards = await Promise.all(retryNames.map((name) => cardFor(name, redrawn.get(name)!.svg)));
+    const retried = await reviewCards(storyboard, plan, retryNames, retryCards);
+    for (const name of retryNames) {
+      const before = reviews.get(name)!.score;
+      const after = retried.get(name)?.score ?? 0;
+      console.log(`[StorySvgDraft] ${name}: ${before} -> ${after}`);
+      if (after > before) next[name] = redrawn.get(name)!.code;
+    }
+  } catch (error) {
+    console.warn('[StorySvgDraft] Review skipped:', error);
+  }
+  return next;
+}
+
+function assemble(plan: DraftPlan, pieces: Record<string, string>, storyboard: Storyboard): StorySvgDraft {
+  const draft: StorySvgDraft = {
+    sharedWorld: joinPieces(plan, pieces),
+    sceneObjects: plan.sceneObjects,
+    plan,
+    pieces: Object.fromEntries([WORLD, ...plan.objects.map((object) => object.name)].map((name) => [name, pieces[name]])),
+  };
+  checkDraft(draft, storyboard);
+  return draft;
+}
+
+/** Shape checks shared by new and older drafts. */
+export function checkDraft(draft: StorySvgDraft, storyboard: Storyboard): StorySvgDraft {
   const { sharedWorld, sceneObjects } = draft;
-  if (!/^\/\/ SHARED-WORLD:START\r?\n/.test(sharedWorld) || !sharedWorld.trimEnd().endsWith('// SHARED-WORLD:END')
-    || sharedWorld.indexOf('// SHARED-WORLD:END') !== sharedWorld.trimEnd().lastIndexOf('// SHARED-WORLD:END')
+  if (!new RegExp(`^${START}\\r?\\n`).test(sharedWorld) || !sharedWorld.trimEnd().endsWith(END)
+    || sharedWorld.indexOf(END) !== sharedWorld.trimEnd().lastIndexOf(END)
     || !/\b(?:function|const)\s+WorldBase\b/.test(sharedWorld)) {
     throw new Error('Draft must define WorldBase inside the shared SVG block.');
   }
@@ -49,29 +425,73 @@ export function parseStorySvgDraft(response: string, storyboard: Storyboard): St
   return draft;
 }
 
+/** Parses a stored or model-written draft object. */
+export function parseStorySvgDraft(response: string, storyboard: Storyboard): StorySvgDraft {
+  return checkDraft(draftSchema.parse(parseJson(response)), storyboard);
+}
+
 export async function generateStorySvgDraft(
   model: string,
   storyboard: Storyboard,
   revision?: { draft: StorySvgDraft; instruction: string },
+  report: DraftProgressListener = quiet,
 ): Promise<StorySvgDraft> {
-  const brief = JSON.stringify({
-    title: storyboard.title,
-    palette: storyboard.palette,
-    scenes: storyboard.scenes.map(({ title, role, voiceoverText, visualPrompt }) => ({
-      title, role, narration: voiceoverText, visual: visualPrompt,
-    })),
-  });
-  const request = (content: string) => callChat({
-    model, system: DRAFT_SYSTEM, content, maxTokens: 16_000, timeoutMs: 5 * 60_000,
-  });
-  const prompt = revision
-    ? `${brief}\nRevise this existing object draft: ${JSON.stringify(revision.draft)}\nRequested corrections: ${JSON.stringify(revision.instruction)}\nPreserve object art and scene assignments outside the requested corrections.`
-    : brief;
-  const first = await request(prompt);
+  if (revision?.draft.plan && revision.draft.pieces) return reviseDraft(model, storyboard, revision.draft, revision.instruction, report);
+
+  report({ percent: 2, label: 'Merencanakan latar dan objek' });
+  const plan = await planDraft(model, storyboard, revision ? `\nUser corrections to apply: ${JSON.stringify(revision.instruction)}` : '');
+  const requests = [WORLD, ...plan.objects.map((object) => object.name)].map((name) => ({
+    name,
+    brief: `${pieceBrief(plan, name, storyboard)}${revision ? `\nUser corrections: ${revision.instruction}` : ''}`,
+  }));
+  const pieces = await drawAll(model, storyboard, plan, requests, {}, true, { from: 12, to: 97, report });
+  report({ percent: 98, label: 'Menyusun draf' });
+  return assemble(plan, pieces, storyboard);
+}
+
+const REVISE_PLAN_NOTE = `
+Revise this existing plan with the user's corrections. Keep everything the corrections do not touch.
+Return only JSON: {"plan": <the complete plan in the same shape>, "redraw": ["WorldBase" and/or object names whose drawing must change]}.
+New objects are always drawn. List an existing name in redraw only when its look, size, parts, or props change.`;
+
+async function reviseDraft(
+  model: string,
+  storyboard: Storyboard,
+  draft: StorySvgDraft,
+  instruction: string,
+  report: DraftProgressListener,
+): Promise<StorySvgDraft> {
+  report({ percent: 3, label: 'Membaca koreksi' });
+  const content = `${storyBrief(storyboard)}\nCurrent plan: ${JSON.stringify(draft.plan)}\nUser corrections: ${JSON.stringify(instruction)}`;
+  const ask = (text: string) => callChat({ model, system: `${PLAN_SYSTEM}\n${REVISE_PLAN_NOTE}`, content: text, maxTokens: 12_000, timeoutMs: 5 * 60_000 });
+  const read = (text: string) => {
+    const raw = parseJson(text) as { plan?: unknown; redraw?: unknown };
+    const plan = checkPlan(DraftPlanSchema.parse(raw.plan), storyboard);
+    const redraw = z.array(z.string()).parse(raw.redraw ?? []);
+    return { plan, redraw };
+  };
+  const first = await ask(content);
+  let result: ReturnType<typeof read>;
   try {
-    return parseStorySvgDraft(first.text, storyboard);
+    result = read(first.text);
   } catch (error) {
-    const repair = await request(`${prompt}\nThe first response failed validation: ${String(error)}. Return a complete corrected draft.\nPrevious response:\n${first.text.slice(0, 45_000)}`);
-    return parseStorySvgDraft(repair.text, storyboard);
+    result = read((await ask(`${content}\nThe previous answer failed: ${String(error)}\nReturn the complete corrected JSON.`)).text);
   }
+
+  const { plan } = result;
+  const names = [WORLD, ...plan.objects.map((object) => object.name)];
+  // An empty list is a plan-only change, such as which scenes show an object.
+  const changed = names.filter((name) => !draft.pieces?.[name] || result.redraw.includes(name));
+  const requests = changed.map((name) => ({
+    name,
+    brief: pieceBrief(plan, name, storyboard),
+    previous: draft.pieces?.[name],
+    note: draft.pieces?.[name] ? `Apply these user corrections and keep everything else: ${instruction}` : undefined,
+  }));
+  const kept = Object.fromEntries(names.filter((name) => draft.pieces?.[name]).map((name) => [name, draft.pieces![name]]));
+  const pieces = requests.length
+    ? await drawAll(model, storyboard, plan, requests, kept, false, { from: 15, to: 97, report })
+    : kept;
+  report({ percent: 98, label: 'Menyusun draf' });
+  return assemble(plan, pieces, storyboard);
 }

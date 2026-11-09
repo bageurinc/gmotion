@@ -1019,19 +1019,21 @@ export function generateMainVideoCode(
 
   return `import React from 'react';
 import { Series, Audio } from 'remotion';
-import { MusicBed, SceneSfx, SceneTransition } from '@/motion-kit';
+import { MusicBed, SceneSfx, SceneTransition, TextStyleProvider } from '@/motion-kit';
 ${sceneImports}
 
 export const MainVideo: React.FC = () => {
   const palette = ${JSON.stringify(storyboard.palette, null, 2)};
 
   return (
+    <TextStyleProvider${storyboard.textStyle ? ` value="${storyboard.textStyle}"` : ''}>
     <div style={{ flex: 1, backgroundColor: palette.background, width: '100%', height: '100%' }}>
       <MusicBed track="${storyboard.bgmTrack}" sceneDurations={${JSON.stringify(sceneDurations)}} />
       <Series>
 ${sequences}
       </Series>
     </div>
+    </TextStyleProvider>
   );
 };
 

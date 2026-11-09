@@ -225,6 +225,39 @@ Sebelum menjual layanan, cek syarat komersial Remotion dan Gemini TTS preview.
 - `proj_1794190079962_job` (5 adegan, 70,9 detik, generate 1.048 detik, export 35 detik, tanpa versi sederhana): adegan 2→3→4→5 menyambung rapi dengan gedung yang sama, kamera turun ke fondasi lalu mundur ke gedung utuh. Adegan 1 berupa penampang lempeng tektonik dengan tiga gedung, tetapi adegan 2 memilih `continue` dan mulai dengan satu gedung di tanah polos, sehingga terlihat lompatan. Aturan kamera kini meminta `continue` hanya jika frame akhir adegan sebelumnya sudah memperlihatkan yang dituju dengan gambar yang sama, dan meminta `cut` untuk perpindahan seperti penampang geologi ke gedung. Aturan ini belum diuji dengan video baru.
 - Jebakan saat mengedit: server dev mengompilasi `scene-revision.ts` di antara dua langkah edit (pemakaian `continuedScenes` sudah ada, import belum), sehingga `/revise` sempat gagal dengan `ReferenceError`. Tambahkan import dan pemakaian dalam satu edit.
 
+## Draf objek Full SVG digambar per objek (9 November 2026)
+
+- Celah draf objek versi pertama: semua objek dan `WorldBase` digambar dalam satu panggilan 16.000 token dengan arahan "a few recognizable details", tanpa aturan latar penuh dan tanpa kritik. Karena adegan hanya boleh memakai komponen draf, kualitas video dibatasi oleh draf itu. Pratinjau juga tidak menampilkan latar, dan labelnya nama fungsi berbahasa Inggris.
+- Alur baru di [story-svg-draft.ts](../src/lib/explainer/story-svg-draft.ts): (1) rencana JSON berisi latar (`label`, deskripsi, `groundY`) dan objek (`label` Bahasa Indonesia, deskripsi, ukuran, prop, close-up beserta skala zoom), (2) `WorldBase` dan tiap objek digambar paralel dalam panggilan masing-masing (24.000 token, minimal 40 bentuk per objek, aturan cahaya berlapis), (3) setiap potongan dirender di server dengan `renderNamedComponents` lalu diperbaiki sekali jika gagal, (4) kartu PNG dinilai Gemini dan kartu dengan skor di bawah 7 digambar ulang sekali. Gambar ulang hanya dipakai jika skornya naik, karena kritik berisik.
+- `WorldBase` dicek dengan rasterisasi: 8 titik di x=-1000..2000 dan y=-1000..2000 harus tidak transparan. Ini menangkap latar yang berhenti di tepi kanvas.
+- Origin objek ada di tengah alasnya. Id gradien wajib berprefiks `asset-world-<nama>-`, karena potongan digambar terpisah dan bisa bertabrakan.
+- Adegan kini hanya menerima komentar header dan tanda tangan tiap komponen (`draftApi`), bukan seluruh blok. Blok asli tetap disisipkan `applySharedWorld`. Draf lama tanpa `plan` tetap mengirim blok penuh.
+- Koreksi draf: perencana mengembalikan rencana baru beserta daftar `redraw`. Hanya potongan itu dan objek baru yang digambar ulang.
+- Jebakan 1: tanpa contoh bentuk JSON, Gemini menulis `closeups` tanpa field `part`, sehingga rencana gagal. Prompt kini memuat contoh persis.
+- Jebakan 2: penampang lempeng tektonik dijadikan objek, lalu tergambar sebagai potongan kotak. Aturan perencana kini memasukkan penampang tanah, laut, dan jaringan tubuh ke latar.
+- Jebakan 3: latar menggambar gelombang gempa dan retakan menyala secara permanen, jadi setiap adegan terlihat sedang gempa. Aturan latar kini meminta keadaan tenang; efek ditambahkan animator. Aturan ini belum diuji ulang.
+- Uji nyata Gemini, storyboard `proj_1794190079962_job` (gedung tahan gempa, 5 adegan, 9:16), lewat `scripts/spike-object-draft.ts`. Run 1: 322 detik, 2 objek, blok 79 KB, skor kartu 4/5/5, setelah gambar ulang 5/5/6. Run 2 (aturan penampang): 451 detik, 1 objek, blok 56 KB, skor latar 5→6 dan gedung 6. Gambar di `storage/spike/object-draft/`. Latar penuh sampai tepi dan area judul tenang. Gedung punya damper dan isolator dasar yang sama dengan narasi, tetapi masih cukup kaku dan datar, dan lantai atas kosong putih. Biaya belum diukur karena skrip berjalan di luar konteks pencatatan pemakaian.
+- Belum diuji: generate penuh sampai MP4 dengan draf baru, dan apakah adegan menempatkan objek dengan benar hanya dari header komponen. Skor kritik hanya penyaring; keputusan kualitas tetap pada user.
+
+## Persentase progres generate (9 November 2026)
+
+- Permintaan user: pembuatan Full SVG butuh persentase supaya jelas. Sebelumnya bar hanya menghitung adegan selesai, jadi diam di 0% selama draf objek (5–8 menit) dan selama tiap adegan digambar.
+- `generationPercent` di [studio-progress.ts](../src/lib/studio-progress.ts): pada Full SVG dengan draf objek, draf mengisi 0–30% dan adegan 30–100%. Bobot tahap adegan: menunggu 0, suara 0,15, menggambar 0,45, selesai atau gagal 1. Selama pemeriksaan akhir angka ditahan di 97%. Gaya lain memakai seluruh bar untuk adegan. Angka 30% diambil dari dua uji draf (322 dan 451 detik) dibanding job Full SVG 10–18 menit, jadi masih perkiraan.
+- Draf melapor lewat `DraftProgressListener`: rencana 2%, menggambar 12–71% (naik setiap potongan selesai), menilai, memperbaiki, membandingkan, lalu menyusun 98%. Labelnya Bahasa Indonesia, misalnya "Gedung Tahan Gempa selesai digambar (2 dari 3)".
+- Job menyimpan `storySvgDraftProgress` lewat `commit`, jadi stream `events` mengirimnya seperti perubahan lain.
+- Jebakan: koreksi draf berjalan sebagai request biasa dan mengecek `updatedAt` di akhir. Progresnya disimpan tanpa mengubah `updatedAt`, supaya tidak memicu 409. Stream `events?draft=1` mengirim perubahan progres walau `updatedAt` sama, dan klien menutupnya saat request koreksi selesai.
+- Belum dicek di browser: server dev user sedang berjalan di port 3000, dan server kedua akan berbagi `.next`.
+
+## Pilihan gaya teks oleh user (9 November 2026)
+
+- Sebelumnya director sudah memilih `textStyle` (tegas, teknis, editorial, ramah: pasangan font judul dan subtitle plus ukuran dan animasi masuk), tetapi user tidak bisa melihat atau menggantinya.
+- Keputusan: AI tetap memberi saran, user yang memilih dari pasangan yang sudah disetel, bukan font bebas. Font bebas menambah waktu muat render, belum tentu lengkap untuk Bahasa Indonesia, dan bisa membuat judul keluar area aman karena ukuran judul disetel per gaya.
+- `TextStylePicker` tampil di layar draf (ikut tersimpan otomatis) dan di tab Storyboard studio. Contoh judul memakai judul adegan pertama dan ditulis dengan font aslinya. Pilihan director ditandai "Disarankan AI" lewat `textStyleSuggested`. Project lama mengisinya dari gaya sebelum perubahan pertama.
+- Di studio, `POST /api/projects/[id]/text-style` mengganti prop `textStyle` di setiap `SceneN.tsx` dan membuat ulang `MainVideo.tsx` dari adegan yang sudah diimpor. Tidak ada panggilan model dan tidak memotong kredit. Route ditolak saat generate atau revisi chat berjalan.
+- Jebakan: adegan versi sederhana dan CTA dari coder tidak menulis `textStyle`, jadi selama ini memakai Arial walau video bergaya lain. `MainVideo` kini membungkus semua adegan dengan `TextStyleProvider`, dan komponen teks memakai gaya video jika tidak punya prop sendiri.
+- Isometrik tidak mendapat pilihan ini, karena video dunianya memakai font sendiri di `PlanVideo`.
+- Belum dicek di browser dan belum dirender sampai MP4.
+
 ## Perbandingan model penggambar Full SVG (7 November 2026)
 
 Satu topik (cara sabun mengangkat minyak), 3 adegan, rasio 9:16, storyboard dan narasi sama. Penilai tetap `ag/gemini-3.8-flash-high`. Ulangi dengan `npx tsx --env-file=.env scripts/spike-model-cost.ts --from <project> --model <model>`. Data per panggilan ada di `storage/spike/`.

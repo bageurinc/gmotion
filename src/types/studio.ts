@@ -109,6 +109,13 @@ export const ColorPaletteSchema = z.object({
 });
 export type ColorPalette = z.infer<typeof ColorPaletteSchema>;
 
+export const BgmTrackSchema = z.enum([
+  'dark-tech-pulse', 'upbeat-saas', 'warm-acoustic', 'cinematic-story',
+  'calm-focus', 'playful-plucks', 'documentary-tension', 'bright-drive',
+  'soft-ambient', 'lofi-study', 'curiosity-steps', 'nature-dawn',
+  'historical-reflection', 'hopeful-finale', 'minimal-luxury', 'retro-arcade', 'none',
+]);
+
 export const StoryboardSchema = z.object({
   title: z.string(),
   preset: StoredPresetSchema,
@@ -117,8 +124,10 @@ export const StoryboardSchema = z.object({
   voice: z.string().optional(),
   /** Absent means Gemini, which every video used before ElevenLabs existed. */
   voiceProvider: z.enum(['gemini', 'elevenlabs']).optional(),
-  bgmTrack: z.enum(['dark-tech-pulse', 'upbeat-saas', 'warm-acoustic', 'cinematic-story', 'none']),
+  bgmTrack: BgmTrackSchema,
   textStyle: TextStyleSchema.optional(),
+  /** The style the director chose, kept after the user picks another so the studio can mark it. */
+  textStyleSuggested: TextStyleSchema.optional(),
   artStyle: ArtStyleSchema.optional(),
   palette: ColorPaletteSchema,
   scenes: z.array(SceneSpecSchema),
@@ -171,6 +180,8 @@ export interface StudioProject {
   sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
   storySvgDraft?: import('@/lib/explainer/story-svg-draft').StorySvgDraft;
   storySvgReviewPending?: boolean;
+  /** Set while the Full SVG object draft is drawn or corrected, so the studio can show how far it is. */
+  storySvgDraftProgress?: import('@/lib/explainer/story-svg-draft').DraftProgress;
   drawingModel?: DrawingModel;
   generationError?: string;
   /** Automatic world repairs, kept so the editor can report them. */

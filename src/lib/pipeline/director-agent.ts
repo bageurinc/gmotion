@@ -5,6 +5,7 @@ import {
   StoredPreset,
   StylePreset,
   AspectRatio,
+  BgmTrackSchema,
   DataVisualSchema,
   TextStyleSchema,
   TimelapseKind,
@@ -20,6 +21,26 @@ import {
   WORDS_PER_SECOND,
   type DurationBudget,
 } from './draft';
+
+const BGM_MOODS: Record<Storyboard['bgmTrack'], string> = {
+  'dark-tech-pulse': 'dark rhythmic bed for AI, cybersecurity, and industrial technology',
+  'upbeat-saas': 'clean, steady groove for software demos and business workflows',
+  'warm-acoustic': 'soft, warm mallet notes for food, crafts, and everyday stories',
+  'cinematic-story': 'slow, dramatic chords for narrative with stakes or a turning point',
+  'calm-focus': 'quiet, sparse accompaniment for dense or technical explanations',
+  'playful-plucks': 'bouncy plucks for humor, children, and lighthearted stories',
+  'documentary-tension': 'spaced minor-key plucks for investigations, risk, or suspense',
+  'bright-drive': 'fast, bright plucks for energetic promos, launches, or sport',
+  'soft-ambient': 'slow, sparse plucks for quiet reflection, meditation, or sensitive subjects',
+  'lofi-study': 'laid-back groove with jazzy chords for study routines or relaxed tutorials',
+  'curiosity-steps': 'spaced, questioning notes for a discovery, experiment, or surprising mechanism',
+  'nature-dawn': 'gentle, open chords for wildlife, landscapes, or the environment',
+  'historical-reflection': 'restrained minor chords for history and reflective retrospectives',
+  'hopeful-finale': 'rising major progression for recovery, progress, or personal achievement',
+  'minimal-luxury': 'sparse, polished rhythm for design, premium products, or interiors',
+  'retro-arcade': 'quick, bright repeating notes for games, retro computing, or internet culture',
+  none: 'silence when the user asks for it or when music would be inappropriate',
+};
 
 const DIRECTOR_SYSTEM_PROMPT = `
 You are a Creative Video Director and subject-matter researcher for short-form motion graphics, educational content, storytelling, and advertisements. Match the user's purpose; do not turn ordinary content into a sales pitch.
@@ -49,13 +70,17 @@ CRITICAL RULES:
 ${VISUAL_ANTI_SLOP_RULES}
 ${COPY_ANTI_SLOP_RULES}
 
+BACKGROUND MUSIC:
+Choose one bgmTrack for the whole video. Honor the user's music preference and match the tone and pace of the narration. For dense narration favor sparse accompaniment. Use the closest fit from the full catalog:
+${BgmTrackSchema.options.map((track) => `- ${track}: ${BGM_MOODS[track]}`).join('\n')}
+
 3. FORMAT REQUIREMENT:
    Output ONLY valid JSON matching this schema:
    {
      "title": "Judul Video",
      "aspectRatio": "9:16",
      "fps": 30,
-     "bgmTrack": "one of warm-acoustic, upbeat-saas, dark-tech-pulse, cinematic-story, none; choose the mood that suits this topic",
+     "bgmTrack": "one track ID from BACKGROUND MUSIC above",
      "look": "dark or bright, whichever suits this topic",
      "textStyle": "one of tegas, teknis, editorial, ramah; see TEXT AND DATA",
      "palette": {
@@ -116,10 +141,9 @@ function parseStoryboardRaw(
           preset,
           aspectRatio: (obj.aspectRatio as AspectRatio) || aspectRatio,
           fps: obj.fps || 30,
-          bgmTrack: ['warm-acoustic', 'upbeat-saas', 'dark-tech-pulse', 'cinematic-story', 'none'].includes(obj.bgmTrack)
-            ? obj.bgmTrack
-            : isAdsPreset(preset) ? 'upbeat-saas' : 'warm-acoustic',
+          bgmTrack: BgmTrackSchema.safeParse(obj.bgmTrack).data ?? (isAdsPreset(preset) ? 'upbeat-saas' : 'warm-acoustic'),
           textStyle: TextStyleSchema.safeParse(obj.textStyle).data,
+          textStyleSuggested: TextStyleSchema.safeParse(obj.textStyle).data,
           palette: normalizePalette({
             background: String(obj.palette?.background ?? ''),
             surface: String(obj.palette?.surface ?? ''),

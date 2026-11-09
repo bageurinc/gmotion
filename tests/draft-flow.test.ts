@@ -189,18 +189,30 @@ describe('draft review flow', () => {
     const project = await createDraft('story-svg');
     vi.stubEnv('OPENAI_API_KEY', 'test-key');
     vi.stubEnv('OPENAI_BASE_URL', 'https://drawing.example/v1');
-    const draftResponse = (fill: string) => {
-      const sharedWorld = [
-        '// SHARED-WORLD:START',
-        'function WorldBase() { return <g />; }',
-        `function CoffeeBean() { return <circle r={40} fill="${fill}" />; }`,
-        '// SHARED-WORLD:END',
-      ].join('\n');
-      const sceneObjects = project.storyboard.scenes.map((scene) => scene.role === 'cta' ? [] : ['CoffeeBean']);
-      const content = JSON.stringify({ sharedWorld, sceneObjects });
-      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
-    };
-    vi.mocked(fetch).mockResolvedValueOnce(draftResponse('brown')).mockResolvedValueOnce(draftResponse('red'));
+    const stream = (content: string) => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+    const sceneObjects = project.storyboard.scenes.map((scene) => scene.role === 'cta' ? [] : ['CoffeeBean']);
+    const plan = (fill: string) => ({
+      world: { label: 'Dapur', description: 'A warm kitchen', groundY: 700 },
+      objects: [{ name: 'CoffeeBean', label: 'Biji kopi', description: `A ${fill} coffee bean`, width: 300, height: 200, props: [], closeups: [] }],
+      sceneObjects,
+    });
+    const world = '```tsx\n/** WorldBase */\nfunction WorldBase() { return <g><rect x={-1000} y={-1000} width={3000} height={3000} fill="#eeddcc" /></g>; }\n```';
+    const bean = (fill: string) => `\`\`\`tsx\n/** CoffeeBean 300x200 */\nfunction CoffeeBean() { return <g><ellipse cy={-100} rx={150} ry={100} fill="${fill}" /></g>; }\n\`\`\``;
+    let fill = 'brown';
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String((init as RequestInit).body));
+      const system: string = body.messages[0].content;
+      if (system.includes('strict art director')) {
+        return stream(JSON.stringify({ imageVisible: true, items: [{ name: 'WorldBase', score: 8, issues: [] }, { name: 'CoffeeBean', score: 8, issues: [] }] }));
+      }
+      if (system.includes('Revise this existing plan')) {
+        fill = 'red';
+        return stream(JSON.stringify({ plan: plan('red'), redraw: ['CoffeeBean'] }));
+      }
+      if (system.startsWith('You are the art director')) return stream(JSON.stringify(plan(fill)));
+      if (system.includes('fixed setting')) return stream(world);
+      return stream(bean(fill));
+    });
 
     expect((await generateProject(request(), context(project.id))).status).toBe(202);
     const pending = await vi.waitFor(() => {
@@ -210,7 +222,10 @@ describe('draft review flow', () => {
     });
     expect(pending.status).toBe('idle');
     expect(pending.files).toEqual({});
-    expect(fetch).toHaveBeenCalledTimes(1);
+    // Plan, setting, one object, and one review.
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(pending.storySvgDraft?.plan?.objects[0].label).toBe('Biji kopi');
+    expect(pending.storySvgDraftProgress).toBeUndefined();
     expect((await generateProject(request(), context(project.id))).status).toBe(409);
     expect((await projectRender(request(), context(project.id))).status).toBe(409);
 

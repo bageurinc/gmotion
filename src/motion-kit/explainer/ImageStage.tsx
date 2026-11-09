@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTextStyle } from '../core/TextStyleContext';
 import { Img, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { SceneBackground, SceneLayout } from '../core/SafeOverlay';
 import { TEXT_STYLES } from '../core/text-style';
@@ -27,7 +28,8 @@ export const ImageStage: React.FC<React.PropsWithChildren<{
   labelText?: string;
   /** Pixel art pictures scale with hard edges, so camera zooms keep square pixels. */
   pixelated?: boolean;
-}>> = ({ images, shots, backgroundColor, accent, textStyle, labelBackground = LABEL_BACKGROUND, labelText = LABEL_TEXT, pixelated = false, children }) => {
+}>> = ({ images, shots, backgroundColor, accent, textStyle: ownStyle, labelBackground = LABEL_BACKGROUND, labelText = LABEL_TEXT, pixelated = false, children }) => {
+  const textStyle = useTextStyle(ownStyle);
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const camera = imageCameraAt(frame, shots, fps);

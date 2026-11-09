@@ -6,8 +6,10 @@ export interface MusicRecipe {
   bpm: number;
   chords: number[][];
   pluckPattern: number[];
+  pluckStyle?: 'dry-mallet';
   pulse: boolean;
-  brightness: number;
+  /** Omit to skip the sustained pad. */
+  brightness?: number;
 }
 
 const midiToHz = (note: number) => 440 * 2 ** ((note - 69) / 12);
@@ -58,6 +60,19 @@ function addPluck(left: Float32Array, right: Float32Array, note: number, from: n
   }
 }
 
+function addDryMallet(left: Float32Array, right: Float32Array, note: number, from: number, pan: number) {
+  const length = Math.min(Math.round(SAMPLE_RATE * 0.22), left.length - from);
+  const phaseStep = TWO_PI * midiToHz(note) / SAMPLE_RATE;
+  for (let index = 0; index < length; index += 1) {
+    const time = index / SAMPLE_RATE;
+    const envelope = Math.min(1, time / 0.008, (length - index) / (SAMPLE_RATE * 0.025)) * Math.exp(-time * 25);
+    const phase = index * phaseStep;
+    const value = (Math.sin(phase) + Math.sin(phase * 2) * 0.16) * envelope;
+    left[from + index] += value * (1 - pan);
+    right[from + index] += value * pan;
+  }
+}
+
 function addPulse(left: Float32Array, right: Float32Array, from: number) {
   const length = Math.round(SAMPLE_RATE * 0.22);
   for (let index = 0; index < length; index += 1) {
@@ -88,20 +103,27 @@ export function synthMusic(recipe: MusicRecipe): Float32Array[] {
   const right = new Float32Array(barSamples * bars);
   const noise = createNoise();
   const stepSamples = Math.round((beat / 2) * SAMPLE_RATE);
+  const dryMallet = recipe.pluckStyle === 'dry-mallet';
 
   for (let bar = 0; bar < bars; bar += 1) {
     const chord = recipe.chords[bar % recipe.chords.length];
     const from = bar * barSamples;
-    addPad(left, right, chord, from, barSamples, recipe.brightness);
+    if (recipe.brightness !== undefined) addPad(left, right, chord, from, barSamples, recipe.brightness);
     recipe.pluckPattern.forEach((degree, step) => {
       if (degree < 0) return;
-      addPluck(left, right, chord[degree % chord.length] + 12, from + step * stepSamples, step % 2 ? 0.65 : 0.35, noise);
+      const note = chord[degree % chord.length] + 12;
+      const position = from + step * stepSamples;
+      const pan = step % 2 ? 0.65 : 0.35;
+      if (dryMallet) addDryMallet(left, right, note, position, pan);
+      else addPluck(left, right, note, position, pan, noise);
     });
     if (recipe.pulse) for (let hit = 0; hit < 4; hit += 1) addPulse(left, right, from + Math.round(hit * beat * SAMPLE_RATE));
   }
 
-  addEcho(left, beat * 0.75, 0.28);
-  addEcho(right, beat, 0.26);
+  if (!dryMallet) {
+    addEcho(left, beat * 0.75, 0.28);
+    addEcho(right, beat, 0.26);
+  }
   normalize([left, right], 0.7);
   return [left, right];
 }

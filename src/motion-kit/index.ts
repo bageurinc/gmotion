@@ -4,6 +4,7 @@ export * from './core/CameraRig';
 export * from './core/KineticHeadline';
 export * from './core/DataCard';
 export * from './core/SyncedCaptions';
+export { TextStyleProvider } from './core/TextStyleContext';
 export * from './core/VideoTimeline';
 export { SceneLayout, SceneStage, SceneBackground } from './core/SafeOverlay';
 export * from './ads/PhoneMockup';

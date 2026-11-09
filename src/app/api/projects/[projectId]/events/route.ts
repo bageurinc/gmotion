@@ -13,9 +13,13 @@ export async function GET(
   const access = await requireProject(projectId);
   if ('response' in access) return access.response;
 
+  // ?draft=1 watches a draft correction, which runs while the project is not generating.
+  // The client closes that stream when its correction request returns.
+  const watchDraft = req.nextUrl.searchParams.get('draft') === '1';
   const encoder = new TextEncoder();
   let timer: ReturnType<typeof setInterval> | undefined;
   let lastUpdate = 0;
+  let lastProgress = '';
 
   const stream = new ReadableStream({
     start(controller) {
@@ -33,9 +37,14 @@ export async function GET(
         if (!project) return close();
 
         const interrupted = project.status === 'generating' && !isGenerationActive(projectId);
-        const finished = project.status !== 'generating';
-        if (project.updatedAt !== lastUpdate || interrupted) {
+        // A draft correction runs outside the job and saves progress without a new updatedAt.
+        const finished = watchDraft
+          ? !project.storySvgReviewPending
+          : project.status !== 'generating';
+        const progress = JSON.stringify(project.storySvgDraftProgress ?? null);
+        if (project.updatedAt !== lastUpdate || progress !== lastProgress || interrupted) {
           lastUpdate = project.updatedAt;
+          lastProgress = progress;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ project, interrupted })}\n\n`));
         } else {
           controller.enqueue(encoder.encode(': keep-alive\n\n'));

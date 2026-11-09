@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTextStyle } from './TextStyleContext';
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { DataVisual, TextStyleId } from '@/types/studio';
 import { SafeOverlay } from './SafeOverlay';
@@ -24,7 +25,8 @@ export const DataCard: React.FC<{
   textColor: string;
   accent: string;
   textStyle?: TextStyleId;
-}> = ({ visual, from, background, textColor, accent, textStyle = 'teknis' }) => {
+}> = ({ visual, from, background, textColor, accent, textStyle: ownStyle }) => {
+  const textStyle = useTextStyle(ownStyle) ?? 'teknis';
   const frame = useCurrentFrame() - from;
   const { fps, width } = useVideoConfig();
   const look = TEXT_STYLES[textStyle];

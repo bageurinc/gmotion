@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTextStyle } from '../core/TextStyleContext';
 import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { getLength, getPointAtLength } from '@remotion/paths';
 import { SceneBackground, SceneLayout, useSafeInsets } from '../core/SafeOverlay';
@@ -179,7 +180,8 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
   textStyle?: TextStyleId;
   /** Camera path in the shared world for a Full SVG scene. Without it the scene stays wide. */
   camera?: ScenePath;
-}>> = ({ manifest, Asset, shots: providedShots, actionCues = [], fullBleed = false, textStyle, camera: path, children }) => {
+}>> = ({ manifest, Asset, shots: providedShots, actionCues = [], fullBleed = false, textStyle: ownStyle, camera: path, children }) => {
+  const textStyle = useTextStyle(ownStyle);
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const insets = useSafeInsets();

@@ -25,6 +25,7 @@ const ok = (value = text) => new Response(JSON.stringify({ audio_base64: speech.
 beforeEach(() => {
   vi.stubEnv('ELEVENLABS_API_KEY', 'test-key');
   vi.stubEnv('ELEVENLABS_VOICE_ID', VOICE);
+  vi.stubEnv('ELEVENLABS_MODEL', '');
   vi.stubEnv('ELEVENLABS_RETRY_DELAY_MS', '1');
 });
 afterEach(() => {
@@ -55,10 +56,10 @@ describe('ElevenLabs speech', () => {
     expect(result.wordTimings).toHaveLength(6);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain(`/v1/text-to-speech/${VOICE}/with-timestamps`);
-    expect(JSON.parse(String(init.body))).toMatchObject({ text, model_id: 'eleven_multilingual_v2', language_code: 'id' });
+    expect(JSON.parse(String(init.body))).toMatchObject({ text, model_id: 'eleven_v4', language_code: 'id' });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(await getDb().first('SELECT model, characters FROM ai_usage WHERE model = ? ORDER BY created_at DESC', ['elevenlabs/eleven_multilingual_v2']))
-      .toEqual({ model: 'elevenlabs/eleven_multilingual_v2', characters: text.length });
+    expect(await getDb().first('SELECT model, characters FROM ai_usage WHERE model = ? ORDER BY created_at DESC', ['elevenlabs/eleven_v4']))
+      .toEqual({ model: 'elevenlabs/eleven_v4', characters: text.length });
   });
 
   it('explains a key without speech permission and does not retry it', async () => {

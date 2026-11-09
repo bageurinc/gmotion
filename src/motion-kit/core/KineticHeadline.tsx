@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTextStyle } from './TextStyleContext';
 import { contrastRatio } from '../../lib/pipeline/anti-slop';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
 import type { TextStyleId } from '@/types/studio';
@@ -35,8 +36,9 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
   align = 'center',
   className = '',
   style,
-  textStyle,
+  textStyle: ownStyle,
 }) => {
+  const textStyle = useTextStyle(ownStyle);
   const look = textStyle ? TEXT_STYLES[textStyle] : null;
   const hasDarkText = /^#[0-9a-fA-F]{6}$/.test(textColor) && contrastRatio(textColor, '#000000') < 7;
   const frame = useCurrentFrame();

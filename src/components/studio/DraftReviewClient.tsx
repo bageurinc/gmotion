@@ -10,7 +10,8 @@ import {
   MAX_DRAFT_SCENES,
 } from '@/lib/pipeline/draft';
 import { DEFAULT_VOICE, VOICE_OPTIONS } from '@/lib/pipeline/voices';
-import { SceneSpec, StudioProject } from '@/types/studio';
+import { SceneSpec, StudioProject, TextStyleId, usesWorldEngine } from '@/types/studio';
+import { TextStylePicker } from './TextStylePicker';
 
 interface ElevenLabsInfo {
   available: boolean;
@@ -68,6 +69,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
   const [scenes, setScenes] = useState(initialProject.storyboard.scenes);
   const [voice, setVoice] = useState(initialProject.storyboard.voice ?? DEFAULT_VOICE);
   const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'elevenlabs'>(initialProject.storyboard.voiceProvider ?? 'gemini');
+  const [textStyle, setTextStyle] = useState<TextStyleId | undefined>(initialProject.storyboard.textStyle);
   const [geminiVoice, setGeminiVoice] = useState(
     initialProject.storyboard.voiceProvider === 'elevenlabs' ? DEFAULT_VOICE : initialProject.storyboard.voice ?? DEFAULT_VOICE
   );
@@ -84,12 +86,12 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
   const hasEdited = useRef(false);
   // Server answers replace the draft without counting as a manual edit.
   const skipNextSave = useRef(false);
-  const contentRef = useRef({ title, scenes, voice, voiceProvider });
-  contentRef.current = { title, scenes, voice, voiceProvider };
+  const contentRef = useRef({ title, scenes, voice, voiceProvider, textStyle });
+  contentRef.current = { title, scenes, voice, voiceProvider, textStyle };
 
   const persist = useCallback(async () => {
     setSaveState('saving');
-    const { title: currentTitle, scenes: currentScenes, voice: currentVoice, voiceProvider: currentProvider } = contentRef.current;
+    const { title: currentTitle, scenes: currentScenes, voice: currentVoice, voiceProvider: currentProvider, textStyle: currentStyle } = contentRef.current;
     try {
       const res = await fetch(`/api/projects/${initialProject.id}/storyboard`, {
         method: 'PATCH',
@@ -98,6 +100,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
           title: currentTitle,
           voice: currentVoice,
           voiceProvider: currentProvider,
+          textStyle: currentStyle,
           scenes: currentScenes.map(({ id, title: sceneTitle, voiceoverText, kineticHeadline, visualPrompt }) => ({
             id,
             title: sceneTitle,
@@ -112,7 +115,8 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
         contentRef.current.scenes === currentScenes &&
         contentRef.current.title === currentTitle &&
         contentRef.current.voice === currentVoice &&
-        contentRef.current.voiceProvider === currentProvider
+        contentRef.current.voiceProvider === currentProvider &&
+        contentRef.current.textStyle === currentStyle
       ) {
         setSaveState('saved');
       }
@@ -132,7 +136,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     setSaveState('pending');
     const timer = setTimeout(persist, 700);
     return () => clearTimeout(timer);
-  }, [title, scenes, voice, voiceProvider, isGenerating, persist]);
+  }, [title, scenes, voice, voiceProvider, textStyle, isGenerating, persist]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +178,7 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
     skipNextSave.current = true;
     setTitle(next.storyboard.title);
     setScenes(next.storyboard.scenes);
+    setTextStyle(next.storyboard.textStyle);
     setRemoved(null);
   };
 
@@ -396,6 +401,18 @@ export const DraftReviewClient: React.FC<{ initialProject: StudioProject }> = ({
               )}
             </div>
           </fieldset>
+          {!usesWorldEngine(project.storyboard.preset) && (
+            <fieldset className="mt-4">
+              <legend className="mb-1.5 block text-sm font-semibold text-slate-200">Gaya teks judul dan subtitle</legend>
+              <TextStylePicker
+                value={textStyle}
+                suggested={project.storyboard.textStyleSuggested ?? project.storyboard.textStyle}
+                sample={scenes[0]?.kineticHeadline ?? title}
+                disabled={isGenerating || isRevising}
+                onChange={(style) => edit(() => setTextStyle(style))}
+              />
+            </fieldset>
+          )}
         </div>
 
         <section aria-labelledby="draft-ai-heading" className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-4">

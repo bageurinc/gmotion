@@ -5,9 +5,10 @@ import { SharePanel } from './SharePanel';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
-import { ART_STYLE_LABELS, DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, usesWorldEngine } from '@/types/studio';
+import { ART_STYLE_LABELS, DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, TextStyleId, usesWorldEngine } from '@/types/studio';
+import { TextStylePicker } from './TextStylePicker';
 import { readExportStream } from '@/lib/render/export-stream';
-import { GenerationProgress } from './GenerationProgress';
+import { DraftProgressBar, GenerationProgress } from './GenerationProgress';
 
 const StorySvgDraftPreview = dynamic(
   () => import('./StorySvgDraftPreview').then((mod) => mod.StorySvgDraftPreview),
@@ -28,7 +29,6 @@ const RemotionPreviewPlayer = dynamic(
 import {
   MessageSquare,
   Film,
-  Code2,
   Download,
   Share2,
   ArrowLeft,
@@ -51,11 +51,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
   const [objectCorrection, setObjectCorrection] = useState('');
   const [objectDraftAction, setObjectDraftAction] = useState<'revise' | 'approve' | null>(null);
   const [objectDraftError, setObjectDraftError] = useState('');
-  const [activeTab, setActiveTab] = useState<'chat' | 'storyboard' | 'code'>('chat');
-  const [selectedFile, setSelectedFile] = useState<string>('Scene1.tsx');
-  const [editingCode, setEditingCode] = useState<string>(
-    initialProject.files['Scene1.tsx'] || ''
-  );
+  const [activeTab, setActiveTab] = useState<'chat' | 'storyboard'>('chat');
   const [chatInput, setChatInput] = useState('');
   const [targetSceneId, setTargetSceneId] = useState<string>('all');
   const [isRevising, setIsRevising] = useState(false);
@@ -108,22 +104,23 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
     objectDraftStatus = 'Periksa objek di bawah. Kamu bisa memberi koreksi. Animasi baru dimulai setelah kamu menyetujui draf ini.';
   }
 
+  // A draft correction is a plain request, so its progress is watched until that request returns.
+  const watchingDraft = objectDraftAction === 'revise';
   useEffect(() => {
-    if (!isGenerating || interrupted) return;
-    const source = new EventSource(`/api/projects/${project.id}/events`);
+    if ((!isGenerating && !watchingDraft) || interrupted) return;
+    const source = new EventSource(`/api/projects/${project.id}/events${watchingDraft ? '?draft=1' : ''}`);
     source.onmessage = (event) => {
       const data = JSON.parse(event.data) as { project: StudioProject; interrupted: boolean };
+      if (watchingDraft) {
+        setProject((current) => ({ ...current, storySvgDraftProgress: data.project.storySvgDraftProgress }));
+        return;
+      }
       setProject(data.project);
       setInterrupted(data.interrupted);
       if (data.interrupted || data.project.status !== 'generating') source.close();
     };
     return () => source.close();
-  }, [project.id, isGenerating, interrupted]);
-
-  useEffect(() => {
-    const code = project.files[selectedFile];
-    if (code && !editingCode) setEditingCode(code);
-  }, [project.files, selectedFile, editingCode]);
+  }, [project.id, isGenerating, interrupted, watchingDraft]);
 
   const handleRetryGeneration = async () => {
     setIsRetrying(true);
@@ -134,6 +131,29 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       setProject(data.project);
     }
     setIsRetrying(false);
+  };
+
+  const [savingTextStyle, setSavingTextStyle] = useState(false);
+  const [textStyleError, setTextStyleError] = useState('');
+  const handleTextStyle = async (textStyle: TextStyleId) => {
+    if (savingTextStyle || textStyle === project.storyboard.textStyle) return;
+    setSavingTextStyle(true);
+    setTextStyleError('');
+    try {
+      const response = await fetch(`/api/projects/${project.id}/text-style`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ textStyle }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Gaya teks gagal diganti.');
+      setProject(data.project);
+      setExportUrl(null);
+    } catch (error) {
+      setTextStyleError(error instanceof Error ? error.message : 'Gaya teks gagal diganti.');
+    } finally {
+      setSavingTextStyle(false);
+    }
   };
 
   const handleObjectDraft = async (action: 'revise' | 'approve') => {
@@ -148,7 +168,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Draf objek gagal diproses.');
-      setProject(data.project);
+      setProject({ ...data.project, storySvgDraftProgress: undefined });
       setObjectCorrection('');
       setInterrupted(false);
     } catch (error) {
@@ -211,9 +231,6 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
         return;
       }
       setProject(data.project);
-      if (selectedFile && data.project.files[selectedFile]) {
-        setEditingCode(data.project.files[selectedFile]);
-      }
     } catch (err) {
       console.error('Revision failed:', err);
       setChatInput(textToSend);
@@ -222,22 +239,6 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       setPendingMessage(null);
       setIsRevising(false);
     }
-  };
-
-  // Handle manual code save
-  const handleSaveCode = async () => {
-    setActionError('');
-    const res = await fetch(`/api/projects/${project.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: { [selectedFile]: editingCode } }),
-    }).catch(() => null);
-    const data = await res?.json().catch(() => null);
-    if (!res?.ok || !data?.project) {
-      setActionError(data?.error || 'Kode gagal disimpan. Periksa koneksi lalu coba lagi.');
-      return;
-    }
-    setProject(data.project);
   };
 
   // Handle export MP4
@@ -380,18 +381,6 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
               <Film className="w-3.5 h-3.5 text-slate-300" />
               <span>Storyboard ({project.storyboard.scenes.length})</span>
             </button>
-            <button
-              aria-pressed={activeTab === 'code'}
-              onClick={() => setActiveTab('code')}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition ${
-                activeTab === 'code'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5 text-slate-300" />
-              <span>Kode</span>
-            </button>
           </div>
 
           {/* Tab Content 1: AI Chat Revision */}
@@ -521,6 +510,20 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
           {/* Tab Content 2: Storyboard & Narasi */}
           {activeTab === 'storyboard' && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {!usesWorldEngine(project.storyboard.preset) && (
+                <section aria-labelledby="text-style-heading" className="space-y-2">
+                  <h2 id="text-style-heading" className="text-sm font-semibold text-slate-100">Gaya teks judul dan subtitle</h2>
+                  <p className="text-xs text-slate-400">Berlaku untuk semua adegan. Gratis, tanpa menggambar ulang.</p>
+                  <TextStylePicker
+                    value={project.storyboard.textStyle}
+                    suggested={project.storyboard.textStyleSuggested ?? project.storyboard.textStyle}
+                    sample={project.storyboard.scenes[0]?.kineticHeadline ?? project.storyboard.title}
+                    disabled={isBusy || savingTextStyle}
+                    onChange={(style) => void handleTextStyle(style)}
+                  />
+                  {textStyleError && <p role="alert" className="text-xs text-red-300">{textStyleError}</p>}
+                </section>
+              )}
               {project.storyboard.scenes.map((scene, idx) => (
                 <div
                   key={scene.id}
@@ -570,55 +573,6 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
             </div>
           )}
 
-          {/* Tab Content 3: TSX Code Editor */}
-          {activeTab === 'code' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* File Selector */}
-              <div className="flex border-b border-slate-800 bg-slate-900 overflow-x-auto p-1 gap-1 shrink-0">
-                {Object.keys(project.files).map((fileName) => (
-                  <button
-                    key={fileName}
-                    onClick={() => {
-                      setSelectedFile(fileName);
-                      setEditingCode(project.files[fileName] || '');
-                    }}
-                    className={`px-3 py-1.5 rounded text-xs font-mono whitespace-nowrap transition ${
-                      selectedFile === fileName
-                        ? 'bg-slate-800 text-emerald-400 font-bold border border-slate-700'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {fileName}
-                  </button>
-                ))}
-              </div>
-
-              {/* Code TextArea */}
-              <div className="flex-1 relative">
-                <textarea
-                  aria-label={`Kode ${selectedFile}`}
-                  value={editingCode}
-                  onChange={(e) => setEditingCode(e.target.value)}
-                  className="w-full h-full bg-slate-950 text-slate-200 font-mono text-xs p-4 focus:outline-none resize-none leading-relaxed"
-                  spellCheck={false}
-                />
-              </div>
-
-              {/* Code Action Footer */}
-              <div className="p-3 border-t border-slate-800 bg-slate-900 flex items-center justify-between shrink-0">
-                <span className="text-[11px] text-slate-400">
-                  Editing: <span className="font-mono text-white">{selectedFile}</span>
-                </span>
-                <button
-                  onClick={handleSaveCode}
-                  disabled={isBusy}
-                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Terapkan Kode
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Right Panel: Interactive Remotion Canvas & Studio Timeline */}
@@ -632,7 +586,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
           <div className="flex-1 w-full min-h-0 flex flex-col items-center justify-center overflow-hidden">
             {(showObjectDraft || previewScenes.length === 0) && project.storySvgDraft ? (
               <StorySvgDraftPreview draft={project.storySvgDraft} background={project.storyboard.palette.surface}
-                status={objectDraftStatus}>
+                aspectRatio={project.storyboard.aspectRatio} status={objectDraftStatus}>
                 {project.storySvgReviewPending && (
                   <form className="mt-5 space-y-3 border-t border-slate-700 pt-4"
                     onSubmit={(event) => { event.preventDefault(); void handleObjectDraft('revise'); }}>
@@ -642,6 +596,10 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                       placeholder="Contoh: buat canting lebih ramping dan pertahankan motif kain."
                       className="w-full rounded-md border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100" />
                     {objectDraftError && <p role="alert" className="text-sm text-red-300">{objectDraftError}</p>}
+                    {watchingDraft && (
+                      <DraftProgressBar progress={project.storySvgDraftProgress}
+                        note="Hanya gambar yang terkena koreksi yang digambar ulang." />
+                    )}
                     <div className="flex flex-wrap gap-2">
                       <button type="submit" disabled={Boolean(objectDraftAction) || objectCorrection.trim().length < 3}
                         className="rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50">
@@ -656,6 +614,12 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                   </form>
                 )}
               </StorySvgDraftPreview>
+            ) : previewScenes.length === 0 && waitingForObjects && !interrupted ? (
+              <div className="flex flex-col items-center gap-3 p-4 text-center">
+                <p className="max-w-xs text-sm text-slate-300">{previewStatus}</p>
+                <DraftProgressBar progress={project.storySvgDraftProgress}
+                  note="Biasanya 5–8 menit. Halaman ini boleh ditutup, prosesnya tetap berjalan." />
+              </div>
             ) : previewScenes.length === 0 ? (
               <p role="status" className="max-w-xs text-center text-sm text-slate-300">
                 {previewStatus}

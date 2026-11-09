@@ -24,8 +24,7 @@ export function isElevenLabsConfigured(): boolean {
   return Boolean(process.env.ELEVENLABS_API_KEY?.trim() && isElevenLabsVoiceId(process.env.ELEVENLABS_VOICE_ID?.trim() ?? ''));
 }
 
-/** Multilingual v2 reads Bahasa Indonesia most naturally; ELEVENLABS_MODEL can pick a cheaper one. */
-export const elevenLabsModel = () => process.env.ELEVENLABS_MODEL?.trim() || 'eleven_multilingual_v2';
+export const elevenLabsModel = () => process.env.ELEVENLABS_MODEL?.trim() || 'eleven_v4';
 
 export const defaultElevenLabsVoice = () => process.env.ELEVENLABS_VOICE_ID?.trim() ?? '';
 

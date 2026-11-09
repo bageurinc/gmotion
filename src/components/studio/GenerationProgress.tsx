@@ -3,6 +3,8 @@
 import React from 'react';
 import { AlertCircle, Check, Circle, RefreshCw } from 'lucide-react';
 import { SceneStage, StudioProject } from '@/types/studio';
+import { generationPercent } from '@/lib/studio-progress';
+import type { DraftProgress } from '@/lib/explainer/story-svg-draft';
 
 const STAGE_LABELS: Record<SceneStage, string> = {
   queued: 'Menunggu',
@@ -19,6 +21,24 @@ const StageIcon: React.FC<{ stage: SceneStage }> = ({ stage }) => {
   return <RefreshCw className="h-4 w-4 text-cyan-300 motion-safe:animate-spin" />;
 };
 
+/** Bar and step for the Full SVG object draft, shown where the draft will appear. */
+export const DraftProgressBar: React.FC<{ progress?: DraftProgress; note?: string }> = ({ progress, note }) => {
+  const percent = Math.round(progress?.percent ?? 0);
+  return (
+    <div className="w-full max-w-xs">
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span className="min-w-0 truncate text-slate-100" aria-live="polite">{progress?.label ?? 'Menyiapkan…'}</span>
+        <span className="shrink-0 font-semibold tabular-nums text-white">{percent}%</span>
+      </div>
+      <div role="progressbar" aria-label="Progres draf objek" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+        <div className="h-full bg-cyan-400 transition-[width] duration-500" style={{ width: `${percent}%` }} />
+      </div>
+      {note && <p className="mt-2 text-xs text-slate-400">{note}</p>}
+    </div>
+  );
+};
+
 export const GenerationProgress: React.FC<{
   project: StudioProject;
   interrupted: boolean;
@@ -30,16 +50,18 @@ export const GenerationProgress: React.FC<{
   const readyCount = scenes.filter((scene) => stageOf(scene.id) === 'ready').length;
   const hasFailure = scenes.some((scene) => stageOf(scene.id) === 'failed');
   const canRetry = interrupted || (project.status !== 'generating' && hasFailure);
-  const percent = scenes.length ? Math.round((readyCount / scenes.length) * 100) : 0;
+  const percent = generationPercent(project);
+  const draftStep = project.status === 'generating' && !project.storySvgDraft ? project.storySvgDraftProgress : undefined;
+  let heading = `${readyCount} dari ${scenes.length} adegan selesai`;
+  if (project.storySvgReviewPending) heading = 'Menunggu persetujuan draf objek';
+  else if (project.checkingScenes) heading = 'Memeriksa semua adegan…';
+  else if (draftStep) heading = `Draf objek: ${draftStep.label}`;
 
   return (
     <section aria-label="Progres pembuatan video" className="border-b border-slate-800 bg-slate-900 p-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-bold text-white" aria-live="polite">
-          {project.storySvgReviewPending
-            ? 'Menunggu persetujuan draf objek'
-            : project.checkingScenes ? 'Memeriksa semua adegan…' : `${readyCount} dari ${scenes.length} adegan selesai`}
-        </h2>
+        <h2 className="min-w-0 truncate text-sm font-bold text-white" aria-live="polite">{heading}</h2>
+        <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-white">{percent}%</span>
         {canRetry && (
           <button
             type="button"
@@ -53,13 +75,13 @@ export const GenerationProgress: React.FC<{
       </div>
       <div
         role="progressbar"
-        aria-label="Adegan selesai"
+        aria-label="Progres pembuatan video"
         aria-valuemin={0}
-        aria-valuemax={scenes.length}
-        aria-valuenow={readyCount}
+        aria-valuemax={100}
+        aria-valuenow={percent}
         className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"
       >
-        <div className="h-full bg-emerald-400 transition-[width] duration-200" style={{ width: `${percent}%` }} />
+        <div className="h-full bg-emerald-400 transition-[width] duration-500" style={{ width: `${percent}%` }} />
       </div>
       {interrupted && <p className="mt-2 text-sm text-amber-300">Proses terhenti. Adegan yang sudah selesai tetap aman.</p>}
       <ol

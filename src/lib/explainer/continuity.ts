@@ -2,6 +2,7 @@ import type { StudioProject } from '@/types/studio';
 import type { GeneratedAsset } from './asset-generator';
 import type { AssetFocus } from './asset-contract';
 import type { StorySvgDraft } from './story-svg-draft';
+import { draftApi } from './story-svg-shared';
 
 const START = '// SHARED-WORLD:START';
 const END = '// SHARED-WORLD:END';
@@ -10,6 +11,8 @@ const BLOCK = /\/\/ SHARED-WORLD:START[\s\S]*?\/\/ SHARED-WORLD:END/;
 export interface SceneContinuity {
   /** The draft's shared block, or the first drawn scene's block on older projects. */
   sharedWorld?: string;
+  /** Component headers of a per-object draft, sent to the model instead of the full block. */
+  sharedWorldApi?: string;
   requiredObjects?: string[];
   /** The nearest earlier scene, whose final pose this scene continues from. */
   previous?: GeneratedAsset;
@@ -32,6 +35,7 @@ export function continuityFor(
   return {
     sharedWorld: draft?.sharedWorld ?? (owner && extractSharedWorld(owner.code)),
     ...(draft ? { requiredObjects: draft.sceneObjects[index] } : {}),
+    ...(draft && draftApi(draft) ? { sharedWorldApi: draftApi(draft) } : {}),
     previous,
     adjacent: Boolean(previous) && previous === assets[index - 1],
   };
@@ -103,15 +107,15 @@ const CAMERA_RULES = `CAMERA (the stage moves it, your code never does):
 - The camera's window is 1000/S units wide around focus. The explained part and its full motion fill most of that window and stay inside it. The headline covers the top tenth of the window.`;
 
 /** Prompt section that makes one scene continue the sequence instead of starting a new drawing. */
-export function continuityPrompt({ sharedWorld, requiredObjects, previous, adjacent }: SceneContinuity): string {
+export function continuityPrompt({ sharedWorld, sharedWorldApi, requiredObjects, previous, adjacent }: SceneContinuity): string {
   const rules = sharedWorld
     ? `SHARED WORLD (${requiredObjects ? 'fixed by the object draft' : 'already fixed by the first scene'}):
-- Put the two SHARED-WORLD marker lines directly after the imports, with nothing between them. The renderer inserts the exact block below.
+- Put the two SHARED-WORLD marker lines directly after the imports, with nothing between them. The renderer inserts the exact block ${sharedWorldApi ? 'whose components are listed below (headers and signatures only; their art is finished)' : 'below'}.
 - Render <WorldBase /> with no props in every frame, and draw recurring objects only through the components in this block.
 - Do not draw a second ground, surface, panel, or background. Keep the same scale, so objects stay the same size as in the block.
-${requiredObjects?.length ? `- Render each of these drafted objects directly in JSX: ${requiredObjects.join(', ')}. Place and animate instances with SVG group transforms or their documented props. Preserve object proportions and use the previous placement and pose for a continuous cut.` : ''}
+${requiredObjects?.length ? `- Render each of these drafted objects directly in JSX: ${requiredObjects.join(', ')}. Place and animate instances with SVG group transforms or their documented props. ${sharedWorldApi ? 'Each object\'s origin is the centre of its base, so translate it to where it stands; WorldBase\'s ground line is given below. ' : ''}Preserve object proportions and use the previous placement and pose for a continuous cut.` : ''}
 \`\`\`tsx
-${sharedWorld}
+${sharedWorldApi ?? sharedWorld}
 \`\`\``
     : `SHARED WORLD (this scene defines it for the whole video):
 - Directly after the imports, write a block starting with the line "${START}" and ending with the line "${END}".

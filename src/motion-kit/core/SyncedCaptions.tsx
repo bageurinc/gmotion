@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTextStyle } from './TextStyleContext';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { TextStyleId, WordTiming } from '@/types/studio';
 import { SafeOverlay, useSafeOverlay } from './SafeOverlay';
@@ -25,8 +26,9 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
   fontSize = 32,
   bottomOffset = 260,
   style,
-  textStyle,
+  textStyle: ownStyle,
 }) => {
+  const textStyle = useTextStyle(ownStyle);
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const inSafeOverlay = useSafeOverlay();

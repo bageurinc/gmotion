@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireProject } from '@/lib/auth/project-access';
 import { runWithUsage } from '@/lib/billing/usage';
 import { assetModel } from '@/lib/explainer/scene-generator';
-import { generateStorySvgDraft } from '@/lib/explainer/story-svg-draft';
+import { generateStorySvgDraft, type DraftProgress } from '@/lib/explainer/story-svg-draft';
 import { isGenerationActive, prepareGeneration, runGeneration } from '@/lib/pipeline/generation-job';
 import { getProject, saveProject } from '@/lib/storage/project-store';
 
@@ -40,18 +40,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const instruction = input.data.instruction;
   const draft = project.storySvgDraft;
   try {
+    // Progress is saved without a new updatedAt, so it never invalidates the version the user is correcting.
+    const saveProgress = (storySvgDraftProgress?: DraftProgress) => {
+      const current = getProject(projectId);
+      if (current?.updatedAt === project.updatedAt) saveProject({ ...current, storySvgDraftProgress });
+    };
     const storySvgDraft = await runWithUsage(usage, () =>
-      generateStorySvgDraft(assetModel(project.drawingModel), project.storyboard, { draft, instruction })
+      generateStorySvgDraft(assetModel(project.drawingModel), project.storyboard, { draft, instruction }, saveProgress)
     );
     const latest = getProject(projectId);
     if (!latest?.storySvgReviewPending || latest.updatedAt !== project.updatedAt) {
       return NextResponse.json({ error: 'Draf berubah. Muat ulang untuk melihat versi terbaru.' }, { status: 409 });
     }
-    const updated = { ...latest, storySvgDraft, updatedAt: Math.max(Date.now(), latest.updatedAt + 1) };
+    const updated = { ...latest, storySvgDraft, storySvgDraftProgress: undefined, updatedAt: Math.max(Date.now(), latest.updatedAt + 1) };
     saveProject(updated);
     return NextResponse.json({ project: updated });
   } catch (error) {
     console.error('[ObjectDraft] Revision failed:', error);
+    const current = getProject(projectId);
+    if (current?.storySvgDraftProgress) saveProject({ ...current, storySvgDraftProgress: undefined });
     return NextResponse.json({ error: 'Koreksi draf gagal. Coba lagi.' }, { status: 502 });
   } finally {
     revising.delete(projectId);

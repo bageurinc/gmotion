@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { VOICE_OPTIONS } from './voices';
-import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
+import { TextStyleSchema, type SceneSpec, type Storyboard, type StudioProject } from '@/types/studio';
 
 export const MAX_DRAFT_SCENES = 12;
 // Measured from 283 narrated scenes in storage (Gemini TTS, Bahasa Indonesia): about 2.08 words/sec.
@@ -14,6 +14,7 @@ export const DraftUpdateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   voice: z.string().max(40).optional(),
   voiceProvider: z.enum(['gemini', 'elevenlabs']).optional(),
+  textStyle: TextStyleSchema.optional(),
   scenes: z
     .array(
       z.object({
@@ -59,6 +60,8 @@ export function applyDraftUpdate(storyboard: Storyboard, update: DraftUpdate): S
     title: update.title,
     voice: update.voice ?? storyboard.voice,
     voiceProvider: update.voice !== undefined ? update.voiceProvider ?? 'gemini' : storyboard.voiceProvider,
+    textStyle: update.textStyle ?? storyboard.textStyle,
+    textStyleSuggested: storyboard.textStyleSuggested ?? storyboard.textStyle,
     scenes,
   };
 }
