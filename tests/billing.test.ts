@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST as webhook } from '@/app/api/webhooks/xendit/route';
-import { addPurchasedCredits, chargeForVideo } from '@/lib/billing/credits';
+import { addPurchasedCredits, chargeForVideo, chargeForVoiceChange, creditsForVoiceChange, refundVoiceChange } from '@/lib/billing/credits';
 import { CREDIT_PACKAGES } from '@/lib/billing/packages';
 import { findUserPayment, handleXenditWebhook, Payment, refreshPayment, startQrisPayment } from '@/lib/billing/payments';
 import { isValidWebhookToken, isXenditTestMode } from '@/lib/billing/xendit';
@@ -217,5 +217,24 @@ describe('webhook security', () => {
     expect(isXenditTestMode()).toBe(true);
     process.env.XENDIT_SECRET_KEY = 'xnd_production_key';
     expect(isXenditTestMode()).toBe(false);
+  });
+});
+
+describe('voice change charge', () => {
+  it('charges every change, refuses a short balance, and refunds once', async () => {
+    expect(await chargeForVoiceChange(userId, 'project-v', 1)).toBeNull();
+    await addPurchasedCredits(userId, `payment-${userId}`, 2);
+    const first = await chargeForVoiceChange(userId, 'project-v', 1);
+    const second = await chargeForVoiceChange(userId, 'project-v', 1);
+    expect(first).toBeTruthy();
+    expect(second).not.toBe(first);
+    expect(await balance()).toBe(0);
+    await refundVoiceChange(userId, first!, 1);
+    await refundVoiceChange(userId, first!, 1);
+    expect(await balance()).toBe(1);
+  });
+
+  it('prices ElevenLabs higher than Gemini', () => {
+    expect(creditsForVoiceChange('elevenlabs')).toBeGreaterThan(creditsForVoiceChange('gemini'));
   });
 });

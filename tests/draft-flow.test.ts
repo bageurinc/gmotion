@@ -246,6 +246,52 @@ describe('draft review flow', () => {
     expect(result.storySvgDraft?.sharedWorld).toContain('fill="red"');
   });
 
+  it('skips the Full SVG object review when auto-approval is on', async () => {
+    const project = await createDraft('story-svg');
+    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+    vi.stubEnv('OPENAI_BASE_URL', 'https://drawing.example/v1');
+    const stream = (content: string) => new Response(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+    const sceneObjects = project.storyboard.scenes.map((scene) => scene.role === 'cta' ? [] : ['CoffeeBean']);
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      const system: string = JSON.parse(String((init as RequestInit).body)).messages[0].content;
+      if (system.includes('strict art director')) {
+        // The review is the last draft call; scenes after it use the offline fallback.
+        vi.stubEnv('OPENAI_API_KEY', '');
+        return stream(JSON.stringify({ imageVisible: true, items: [{ name: 'WorldBase', score: 8, issues: [] }, { name: 'CoffeeBean', score: 8, issues: [] }] }));
+      }
+      if (system.startsWith('You are the art director')) {
+        return stream(JSON.stringify({
+          world: { label: 'Dapur', description: 'A warm kitchen', groundY: 700 },
+          objects: [{ name: 'CoffeeBean', label: 'Biji kopi', description: 'A coffee bean', width: 300, height: 200, props: [], closeups: [] }],
+          sceneObjects,
+        }));
+      }
+      if (system.includes('fixed setting')) return stream('```tsx\nfunction WorldBase() { return <g><rect x={-1000} y={-1000} width={3000} height={3000} fill="#eeddcc" /></g>; }\n```');
+      return stream('```tsx\nfunction CoffeeBean() { return <g><ellipse cy={-100} rx={150} ry={100} fill="brown" /></g>; }\n```');
+    });
+
+    const auto = await reviewObjectDraft(request({ action: 'auto', enabled: true }), context(project.id));
+    expect(auto.status).toBe(200);
+    expect(getProject(project.id)!.autoApproveObjectDraft).toBe(true);
+    expect((await generateProject(request(), context(project.id))).status).toBe(202);
+    const result = await finished(project.id);
+    expect(result.storySvgReviewPending).toBeUndefined();
+    expect(result.storySvgDraft?.sharedWorld).toContain('CoffeeBean');
+    expect(result.autoApproveObjectDraft).toBe(true);
+  });
+
+  it('approves a waiting object draft when auto-approval is switched on', async () => {
+    const project = await createDraft('story-svg');
+    const draft = { sharedWorld: '', plan: undefined } as unknown as NonNullable<StudioProject['storySvgDraft']>;
+    saveProject({ ...getProject(project.id)!, storySvgDraft: draft, storySvgReviewPending: true, status: 'idle' });
+    const response = await reviewObjectDraft(request({ action: 'auto', enabled: true }), context(project.id));
+    expect(response.status).toBe(202);
+    const { project: started } = await response.json();
+    expect(started).toMatchObject({ status: 'generating', autoApproveObjectDraft: true });
+    expect(started.storySvgReviewPending).toBeUndefined();
+    await finished(project.id);
+  });
+
   it('saves edits and generates from the edited draft in the background', async () => {
     const project = await createDraft();
     const update = toUpdate(project);

@@ -184,6 +184,8 @@ export interface StudioProject {
   sceneAssets?: Record<string, { manifest: AssetManifest; code: string }>;
   storySvgDraft?: import('@/lib/explainer/story-svg-draft').StorySvgDraft;
   storySvgReviewPending?: boolean;
+  /** The user skips the object draft review: animation starts as soon as the draft passes its checks. */
+  autoApproveObjectDraft?: boolean;
   /** Set while the Full SVG object draft is drawn or corrected, so the studio can show how far it is. */
   storySvgDraftProgress?: import('@/lib/explainer/story-svg-draft').DraftProgress;
   drawingModel?: DrawingModel;

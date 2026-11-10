@@ -1,6 +1,6 @@
 import type { User } from '@/lib/auth/session';
 import { sendProjectEmail } from '@/lib/notifications/project-email';
-import { saveProject } from '@/lib/storage/project-store';
+import { getProject, saveProject } from '@/lib/storage/project-store';
 import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
 import { buildImageScene } from '@/lib/explainer/image-scene';
@@ -164,8 +164,10 @@ export async function runGeneration(initial: StudioProject, user?: Pick<User, 'e
   let project = initial;
   activeJobs.add(project.id);
 
+  // The studio can flip auto-approval while this job runs, so the saved choice wins over the in-memory copy.
+  const savedAutoApprove = () => getProject(project.id)?.autoApproveObjectDraft;
   const commit = (changes: (current: StudioProject) => Partial<StudioProject>) => {
-    project = { ...project, ...changes(project), updatedAt: Date.now() };
+    project = { ...project, autoApproveObjectDraft: savedAutoApprove(), ...changes(project), updatedAt: Date.now() };
     saveProject(project);
   };
   const setStage = (sceneId: string, stage: SceneStage, error?: string) => {
@@ -217,10 +219,15 @@ export async function runGeneration(initial: StudioProject, user?: Pick<User, 'e
         assetModel(project.drawingModel), project.storyboard, undefined,
         (storySvgDraftProgress) => commit(() => ({ storySvgDraftProgress })),
       );
-      commit(() => ({ storySvgDraft, storySvgReviewPending: true, storySvgDraftProgress: undefined, status: 'idle' }));
-      activeJobs.delete(project.id);
-      if (user) await sendProjectEmail(user, project, 'story-svg');
-      return;
+      if (savedAutoApprove()) {
+        // The user chose to skip the review, so animation starts on the draft that passed the checks.
+        commit(() => ({ storySvgDraft, storySvgDraftProgress: undefined }));
+      } else {
+        commit(() => ({ storySvgDraft, storySvgReviewPending: true, storySvgDraftProgress: undefined, status: 'idle' }));
+        activeJobs.delete(project.id);
+        if (user) await sendProjectEmail(user, project, 'story-svg');
+        return;
+      }
     } catch (error) {
       console.error('[GenerationJob] Story SVG draft failed:', error);
       commit(() => ({ storySvgDraftProgress: undefined }));

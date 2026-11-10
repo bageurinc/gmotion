@@ -33,6 +33,37 @@ export async function chargeForVideo(userId: string, projectId: string, credits 
   return existing ? 'already_charged' : 'insufficient';
 }
 
+// PLACEHOLDER price for changing the narrator voice in the studio, decided with the final prices.
+export const VOICE_CHANGE_CREDITS = 1;
+
+/** What changing the voice costs. Moving to ElevenLabs adds the same surcharge as a new video. */
+export function creditsForVoiceChange(provider: Storyboard['voiceProvider']): number {
+  return VOICE_CHANGE_CREDITS + (provider === 'elevenlabs' ? ELEVENLABS_EXTRA_CREDITS : 0);
+}
+
+/**
+ * Charges one voice change before any TTS call. Each change has its own ref, and the conditional
+ * INSERT refuses when the balance is short. Returns the ref to refund, or null when short.
+ */
+export async function chargeForVoiceChange(userId: string, projectId: string, credits: number): Promise<string | null> {
+  const ref = `${projectId}:${crypto.randomUUID()}`;
+  const inserted = await getDb().run(
+    `INSERT OR IGNORE INTO credit_ledger (id, user_id, delta, reason, ref, created_at)
+     SELECT ?, id, ?, 'voice', ?, ? FROM users WHERE id = ? AND credits >= ?`,
+    [crypto.randomUUID(), -credits, ref, Date.now(), userId, credits]
+  );
+  return inserted > 0 ? ref : null;
+}
+
+/** Gives a failed voice change back. UNIQUE (reason, ref) keeps it to one refund per charge. */
+export async function refundVoiceChange(userId: string, ref: string, credits: number): Promise<void> {
+  await getDb().run(
+    `INSERT OR IGNORE INTO credit_ledger (id, user_id, delta, reason, ref, created_at)
+     VALUES (?, ?, ?, 'voice_refund', ?, ?)`,
+    [crypto.randomUUID(), userId, credits, ref, Date.now()]
+  );
+}
+
 /** Returns true only for the call that actually added the credits. */
 export async function addPurchasedCredits(userId: string, paymentId: string, credits: number): Promise<boolean> {
   const inserted = await getDb().run(

@@ -326,9 +326,13 @@ export async function checkPiece(
   if (/^[ \t]*(?:import|export)\b/m.test(code)) errors.push('Use no imports or exports.');
   if (code.includes(START) || code.includes(END)) errors.push('Do not write SHARED-WORLD markers.');
   const prefix = `asset-world-${name.toLowerCase()}-`;
+  // Empty ids are ignored: nothing can reference them, so they cannot collide across pieces.
+  const unprefixed = (id: string) => id.trim() !== '' && !id.startsWith(prefix) && id !== prefix.slice(0, -1);
+  const prefixError = (ids: string[]) => `Prefix every id with "${prefix}": ${[...new Set(ids)].slice(0, 5).map((id) => `"${id}"`).join(', ')}.`;
+  // An id whose literal head is empty (e.g. {`${p}glow`}) is built at runtime; it is checked on the rendered SVG instead.
   const badIds = [...code.matchAll(/\bid=(?:"([^"]*)"|\{\s*['"`]([^'"`$]*))/g)]
-    .map((match) => match[1] ?? match[2]).filter((id) => !id.startsWith(prefix) && id !== prefix.slice(0, -1));
-  if (badIds.length) errors.push(`Prefix every id with "${prefix}": ${[...new Set(badIds)].slice(0, 5).join(', ')}.`);
+    .map((match) => match[1] ?? match[2]).filter(unprefixed);
+  if (badIds.length) errors.push(prefixError(badIds));
   const validation = validateSceneCode(code, `${name}.tsx`, {
     svgOnly: true,
     allowedImports: [],
@@ -345,6 +349,8 @@ export async function checkPiece(
     rendered = { svg: null, error: String(error instanceof Error ? error.message : error) };
   }
   if (!rendered.svg) return { errors: [`Rendering ${name} with default props failed: ${rendered.error}`], svg: null };
+  const renderedBadIds = [...rendered.svg.matchAll(/\bid="([^"]*)"/g)].map((match) => match[1]).filter(unprefixed);
+  if (renderedBadIds.length) return { errors: [prefixError(renderedBadIds)], svg: null };
   if (name === WORLD) {
     const canvasWidth = options.canvasWidth ?? 1000;
     const gaps = await worldGaps(rendered.svg, canvasWidth).catch((error) => [`render error ${String(error)}`]);

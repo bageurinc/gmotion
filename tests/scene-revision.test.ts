@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
-import { parseRevisionPlan, retimeSceneCode, reviseScene, reviseScenes, type SceneRevisionDeps } from '@/lib/pipeline/scene-revision';
+import { parseRevisionPlan, retimeSceneCode, reviseScene, reviseScenes, revoiceScenes, type SceneRevisionDeps } from '@/lib/pipeline/scene-revision';
 import { composeImageScene } from '@/lib/explainer/scene-generator';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import type { SceneSpec, Storyboard, StudioProject } from '@/types/studio';
@@ -196,5 +196,35 @@ describe('reviseScene', () => {
     const broken = deps({ visualInstruction: 'x' });
     broken.reviseCode = vi.fn().mockRejectedValue(new Error('model down'));
     await expect(reviseScene(project, 0, 'x', broken)).rejects.toThrow('model down');
+  });
+});
+
+describe('revoiceScenes', () => {
+  const project = { id: 'p', storyboard: { ...storyboard, voice: 'Charon' }, files: { 'Scene1.tsx': imageCode, 'MainVideo.tsx': '' }, chatHistory: [] } as unknown as StudioProject;
+  const deps = (speak: SceneRevisionDeps['speak']) => ({
+    speak,
+    reviseCode: vi.fn().mockImplementation(async (code: string) => `${code}\n// model`),
+    check: { findCrashes: vi.fn().mockResolvedValue([]), repair: vi.fn() },
+  });
+
+  it('speaks the same words with the new voice and retimes captions to the new audio', async () => {
+    const speak = vi.fn().mockImplementation(async (scene: SceneSpec) => ({
+      audioUrl: '/api/projects/p/assets/scene-1-hook.wav?v=new', durationInFrames: 150, wordTimings: timings(scene.voiceoverText, 500),
+    }));
+    const d = deps(speak);
+    const result = await revoiceScenes(project, [0], { voice: 'Kore', provider: 'gemini' }, d);
+    expect(speak).toHaveBeenCalledWith(expect.objectContaining({ voiceoverText: before.voiceoverText }), expect.objectContaining({ voice: 'Kore', provider: 'gemini' }));
+    expect(result).toMatchObject({ changed: [0], failed: [] });
+    expect(result.project.storyboard).toMatchObject({ voice: 'Kore', voiceProvider: 'gemini' });
+    expect(result.project.storyboard.scenes[0]).toMatchObject({ voiceoverText: before.voiceoverText, durationInFrames: 150 });
+    expect(result.project.files['Scene1.tsx']).toContain(JSON.stringify(timings(before.voiceoverText, 500)));
+    expect(result.project.files['MainVideo.tsx']).toContain('durationInFrames={150}');
+    expect(d.reviseCode).not.toHaveBeenCalled();
+  });
+
+  it('keeps the old voice on the storyboard when a scene fails', async () => {
+    const result = await revoiceScenes(project, [0], { voice: 'Kore', provider: 'gemini' }, deps(vi.fn().mockRejectedValue(new Error('tts down'))));
+    expect(result).toMatchObject({ changed: [], failed: [0] });
+    expect(result.project.storyboard.voice).toBe('Charon');
   });
 });

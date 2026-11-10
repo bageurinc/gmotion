@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
 import { ART_STYLE_LABELS, DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, TextStyleId, usesWorldEngine } from '@/types/studio';
 import { TextStylePicker } from './TextStylePicker';
+import { VoiceChanger } from './VoiceChanger';
 import { readExportStream } from '@/lib/render/export-stream';
 import { DraftAssembly, DraftProgressBar, GenerationProgress } from './GenerationProgress';
 
@@ -38,6 +39,8 @@ import {
   Clock,
   X,
 } from 'lucide-react';
+
+const AUTO_APPROVE_KEY = 'gmotion:auto-approve-object-draft';
 
 interface StudioWorkspaceClientProps {
   initialProject: StudioProject;
@@ -155,6 +158,52 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
       setSavingTextStyle(false);
     }
   };
+
+  const [savingAutoApprove, setSavingAutoApprove] = useState(false);
+  const handleAutoApprove = async (enabled: boolean) => {
+    if (savingAutoApprove) return;
+    setSavingAutoApprove(true);
+    setObjectDraftError('');
+    try {
+      const response = await fetch(`/api/projects/${project.id}/object-draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auto', enabled }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Pilihan gagal disimpan.');
+      try { localStorage.setItem(AUTO_APPROVE_KEY, enabled ? '1' : '0'); } catch { /* storage blocked */ }
+      setProject((current) => ({ ...current, ...data.project }));
+      if (data.project.status === 'generating') setInterrupted(false);
+    } catch (error) {
+      setObjectDraftError(error instanceof Error ? error.message : 'Pilihan gagal disimpan.');
+    } finally {
+      setSavingAutoApprove(false);
+    }
+  };
+
+  // The last choice is remembered in this browser and applied to the next Full SVG video.
+  const canAutoApprove = project.storyboard.preset === 'story-svg' && (waitingForObjects || Boolean(project.storySvgReviewPending));
+  const autoApplied = useRef(false);
+  useEffect(() => {
+    if (autoApplied.current || !canAutoApprove || project.autoApproveObjectDraft) return;
+    autoApplied.current = true;
+    let remembered = false;
+    try { remembered = localStorage.getItem(AUTO_APPROVE_KEY) === '1'; } catch { /* storage blocked */ }
+    if (remembered && !project.storySvgReviewPending) void handleAutoApprove(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAutoApprove]);
+  const autoApproveToggle = canAutoApprove && (
+    <label className="flex items-start gap-2 text-left text-sm text-slate-200">
+      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-400"
+        checked={Boolean(project.autoApproveObjectDraft)} disabled={savingAutoApprove || Boolean(objectDraftAction)}
+        onChange={(event) => void handleAutoApprove(event.target.checked)} />
+      <span>
+        Lewati persetujuan draf objek
+        <span className="block text-xs text-slate-400">Animasi langsung dimulai setelah draf objek lolos pemeriksaan.</span>
+      </span>
+    </label>
+  );
 
   const handleObjectDraft = async (action: 'revise' | 'approve') => {
     if (objectDraftAction) return;
@@ -524,6 +573,10 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                   {textStyleError && <p role="alert" className="text-xs text-red-300">{textStyleError}</p>}
                 </section>
               )}
+              {!usesWorldEngine(project.storyboard.preset) && (
+                <VoiceChanger project={project} disabled={isBusy || isRevising || savingTextStyle}
+                  onChanged={(next) => { setProject(next); setExportUrl(null); }} />
+              )}
               {project.storyboard.scenes.map((scene, idx) => (
                 <div
                   key={scene.id}
@@ -600,6 +653,7 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                       <DraftProgressBar progress={project.storySvgDraftProgress}
                         note="Hanya gambar yang terkena koreksi yang digambar ulang." />
                     )}
+                    {autoApproveToggle}
                     <div className="flex flex-wrap gap-2">
                       <button type="submit" disabled={Boolean(objectDraftAction) || objectCorrection.trim().length < 3}
                         className="rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-50">
@@ -620,6 +674,8 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                 <p className="max-w-xs text-sm text-slate-300">{previewStatus}</p>
                 <DraftProgressBar progress={project.storySvgDraftProgress}
                   note="Biasanya 5–8 menit. Halaman ini boleh ditutup, prosesnya tetap berjalan." />
+                {autoApproveToggle}
+                {objectDraftError && <p role="alert" className="text-sm text-red-300">{objectDraftError}</p>}
               </div>
             ) : previewScenes.length === 0 ? (
               <p role="status" className="max-w-xs text-center text-sm text-slate-300">

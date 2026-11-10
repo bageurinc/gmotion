@@ -29,6 +29,17 @@ describe('checkPiece', () => {
     expect((await checkPiece('Kettle', rootId)).errors).toEqual([]);
   });
 
+  it('checks ids built from a template on the rendered SVG', async () => {
+    const built = (head: string) => `function Kettle() { const p = '${head}'; return <g><linearGradient id={\`\${p}body\`} /><rect width={10} height={10} fill={\`url(#\${p}body)\`} /></g>; }`;
+    expect((await checkPiece('Kettle', built('asset-world-kettle-'))).errors).toEqual([]);
+    expect((await checkPiece('Kettle', built('k-'))).errors.join(' ')).toMatch(/asset-world-kettle-": "k-body"\./);
+  });
+
+  it('ignores ids that render empty', async () => {
+    const empty = `function Kettle({ glow = false }: { glow?: boolean }) { return <g><rect id="" width={10} height={10} /><circle id={glow ? 'asset-world-kettle-glow' : ''} r={5} /></g>; }`;
+    expect((await checkPiece('Kettle', empty)).errors).toEqual([]);
+  });
+
   it('reports a component that crashes with its default props', async () => {
     const code = 'function Kettle({ parts }: { parts?: number[] }) { return <g>{parts!.map((p) => <circle key={p} r={p} />)}</g>; }';
     expect((await checkPiece('Kettle', code)).errors.join(' ')).toMatch(/Rendering Kettle/);

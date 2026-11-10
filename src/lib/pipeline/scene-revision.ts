@@ -215,11 +215,18 @@ function audioFilePath(project: StudioProject, scene: SceneSpec): string | null 
   return path.join(process.cwd(), 'storage', 'projects', project.id, 'assets', name);
 }
 
+export interface NarratorVoice {
+  voice: string;
+  provider?: Storyboard['voiceProvider'];
+}
+
 export interface SceneRevisionDeps {
   plan: (scene: SceneSpec, instruction: string, position: ScenePosition) => Promise<RevisionPlan>;
   speak: typeof generateSceneAudio;
   reviseCode: (code: string, scene: SceneSpec, instruction: string) => Promise<string>;
   check: RevisionCheckTools;
+  /** Set to speak every target scene again with this voice, even when its words stay the same. */
+  voice?: NarratorVoice;
 }
 
 export interface SceneRevisionOutcome {
@@ -264,14 +271,16 @@ async function prepareRevision(project: StudioProject, index: number, instructio
     ...(headlineChanged ? { kineticHeadline: plan.kineticHeadline } : {}),
   };
 
+  const respeak = narrationChanged || Boolean(deps.voice);
   // Speech is written over the old file name, so the old audio is kept in memory for a full revert.
-  const audioPath = narrationChanged ? audioFilePath(project, before) : null;
+  const audioPath = respeak ? audioFilePath(project, before) : null;
   const audioBackup = audioPath && fs.existsSync(audioPath) ? fs.readFileSync(audioPath) : null;
   const restoreAudio = () => {
     if (audioPath && audioBackup) fs.writeFileSync(audioPath, audioBackup);
   };
-  if (narrationChanged) {
-    const audio = await deps.speak(scene, { fps: project.storyboard.fps, projectId: project.id, voice: project.storyboard.voice, provider: project.storyboard.voiceProvider });
+  if (respeak) {
+    const { voice, provider } = deps.voice ?? { voice: project.storyboard.voice, provider: project.storyboard.voiceProvider };
+    const audio = await deps.speak(scene, { fps: project.storyboard.fps, projectId: project.id, voice, provider });
     scene = { ...scene, ...audio };
   }
 
@@ -279,7 +288,7 @@ async function prepareRevision(project: StudioProject, index: number, instructio
     // Text and timing changes are applied by code when possible; that version is the safe fallback.
     let code = previousCode;
     let safeCode = previousCode;
-    if (narrationChanged || headlineChanged) {
+    if (respeak || headlineChanged) {
       const retimed = retimeSceneCode(previousCode, before, scene, project.storyboard);
       code = retimed ?? await deps.reviseCode(previousCode, scene,
         `The narration is now ${JSON.stringify(scene.voiceoverText)} and the headline is ${JSON.stringify(scene.kineticHeadline)}. The scene now lasts ${scene.durationInFrames} frames. Update every caption, headline text, and timing to match, and keep the visuals.`);
@@ -316,7 +325,7 @@ export async function reviseScenes(
   if (failed.length && !prepared.length) throw failed[0].error;
   for (const item of failed) console.error(`[SceneRevision] Scene ${item.index + 1} revision failed:`, item.error);
 
-  const changed = prepared.filter((item) => item.code !== item.previousCode || item.narrationChanged || item.headlineChanged);
+  const changed = prepared.filter((item) => item.code !== item.previousCode || item.narrationChanged || item.headlineChanged || Boolean(deps.voice));
   const build = (specs: Map<number, SceneSpec>, codes: Map<number, string>): StudioProject => {
     const storyboard = { ...project.storyboard, scenes: project.storyboard.scenes.map((item, i) => specs.get(i) ?? item) };
     const files = { ...project.files, ...Object.fromEntries([...codes].map(([i, code]) => [`Scene${i + 1}.tsx`, code])) };
@@ -361,4 +370,29 @@ export async function reviseScene(
 ): Promise<SceneRevisionResult> {
   const result = await reviseScenes(project, [index], instruction, deps);
   return { project: result.project, ...result.scenes[0] };
+}
+
+/**
+ * Speaks the given scenes again with another narrator voice. The words stay the same, but the
+ * length changes with the voice, so captions and timings follow the new audio like a narration edit.
+ * The storyboard takes the new voice only when every scene changed, so the video never mixes voices.
+ */
+export async function revoiceScenes(
+  project: StudioProject,
+  indexes: number[],
+  voice: NarratorVoice,
+  deps: Omit<SceneRevisionDeps, 'plan' | 'voice'>
+): Promise<{ project: StudioProject; changed: number[]; failed: number[] }> {
+  let result: Awaited<ReturnType<typeof reviseScenes>>;
+  try {
+    result = await reviseScenes(project, indexes, '', { ...deps, voice, plan: async () => ({}) });
+  } catch (error) {
+    // Every scene failed, so nothing changed.
+    console.error('[SceneRevision] Voice change failed:', error);
+    return { project, changed: [], failed: indexes };
+  }
+  const changed = result.scenes.filter((scene) => scene.outcome !== 'unchanged' && scene.outcome !== 'reverted').map((scene) => scene.index);
+  const failed = indexes.filter((index) => !changed.includes(index));
+  const storyboard = failed.length ? result.project.storyboard : { ...result.project.storyboard, voice: voice.voice, voiceProvider: voice.provider };
+  return { project: { ...result.project, storyboard }, changed, failed };
 }
