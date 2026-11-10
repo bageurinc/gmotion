@@ -17,7 +17,7 @@ export function StorySvgDraftPreview({ draft, background, aspectRatio, status, c
   const Preview = useMemo(() => {
     const names = [...new Set(draft.sceneObjects.flat())];
     const world = `<figure className="col-span-2 min-w-0 sm:col-span-1 sm:row-span-2">
-        <svg role="img" aria-label={${JSON.stringify(draftLabel(draft, 'WorldBase'))}} viewBox="${worldViewBox(aspectRatio)}"
+        <svg role="img" aria-label={${JSON.stringify(draftLabel(draft, 'WorldBase'))}} viewBox="${worldViewBox(aspectRatio, draft.canvasWidth ?? 1000)}"
           data-frame="world" className="w-full rounded-lg" style={{ backgroundColor: ${JSON.stringify(background)} }}>
           <WorldBase />
         </svg>

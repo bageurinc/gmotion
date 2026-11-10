@@ -18,6 +18,10 @@ export const DRAWING_MODEL_LABELS: Record<DrawingModel, string> = {
 export const StoredPresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world', 'story', 'ads']);
 export type StoredPreset = z.infer<typeof StoredPresetSchema>;
 
+/** Presets still in development: only accounts listed in ADMIN_EMAILS may create them. */
+export const ADMIN_ONLY_PRESETS: readonly StylePreset[] = ['world'];
+export const presetAllowed = (preset: StylePreset, admin: boolean) => admin || !ADMIN_ONLY_PRESETS.includes(preset);
+
 /** Isometric videos are one 3D world, while Story 2D and Ads keep one scene file per scene. */
 export const usesWorldEngine = (preset: StoredPreset) => preset === 'world' || preset === 'story' || preset === 'ads';
 

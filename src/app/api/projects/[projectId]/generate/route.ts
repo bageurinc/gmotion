@@ -58,7 +58,7 @@ export async function POST(
   saveProject(prepared);
   // The job outlives this request; the usage context follows it into every AI call it makes.
   void runWithUsage({ userId: user.id, projectId, preset: prepared.storyboard.preset, stage: 'generate' }, () =>
-    runGeneration(prepared)
+    runGeneration(prepared, user)
   ).catch((err) => {
     console.error('[API /generate] Generation job crashed:', err);
   });

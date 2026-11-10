@@ -5,7 +5,10 @@ import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
 import { compileVirtualProject } from '@/lib/runtime/browser-compiler';
-import { AssetManifestSchema, missingContractIds } from '@/lib/explainer/asset-contract';
+import { AssetManifestSchema, canvasWidthFor, missingContractIds } from '@/lib/explainer/asset-contract';
+import { canvasNote } from '@/lib/explainer/asset-generator';
+import { fitToCanvas } from '@/lib/explainer/scene-generator';
+import { worldViewBox } from '@/lib/explainer/story-svg-shared';
 import { parseAssetResponse, parseCritique } from '@/lib/explainer/asset-generator';
 import { buildAssetShots, fitArtwork, fitFocus } from '@/motion-kit/explainer/AssetStage';
 
@@ -44,9 +47,51 @@ const response = `\`\`\`json\n${JSON.stringify(manifest)}\n\`\`\`\n\`\`\`tsx\n${
 
 describe('bleed and setting rules', () => {
   it('asks for a real setting that reaches the frame edges', () => {
-    expect(ASSET_SYSTEM_PROMPT).toContain('x=-1000 to x=2000');
+    expect(ASSET_SYSTEM_PROMPT).toContain('x=-1000 to x=W+1000');
     expect(ASSET_SYSTEM_PROMPT).toContain('A plain empty backdrop is a failure');
     expect(CRITIC_SYSTEM_PROMPT).toContain('plain backdrop with no setting');
+  });
+});
+
+describe('canvas follows the video shape', () => {
+  it('keeps portrait videos square and widens landscape ones', () => {
+    expect(canvasWidthFor('9:16')).toBe(1000);
+    expect(canvasWidthFor('4:5')).toBe(1000);
+    expect(canvasWidthFor('16:9')).toBe(1778);
+    expect(canvasWidthFor(undefined)).toBe(1000);
+  });
+
+  it('tells the model the wide canvas and asks it to fill the sides', () => {
+    expect(canvasNote('16:9')).toContain('viewBox is "0 0 1778 1000"');
+    expect(canvasNote('16:9')).toContain('x=-1000 to x=2778');
+    expect(canvasNote('9:16')).toContain('viewBox is "0 0 1000 1000"');
+    expect(ASSET_SYSTEM_PROMPT).toContain('Empty or bare sides are a failure');
+    expect(CRITIC_SYSTEM_PROMPT).toContain('narrow middle column');
+  });
+
+  it('records the canvas and widens a square viewBox the model kept', () => {
+    const asset = fitToCanvas(parseAssetResponse(response), 1778);
+    expect(asset.manifest.canvasWidth).toBe(1778);
+    expect(asset.code).toContain('viewBox="0 0 1778 1000"');
+    expect(fitToCanvas(parseAssetResponse(response), 1000).code).toContain('viewBox="0 0 1000 1000"');
+  });
+
+  it('accepts x coordinates on a wide canvas', () => {
+    const wide = { ...manifest, canvasWidth: 1778, heroFocus: { x: 1400, y: 400, scale: 1.5 } };
+    expect(AssetManifestSchema.safeParse(wide).success).toBe(true);
+  });
+
+  it('centres the setting preview on the canvas it was drawn for', () => {
+    expect(worldViewBox('16:9').startsWith(`${889 - (1150 * 16) / 9 / 2} `)).toBe(true);
+    expect(worldViewBox('16:9', 1000).startsWith(`${500 - (1150 * 16) / 9 / 2} `)).toBe(true);
+  });
+
+  it('frames and clamps the camera to a wide canvas', () => {
+    const fit = fitArtwork({ x: 100, y: 100, width: 1578, height: 800 }, 1778);
+    expect(fit.offsetX + 889 * fit.scale).toBeCloseTo(889, 0);
+    expect(fitFocus({ x: 1700, y: 500, scale: 2 }, { scale: 1, offsetX: 0, offsetY: 0 }, 1778).x).toBeCloseTo(1778 - 1778 / 4);
+    const shots = buildAssetShots({ ...AssetManifestSchema.parse(manifest), canvasWidth: 1778 }, 300, 30);
+    expect(shots[0].focus).toEqual({ x: 889, y: 500, scale: 1 });
   });
 });
 

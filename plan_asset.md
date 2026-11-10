@@ -198,7 +198,10 @@ menghasilkan SVG, bukan file `.svg` statis, supaya warna, keadaan, dan gerak tet
 - [ ] Pengisi daya EV: unit, konektor, kabel, port, serta keadaan terhubung dan mengisi.
 - [ ] Mekanisme mesin: silinder, piston, poros engkol, katup, dan siklus yang bisa dijelaskan.
 - [ ] Mekanisme motor: rotor, stator, poros, dan reduksi gigi.
-- [ ] AC kendaraan: kompresor, kondensor, evaporator, kipas, dan sirkuit pendingin.
+- [ ] (uji coba) AC kendaraan: sirkuit refrigeran, kondensor, katup ekspansi,
+  evaporator, kipas, dan blower di `vehicle.ac@0.1.0`. Kompresor tersedia
+  terpisah di `vehicle.ac-compressor@0.1.0`, dengan tampilan casing dan
+  potongan poros, swash plate, serta piston.
 - [ ] Ban dan aerodinamika: jalur udara, kondisi jendela, tekanan ilustratif, dan sorotan hambatan.
 - [ ] Pengereman regeneratif: arah energi kembali ke baterai dan kondisi aktif yang benar.
 - [ ] Rem mekanis: pedal, hidraulik, kaliper, cakram, dan keadaan menjepit.
@@ -225,7 +228,8 @@ menghasilkan SVG, bukan file `.svg` statis, supaya warna, keadaan, dan gerak tet
 | --- | --- |
 | Sistem air | Tangki, pipa, pompa, katup, filter, perubahan isi, aliran |
 | Kulkas | Kabin, pintu, kompresor, kondensor, evaporator, sirkuit |
-| AC ruangan | Unit dalam/luar, kipas, pipa, aliran udara dan panas |
+| AC ruangan | (uji coba) `building.home-ac@0.1.0` menampilkan unit indoor dan outdoor, pipa, kipas, serta aliran udara sejuk dan hangat. |
+| Kompresor AC ruangan | (uji coba) `building.home-ac-compressor@0.1.0` menampilkan casing hermetik dan potongan motor, roller eksentrik, serta vane. |
 | Lift | Kabin, rel, kabel, pulley, motor, rem, gerak naik/turun |
 | Conveyor | Sabuk, roller, motor, objek yang diangkut |
 | Rumah atau ruangan | Dinding, lantai, pintu, jendela, potongan untuk melihat bagian dalam |

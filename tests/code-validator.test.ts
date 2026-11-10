@@ -106,3 +106,29 @@ describe('Full SVG policy', () => {
     expect(validateSceneCode('export default () => <img src="/picture.png" />;').valid).toBe(true);
   });
 });
+
+describe('undeclared names', () => {
+  const asset = (body: string) => `import React from 'react';
+export const Asset = ({ actionProgress = {}, highlight = {} }) => {
+  ${body}
+  return <svg viewBox="0 0 1000 1000"><g opacity={heal}>{[1, 2].map((item) => <rect key={item} width={Math.round(item * 10)} />)}</g></svg>;
+};
+export default Asset;`;
+
+  it('rejects a helper that is used but never declared, which would crash on render', () => {
+    const result = validateSceneCode(asset('const heal = cl(actionProgress.pulih ?? 0);'), 'Asset.tsx', { svgOnly: true });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/'cl' is used but never declared/);
+  });
+
+  it('leaves names to the composed scene for a fragment whose shared block is inserted later', () => {
+    const fragment = asset('const heal = 1;').replace('<g opacity', '<WorldBase /><g opacity');
+    expect(validateSceneCode(fragment, 'Asset.tsx', { checkUndeclared: false }).errors).toEqual([]);
+    expect(validateSceneCode(fragment, 'Asset.tsx').errors.join(' ')).toMatch(/'WorldBase' is used but never declared/);
+  });
+
+  it('accepts the same code once the helper exists, plus language globals', () => {
+    const code = asset('const cl = (v: number) => Math.min(Math.max(v, 0), 1);\n  const heal = cl(Number(actionProgress.pulih ?? 0)) || NaN ? 1 : JSON.parse("0");');
+    expect(validateSceneCode(code, 'Asset.tsx', { svgOnly: true }).errors).toEqual([]);
+  });
+});

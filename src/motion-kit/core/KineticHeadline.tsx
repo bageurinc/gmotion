@@ -7,6 +7,7 @@ import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
 import type { TextStyleId } from '@/types/studio';
 import { SafeOverlay } from './SafeOverlay';
 import { TEXT_STYLES, toSentenceCase, wordMotion } from './text-style';
+import { TEXT_THEMES } from './text-theme';
 
 export interface KineticHeadlineProps {
   text: string;
@@ -40,6 +41,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
 }) => {
   const textStyle = useTextStyle(ownStyle);
   const look = textStyle ? TEXT_STYLES[textStyle] : null;
+  const theme = textStyle ? TEXT_THEMES[textStyle] : undefined;
   const hasDarkText = /^#[0-9a-fA-F]{6}$/.test(textColor) && contrastRatio(textColor, '#000000') < 7;
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -113,7 +115,7 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
           fontFamily: look?.headlineFont(),
           fontWeight: look?.headlineWeight ?? 900,
           lineHeight: 1.15,
-          color: textColor,
+          color: theme?.ink ?? textColor,
           margin: 0,
           width: '100%',
           minWidth: 0,
@@ -123,6 +125,13 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
           justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
           gap: '0.28em',
           letterSpacing: look?.letterSpacing ?? '-0.02em',
+          ...(theme && {
+            ...theme.card,
+            ...theme.headline,
+            width: 'fit-content',
+            textAlign: align,
+            boxSizing: 'border-box',
+          }),
         }}
       >
         {words.map((word, i) => {
@@ -152,8 +161,8 @@ export const KineticHeadline: React.FC<KineticHeadlineProps> = ({
                 minWidth: 0,
                 overflowWrap: 'anywhere',
                 ...(look ? wordMotion(look.entrance, Math.min(wordSpring, 1)) : { transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`, opacity }),
-                color: isHighlighted ? highlightColor : textColor,
-                textShadow: hasDarkText ? 'none' : isHighlighted ? `0 0 28px ${highlightColor}60` : '0 4px 16px rgba(0,0,0,0.4)',
+                color: isHighlighted ? theme?.highlight ?? highlightColor : theme?.ink ?? textColor,
+                textShadow: theme || hasDarkText ? 'none' : isHighlighted ? `0 0 28px ${highlightColor}60` : '0 4px 16px rgba(0,0,0,0.4)',
               }}
             >
               {word}

@@ -6,7 +6,7 @@ import { SceneBackground, SceneLayout, useSafeInsets } from '../core/SafeOverlay
 import { TEXT_STYLES } from '../core/text-style';
 import type { TextStyleId } from '@/types/studio';
 import { actionProgressAt, type ActionCue } from '../../lib/explainer/choreography';
-import type { AssetFocus, AssetManifest, GeneratedAssetProps } from '../../lib/explainer/asset-contract';
+import { CANVAS_HEIGHT, manifestCanvasWidth, type AssetFocus, type AssetManifest, type GeneratedAssetProps } from '../../lib/explainer/asset-contract';
 
 export interface StageShot {
   from: number;
@@ -17,7 +17,8 @@ export interface StageShot {
   flowId?: string;
 }
 
-const WIDE: AssetFocus = { x: 500, y: 500, scale: 1 };
+/** The whole canvas, framed from its centre. */
+const wideShot = (canvasWidth = CANVAS_HEIGHT): AssetFocus => ({ x: canvasWidth / 2, y: CANVAS_HEIGHT / 2, scale: 1 });
 const EASE = Easing.bezier(0.45, 0, 0.2, 1);
 const TEXT_RESERVE = 0.17;
 const MIN_SHOT_SECONDS = 2.2;
@@ -39,36 +40,39 @@ export interface ArtFit {
 }
 
 /** Environment may run far past the canvas, so only the part on the canvas decides the fit. */
-function onCanvas(bounds: ArtBounds): ArtBounds {
+function onCanvas(bounds: ArtBounds, canvasWidth: number): ArtBounds {
   const x = Math.max(0, bounds.x);
   const y = Math.max(0, bounds.y);
   return {
     x,
     y,
-    width: Math.min(1000, bounds.x + bounds.width) - x,
-    height: Math.min(1000, bounds.y + bounds.height) - y,
+    width: Math.min(canvasWidth, bounds.x + bounds.width) - x,
+    height: Math.min(CANVAS_HEIGHT, bounds.y + bounds.height) - y,
   };
 }
 
 /** Centers the drawn artwork and scales it to fill the stage. */
-export function fitArtwork(drawn: ArtBounds | null): ArtFit {
-  const bounds = drawn && onCanvas(drawn);
+export function fitArtwork(drawn: ArtBounds | null, canvasWidth = CANVAS_HEIGHT): ArtFit {
+  const bounds = drawn && onCanvas(drawn, canvasWidth);
   if (!bounds || bounds.width <= 0 || bounds.height <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
-  const scale = Math.min(MAX_FIT, ART_FILL / Math.max(bounds.width, bounds.height));
+  const fill = ART_FILL / CANVAS_HEIGHT;
+  const scale = Math.min(MAX_FIT, (canvasWidth * fill) / bounds.width, (CANVAS_HEIGHT * fill) / bounds.height);
   return {
     scale,
-    offsetX: 500 - (bounds.x + bounds.width / 2) * scale,
-    offsetY: 500 - (bounds.y + bounds.height / 2) * scale,
+    offsetX: canvasWidth / 2 - (bounds.x + bounds.width / 2) * scale,
+    offsetY: CANVAS_HEIGHT / 2 - (bounds.y + bounds.height / 2) * scale,
   };
 }
 
 /** Maps a focus through the fit and keeps the zoomed view inside the artwork. */
-export function fitFocus(focus: AssetFocus, fit: ArtFit): AssetFocus {
-  const margin = 500 / focus.scale;
-  const place = (value: number) => Math.min(1000 - margin, Math.max(margin, value));
+export function fitFocus(focus: AssetFocus, fit: ArtFit, canvasWidth = CANVAS_HEIGHT): AssetFocus {
+  const place = (value: number, size: number) => {
+    const margin = size / 2 / focus.scale;
+    return Math.min(size - margin, Math.max(margin, value));
+  };
   return {
-    x: place(focus.x * fit.scale + fit.offsetX),
-    y: place(focus.y * fit.scale + fit.offsetY),
+    x: place(focus.x * fit.scale + fit.offsetX, canvasWidth),
+    y: place(focus.y * fit.scale + fit.offsetY, CANVAS_HEIGHT),
     scale: focus.scale,
   };
 }
@@ -76,6 +80,7 @@ export function fitFocus(focus: AssetFocus, fit: ArtFit): AssetFocus {
 /** Splits a scene into a wide shot followed by a close look at each part it has time for. */
 export function buildAssetShots(manifest: AssetManifest, durationInFrames = 300, fps = 30): StageShot[] {
   const [firstView] = manifest.views;
+  const WIDE = wideShot(manifestCanvasWidth(manifest));
   if (manifest.choreography) return [{ from: 0, to: durationInFrames, view: firstView.id, focus: WIDE }];
   const revealed = manifest.parts.filter((part) => part.views.some((view) => view !== firstView.id));
   const parts = revealed.length ? revealed : manifest.parts;
@@ -132,8 +137,8 @@ export interface ScenePath {
 const CAMERA_MOVE_SECONDS = 1.3;
 
 /** Flies from the previous scene's camera to this scene's, then holds still so the actions read. */
-export function scenePathCamera(frame: number, fps: number, path?: ScenePath): AssetFocus {
-  if (!path) return WIDE;
+export function scenePathCamera(frame: number, fps: number, path?: ScenePath, canvasWidth = CANVAS_HEIGHT): AssetFocus {
+  if (!path) return wideShot(canvasWidth);
   const from = path.from ?? path.to;
   const moveFrames = Math.round(fps * CAMERA_MOVE_SECONDS);
   if (frame >= moveFrames) return path.to;
@@ -190,14 +195,15 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
     [providedShots, manifest, durationInFrames, fps]
   );
   const shot = shots.find((item) => frame >= item.from && frame < item.to) ?? shots[shots.length - 1];
+  const canvasWidth = manifestCanvasWidth(manifest);
   const artRef = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState<ArtBounds | null>(null);
-  const fit = useMemo(() => fitArtwork(manifest.choreography ? null : bounds), [bounds, manifest.choreography]);
+  const fit = useMemo(() => fitArtwork(manifest.choreography ? null : bounds, canvasWidth), [bounds, manifest.choreography, canvasWidth]);
   const fittedShots = useMemo(
-    () => shots.map((item) => ({ ...item, focus: fitFocus(item.focus, fit) })),
-    [shots, fit]
+    () => shots.map((item) => ({ ...item, focus: fitFocus(item.focus, fit, canvasWidth) })),
+    [shots, fit, canvasWidth]
   );
-  const camera = manifest.choreography ? scenePathCamera(frame, fps, path) : cameraAt(frame, fittedShots, fps);
+  const camera = manifest.choreography ? scenePathCamera(frame, fps, path, canvasWidth) : cameraAt(frame, fittedShots, fps);
 
   useLayoutEffect(() => {
     if (manifest.choreography) return;
@@ -237,12 +243,15 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
 
   const safeHeight = height * (1 - insets.top - insets.bottom);
   const safeCenter = width * (insets.left + (1 - insets.left - insets.right) / 2);
-  const stageSize = Math.min(width * 0.96, safeHeight - height * TEXT_RESERVE);
-  const stageLeft = Math.max(0, safeCenter - stageSize / 2);
-  const stageTop = height * insets.top + (safeHeight - stageSize) * 0.52;
-  const pixelsPerUnit = stageSize / 1000;
-  const translateX = stageSize / 2 - camera.x * pixelsPerUnit * camera.scale;
-  const translateY = stageSize / 2 - camera.y * pixelsPerUnit * camera.scale;
+  // The stage has the canvas's shape: square for portrait videos, wide for landscape ones.
+  const aspect = canvasWidth / CANVAS_HEIGHT;
+  const stageHeight = Math.min((width * 0.96) / aspect, safeHeight - height * TEXT_RESERVE);
+  const stageWidth = stageHeight * aspect;
+  const stageLeft = Math.max(0, safeCenter - stageWidth / 2);
+  const stageTop = height * insets.top + (safeHeight - stageHeight) * 0.52;
+  const pixelsPerUnit = stageHeight / CANVAS_HEIGHT;
+  const translateX = stageWidth / 2 - camera.x * pixelsPerUnit * camera.scale;
+  const translateY = stageHeight / 2 - camera.y * pixelsPerUnit * camera.scale;
   const activePart = manifest.parts.find((part) => part.id === shot.highlightPart);
   const activeFlow = manifest.flows.find((flow) => flow.id === shot.flowId);
   const labelOpacity = interpolate(frame, [shot.from + 8, shot.from + 24], [0, 1], {
@@ -273,12 +282,12 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
           top: stageTop,
           left: 0,
           width,
-          height: stageSize,
+          height: stageHeight,
           zIndex: 1,
           ...(fullBleed ? {} : { overflow: 'hidden', maskImage: stageEdgeFade, WebkitMaskImage: stageEdgeFade }),
         }}
       >
-        <div style={{ position: 'absolute', top: 0, left: stageLeft, width: stageSize, height: stageSize }}>
+        <div style={{ position: 'absolute', top: 0, left: stageLeft, width: stageWidth, height: stageHeight }}>
           <div
             style={{
               position: 'absolute',
@@ -297,7 +306,7 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
               }}
             >
               <Asset viewOpacity={viewOpacity} highlight={highlight} actionProgress={actionProgressAt(actionCues, frame)} time={frame / fps} />
-              <svg data-flow-layer viewBox="0 0 1000 1000" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
+              <svg data-flow-layer viewBox={`0 0 ${canvasWidth} ${CANVAS_HEIGHT}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
                 {activeFlow && <FlowParticles d={activeFlow.d} color={activeFlow.color} frame={frame} opacity={labelOpacity} />}
               </svg>
             </div>
@@ -306,8 +315,8 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
             <div
               style={{
                 position: 'absolute',
-                left: Math.min(stageSize * 0.8, Math.max(stageSize * 0.2, labelLeft)),
-                top: Math.min(stageSize * 0.92, Math.max(stageSize * 0.08, labelTop)),
+                left: Math.min(stageWidth * 0.8, Math.max(stageWidth * 0.2, labelLeft)),
+                top: Math.min(stageHeight * 0.92, Math.max(stageHeight * 0.08, labelTop)),
                 transform: 'translate(-50%, -50%)',
                 opacity: labelOpacity,
                 padding: '10px 22px',
@@ -334,7 +343,7 @@ export const AssetStage: React.FC<React.PropsWithChildren<{
             zIndex: 2,
             pointerEvents: 'none',
             opacity: headlinePlate,
-            background: `linear-gradient(to bottom, ${manifest.palette.backgroundTo} ${stageTop}px, transparent ${stageTop + stageSize * 0.05}px)`,
+            background: `linear-gradient(to bottom, ${manifest.palette.backgroundTo} ${stageTop}px, transparent ${stageTop + stageHeight * 0.05}px)`,
           }}
         />
       )}

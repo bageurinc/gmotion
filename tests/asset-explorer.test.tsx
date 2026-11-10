@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AssetExplorer } from '@/components/admin/AssetExplorer';
 import { ASSET_REGISTRY } from '@/lib/assets/registry';
+import { homeAcAsset, homeCompressorAsset, homeIndoorAsset, homeOutdoorAsset } from '@/lib/assets/home-ac';
 import { houseAsset } from '@/lib/assets/house';
 import { assetComponent, variantRendererProps } from '@/motion-kit/assets/asset-renderers';
 import { PUBLISHED_RENDERER } from '@/lib/assets/types';
@@ -30,6 +31,34 @@ describe('asset part explorer', () => {
       const props = Object.fromEntries(Object.entries(entry.props).map(([name, item]) => [name, item.default]));
       const results = spec.values.map((view) => normalize(renderToStaticMarkup(<Component {...props} {...variantRendererProps(entry.renderer, entry.defaultVariant)} view={view} />)));
       expect(new Set(results).size).toBe(spec.values.length);
+    }
+  });
+  it('offers playback on home AC units and only on the compressor cutaway', () => {
+    for (const entry of [homeIndoorAsset, homeOutdoorAsset]) {
+      expect(renderToStaticMarkup(<AssetExplorer entry={entry} />)).toContain('Putar animasi');
+    }
+    expect(renderToStaticMarkup(<AssetExplorer entry={homeCompressorAsset} />)).not.toContain('Putar animasi');
+    const cutaway = { ...homeCompressorAsset, defaultVariant: 'cutaway' };
+    const html = renderToStaticMarkup(<AssetExplorer entry={cutaway} />);
+    expect(html).toContain('Putar animasi');
+    expect(html).toContain('Putaran poros');
+  });
+  it('reveals AC internals by fading the casing in the same variant', () => {
+    const examples = [
+      [homeAcAsset, 'outdoor-casing', 'outdoor-internals'],
+      [homeIndoorAsset, 'indoor-casing', 'indoor-internals'],
+      [homeOutdoorAsset, 'outdoor-casing', 'outdoor-internals'],
+      [homeCompressorAsset, 'sealed-shell', 'rotary-chamber'],
+    ] as const;
+    for (const [entry, casing, internals] of examples) {
+      const Component = assetComponent(entry)!;
+      const variant = variantRendererProps(entry.renderer, entry.defaultVariant);
+      const draw = (opacity: number) => renderToStaticMarkup(<Component {...variant} casingOpacity={opacity} />);
+      expect(renderToStaticMarkup(<AssetExplorer entry={entry} />)).toContain('Transparansi casing');
+      expect(draw(1)).not.toContain(`data-part="${internals}"`);
+      expect(draw(0.5)).toContain(`data-part="${casing}" opacity="0.5"`);
+      expect(draw(0.5)).toContain(`data-part="${internals}"`);
+      expect(draw(0)).not.toContain(`data-part="${casing}"`);
     }
   });
   it('uses only stored images for published assets', () => {

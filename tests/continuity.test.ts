@@ -53,6 +53,23 @@ describe('applySharedWorld', () => {
     expect(() => applySharedWorld(scene(''))).toThrow(/SHARED-WORLD:START/);
   });
 
+  it('inserts a fixed block after the imports when the markers are missing', () => {
+    const code = applySharedWorld(scene(''), block('#111111'));
+    expect(extractSharedWorld(code)).toBe(block('#111111'));
+    expect(code.indexOf("import React from 'react';")).toBeLessThan(code.indexOf('// SHARED-WORLD:START'));
+    expect(code.indexOf('// SHARED-WORLD:END')).toBeLessThan(code.indexOf('export const Asset'));
+  });
+
+  it('accepts markers written as block comments or with spaces', () => {
+    const loose = block('#222222').replace('// SHARED-WORLD:START', '/* SHARED-WORLD: START */').replace('// SHARED-WORLD:END', '//SHARED-WORLD:END');
+    expect(extractSharedWorld(applySharedWorld(scene(loose), block('#111111')))).toBe(block('#111111'));
+  });
+
+  it('refuses a scene that redefines the shared components without markers', () => {
+    const redefined = scene('const WorldBase = () => <rect fill="#999999" />;');
+    expect(() => applySharedWorld(redefined, block('#111111'))).toThrow(/Do not define WorldBase/);
+  });
+
   it('rejects a block without WorldBase', () => {
     const shared = '// SHARED-WORLD:START\nconst Ground = () => null;\n// SHARED-WORLD:END';
     expect(() => applySharedWorld(scene(shared, '<Ground />'))).toThrow(/WorldBase/);
@@ -91,7 +108,7 @@ describe('continuityFor', () => {
   });
 
   it('inherits the first block and the nearest earlier scene', () => {
-    expect(continuityFor(scenes, { a: first, b: second }, 2)).toEqual({ sharedWorld: block('#111111'), previous: second, adjacent: true });
+    expect(continuityFor(scenes, { a: first, b: second }, 2)).toEqual({ sharedWorld: block('#111111'), canvasWidth: 1000, previous: second, adjacent: true });
   });
 
   it('skips a scene that fell back to the simple version', () => {
@@ -99,7 +116,7 @@ describe('continuityFor', () => {
   });
 
   it('keeps the block when the first scene is redrawn', () => {
-    expect(continuityFor(scenes, { a: first, b: second }, 0)).toEqual({ sharedWorld: block('#111111'), previous: undefined, adjacent: false });
+    expect(continuityFor(scenes, { a: first, b: second }, 0)).toEqual({ sharedWorld: block('#111111'), canvasWidth: 1000, previous: undefined, adjacent: false });
   });
 
   it('lets a later scene define the block when the first has none', () => {

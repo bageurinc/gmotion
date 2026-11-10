@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { SocialSafeFrame } from '../src/components/video/SocialSafeFrame';
 import { getSocialSafeInsets, SceneLayout, SceneBackground } from '../src/motion-kit/core/SafeOverlay';
 import { SyncedCaptions } from '../src/motion-kit/core/SyncedCaptions';
+import { KineticHeadline } from '../src/motion-kit/core/KineticHeadline';
+import { TextStyleProvider } from '../src/motion-kit/core/TextStyleContext';
 import { CameraRig } from '../src/motion-kit/core/CameraRig';
 import { SOCIAL_PLATFORMS, SocialPlatformOverlay } from '../src/components/video/SocialPlatformOverlay';
 
@@ -65,6 +67,24 @@ describe('social safe frame', () => {
     />);
     expect(html.replace(/<[^>]*>/g, '')).toBe('lahir dari puncak berkabut seribu meter');
     expect(html).not.toContain('transform:');
+    expect(html).toContain('background-color:rgba(0, 0, 0, 0.75)');
+  });
+
+  it('shares the video theme between the headline and synchronized captions', () => {
+    const html = renderToStaticMarkup(<TextStyleProvider value="editorial">
+      <KineticHeadline text="Kapal mulai dibangun" highlightWords={['Kapal']} />
+      <SyncedCaptions
+        text="Kapal mulai dibangun"
+        activeColor="#FFFFFF"
+        wordTimings={[{ word: 'Kapal', startMs: 0, endMs: 4000 }]}
+      />
+    </TextStyleProvider>);
+    expect(html).toContain('color:#8A351C');
+    expect(html).toContain('color:#36251B');
+    expect(html).toMatch(/<span style="[^"]*color:#8A351C;[^"]*text-decoration:underline double[^"]*">Kapal<\/span>/);
+    expect(html.match(/text-decoration:underline double/g)).toHaveLength(1);
+    expect(html.match(/background-color:#F4E7CB/g)).toHaveLength(2);
+    expect(html).toContain('border:5px double #87694C');
   });
 
   it.each([[1080, 1920], [1080, 1350], [1920, 1080], [1080, 1080]])(

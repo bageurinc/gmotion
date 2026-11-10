@@ -2,10 +2,12 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from '../src/app/api/projects/[projectId]/render/route';
 import { getProject, saveProject } from '../src/lib/storage/project-store';
+import { sendProjectEmail } from '../src/lib/notifications/project-email';
 import { renderProvider } from '../src/lib/render/render-service';
 import { readExportStream } from '../src/lib/render/export-stream';
 import type { StudioProject } from '../src/types/studio';
 
+vi.mock('../src/lib/notifications/project-email', () => ({ sendProjectEmail: vi.fn() }));
 vi.mock('../src/lib/storage/project-store', () => ({ getProject: vi.fn(), saveProject: vi.fn() }));
 vi.mock('../src/lib/render/render-service', () => ({ renderProvider: { renderProject: vi.fn() } }));
 const params = { params: Promise.resolve({ projectId: 'test-platform' }) };
@@ -23,6 +25,12 @@ it('renders and saves the same platform selected in the player', async () => {
   await expect(readExportStream(response, () => undefined)).resolves.toMatchObject({ exportVideoUrl: '/video.mp4' });
   expect(renderProvider.renderProject).toHaveBeenCalledWith(expect.objectContaining({ safeAreaPlatform: 'shorts' }), expect.any(Function));
   expect(saveProject).toHaveBeenLastCalledWith(expect.objectContaining({ safeAreaPlatform: 'shorts', status: 'ready' }));
+  expect(sendProjectEmail).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ email: 'tester@example.com' }),
+    expect.objectContaining({ status: 'ready', exportVideoUrl: '/video.mp4' }),
+    'export',
+  );
+  expect(saveProject).toHaveBeenCalledBefore(vi.mocked(sendProjectEmail));
 });
 
 it('forwards the renderer progress to the client', async () => {
@@ -48,4 +56,11 @@ it('rejects an unknown platform before starting an export', async () => {
   }), params);
   expect(response.status).toBe(400);
   expect(renderProvider.renderProject).not.toHaveBeenCalled();
+});
+
+it('does not email the user if rendering fails', async () => {
+  vi.mocked(renderProvider.renderProject).mockRejectedValueOnce(new Error('MP4 render failed'));
+  const response = await POST(new NextRequest('http://localhost/render', { method: 'POST' }), params);
+  await expect(readExportStream(response, () => undefined)).rejects.toThrow('MP4 render failed');
+  expect(sendProjectEmail).not.toHaveBeenCalled();
 });

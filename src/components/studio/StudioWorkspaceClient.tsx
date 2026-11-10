@@ -8,7 +8,7 @@ import { hasFailedScene, readyScenes } from '@/lib/pipeline/draft';
 import { ART_STYLE_LABELS, DRAWING_MODEL_LABELS, PRESET_LABELS, StudioProject, TextStyleId, usesWorldEngine } from '@/types/studio';
 import { TextStylePicker } from './TextStylePicker';
 import { readExportStream } from '@/lib/render/export-stream';
-import { DraftProgressBar, GenerationProgress } from './GenerationProgress';
+import { DraftAssembly, DraftProgressBar, GenerationProgress } from './GenerationProgress';
 
 const StorySvgDraftPreview = dynamic(
   () => import('./StorySvgDraftPreview').then((mod) => mod.StorySvgDraftPreview),
@@ -615,7 +615,8 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                 )}
               </StorySvgDraftPreview>
             ) : previewScenes.length === 0 && waitingForObjects && !interrupted ? (
-              <div className="flex flex-col items-center gap-3 p-4 text-center">
+              <div className="flex w-full flex-col items-center gap-3 p-4 text-center">
+                <DraftAssembly />
                 <p className="max-w-xs text-sm text-slate-300">{previewStatus}</p>
                 <DraftProgressBar progress={project.storySvgDraftProgress}
                   note="Biasanya 5–8 menit. Halaman ini boleh ditutup, prosesnya tetap berjalan." />

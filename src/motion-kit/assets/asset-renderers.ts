@@ -1,6 +1,6 @@
 import React from 'react';
 import { PUBLISHED_RENDERER, type AssetEntry, type AssetRendererKey } from '@/lib/assets/types';
-import { IsoCar, IsoLmpv, IsoRoad, IsoWasteSorting, IsoWaterChannel, IsoWaterTreatment, IsoShop, IsoShelf, IsoCheckout, IsoProduct, IsoPosTerminal, IsoHouse, IsoSink } from '@/motion-kit/isometric';
+import { IsoCar, IsoLmpv, IsoVehicleAC, IsoACCompressor, IsoRoad, IsoWasteSorting, IsoWaterChannel, IsoWaterTreatment, IsoShop, IsoShelf, IsoCheckout, IsoProduct, IsoPosTerminal, IsoHouse, IsoSink, IsoHomeAC, IsoHomeACIndoor, IsoHomeACOutdoor, IsoHomeCompressor, IsoHomeACRemote } from '@/motion-kit/isometric';
 
 /**
  * Registry renderer key → local component. Typed as a full Record, so registering an
@@ -10,19 +10,22 @@ import { IsoCar, IsoLmpv, IsoRoad, IsoWasteSorting, IsoWaterChannel, IsoWaterTre
 export const ASSET_RENDERERS: Record<AssetRendererKey, React.FC<any>> = {
   IsoCar,
   IsoLmpv,
+  IsoVehicleAC,
+  IsoACCompressor,
   IsoRoad,
   IsoWasteSorting,
   IsoWaterChannel,
   IsoWaterTreatment,
   IsoShop, IsoShelf, IsoCheckout, IsoProduct, IsoPosTerminal,
   IsoHouse, IsoSink,
+  IsoHomeAC, IsoHomeACIndoor, IsoHomeACOutdoor, IsoHomeCompressor, IsoHomeACRemote,
 };
 
 /** Props a renderer needs to show one variant, beyond the registry's own props. */
 export function variantRendererProps(renderer: AssetEntry['renderer'], variant: string): Record<string, unknown> {
   if (renderer === PUBLISHED_RENDERER) return { variant };
   if (renderer === 'IsoCar') return { powertrain: variant };
-  if (renderer === 'IsoWaterTreatment' || renderer === 'IsoWaterChannel' || renderer === 'IsoProduct' || renderer === 'IsoHouse' || renderer === 'IsoSink') return { variant };
+  if (renderer === 'IsoACCompressor' || renderer === 'IsoHomeCompressor' || renderer === 'IsoHomeAC' || renderer === 'IsoHomeACIndoor' || renderer === 'IsoHomeACOutdoor' || renderer === 'IsoWaterTreatment' || renderer === 'IsoWaterChannel' || renderer === 'IsoProduct' || renderer === 'IsoHouse' || renderer === 'IsoSink') return { variant };
   return {};
 }
 

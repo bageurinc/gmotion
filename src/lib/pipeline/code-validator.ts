@@ -25,6 +25,16 @@ const FORBIDDEN_GLOBALS = new Set([
   'require', 'process', 'module', 'postMessage', 'importScripts',
 ]);
 
+/**
+ * Names a scene may read without declaring them: the language's own globals.
+ * Forbidden globals are reported separately, so listing every runtime global here is safe.
+ */
+const KNOWN_GLOBALS = new Set([
+  ...Object.getOwnPropertyNames(globalThis),
+  'undefined', 'NaN', 'Infinity', 'arguments', 'React', 'console',
+  'SVGElement', 'SVGSVGElement', 'SVGGElement', 'SVGPathElement', 'HTMLElement', 'HTMLDivElement', 'Element',
+]);
+
 const FORBIDDEN_PROPERTIES = new Set([
   'constructor', '__proto__', 'prototype', 'cookie', 'innerHTML', 'outerHTML', 'insertAdjacentHTML',
   'dangerouslySetInnerHTML',
@@ -100,8 +110,17 @@ function isAllowedImport(source: string, allowedImports?: readonly string[]): bo
   return ALLOWED_IMPORTS.has(source) || source.startsWith('./') || source.startsWith('../');
 }
 
-function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: boolean, allowedImports?: readonly string[]) {
+function inspectAst(
+  ast: AstNode,
+  fileName: string,
+  errors: string[],
+  svgOnly: boolean,
+  allowedImports?: readonly string[],
+  providedNames: readonly string[] = [],
+  checkUndeclared = true,
+) {
   const declared = declaredNames(ast);
+  providedNames.forEach((name) => declared.add(name));
   const report = (message: string) => {
     if (!errors.includes(message)) errors.push(message);
   };
@@ -150,6 +169,10 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: b
         report(`Detected timer functions ('${name}') in ${fileName}. Use 'useCurrentFrame()' and frame-based calculations instead.`);
       }
       if (FORBIDDEN_GLOBALS.has(name)) report(`Forbidden global '${name}' in ${fileName}.`);
+      else if (checkUndeclared && !TIMER_GLOBALS.has(name) && !KNOWN_GLOBALS.has(name)) {
+        // The page would crash on this name the moment the component renders.
+        report(`'${name}' is used but never declared in ${fileName}. Declare it (for example a helper function) or use a defined name.`);
+      }
     }
 
     if (node.type === 'CallExpression' && isElementFactory(node)) {
@@ -171,7 +194,15 @@ function inspectAst(ast: AstNode, fileName: string, errors: string[], svgOnly: b
   });
 }
 
-export function validateSceneCode(code: string, fileName = 'Scene.tsx', options: { svgOnly?: boolean; allowedImports?: readonly string[] } = {}): ValidationResult {
+export function validateSceneCode(
+  code: string,
+  fileName = 'Scene.tsx',
+  /**
+   * providedNames: names the runtime defines around a piece checked on its own, such as the human rig.
+   * checkUndeclared: false for a fragment whose shared block is inserted later; the composed file is checked then.
+   */
+  options: { svgOnly?: boolean; allowedImports?: readonly string[]; providedNames?: readonly string[]; checkUndeclared?: boolean } = {},
+): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -190,7 +221,7 @@ export function validateSceneCode(code: string, fileName = 'Scene.tsx', options:
       logLevel: 'silent',
       tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
     });
-    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false, options.allowedImports);
+    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false, options.allowedImports, options.providedNames, options.checkUndeclared ?? true);
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     errors.push(`Export compilation error in ${fileName}: ${errorMsg}`);

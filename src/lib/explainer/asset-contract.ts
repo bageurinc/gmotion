@@ -7,12 +7,26 @@ import { z } from 'zod';
  */
 
 const IdSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/);
-const Coordinate = z.number().min(0).max(1000);
+/** The canvas is always 1000 tall. Landscape videos widen it, so x may run past 1000. */
+export const CANVAS_HEIGHT = 1000;
+export const MAX_CANVAS_WIDTH = 2000;
+const CoordinateX = z.number().min(0).max(MAX_CANVAS_WIDTH);
+const CoordinateY = z.number().min(0).max(CANVAS_HEIGHT);
 const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
+/**
+ * Canvas width for a video shape. Portrait and square-ish frames keep the 1000 by 1000 canvas.
+ * A landscape frame gets a canvas of the same shape, so the drawing fills the width instead of a square in the middle.
+ */
+export function canvasWidthFor(aspectRatio?: string): number {
+  const [w, h] = (aspectRatio ?? '').split(':').map(Number);
+  if (!w || !h || w <= h) return CANVAS_HEIGHT;
+  return Math.min(MAX_CANVAS_WIDTH, Math.round((CANVAS_HEIGHT * w) / h));
+}
+
 export const FocusSchema = z.object({
-  x: Coordinate,
-  y: Coordinate,
+  x: CoordinateX,
+  y: CoordinateY,
   scale: z.number().min(1).max(4),
 });
 
@@ -38,6 +52,8 @@ export const AssetManifestSchema = z
       text: HexColor,
     }),
     heroFocus: FocusSchema,
+    /** Set by the pipeline from the video shape, never by the model. Assets drawn before it are 1000 wide. */
+    canvasWidth: z.number().min(CANVAS_HEIGHT).max(MAX_CANVAS_WIDTH).optional(),
     camera: SceneCameraSchema.optional(),
     choreography: z.array(z.object({
       id: IdSchema,
@@ -61,7 +77,7 @@ export const AssetManifestSchema = z
           id: IdSchema,
           label: z.string().min(1).max(28),
           views: z.array(IdSchema).min(1),
-          anchor: z.object({ x: Coordinate, y: Coordinate }),
+          anchor: z.object({ x: CoordinateX, y: CoordinateY }),
           focus: FocusSchema,
         })
       )
@@ -117,6 +133,8 @@ export const AssetManifestSchema = z
   });
 
 export type AssetManifest = z.infer<typeof AssetManifestSchema>;
+
+export const manifestCanvasWidth = (manifest: Pick<AssetManifest, 'canvasWidth'>) => manifest.canvasWidth ?? CANVAS_HEIGHT;
 export type AssetFocus = z.infer<typeof FocusSchema>;
 export type SceneCamera = z.infer<typeof SceneCameraSchema>;
 

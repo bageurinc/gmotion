@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GeneratedAsset } from '@/lib/explainer/asset-generator';
 import { AssetManifestSchema } from '@/lib/explainer/asset-contract';
-import { continuedScenes, continuityPrompt, scenePath } from '@/lib/explainer/continuity';
-import { composeAssetScene } from '@/lib/explainer/scene-generator';
+import { continuedScenes, continuityFor, continuityPrompt, scenePath } from '@/lib/explainer/continuity';
+import { composeAssetScene, sceneCanvasWidth, sceneTopicPrompt } from '@/lib/explainer/scene-generator';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
@@ -116,5 +116,34 @@ describe('camera prompt', () => {
     const prompt = continuityPrompt({ sharedWorld: '// SHARED-WORLD:START\n// SHARED-WORLD:END', previous: frame });
     expect(prompt).toContain('Previous camera: {"link":"continue","focus":{"x":620,"y":420,"scale":3}}');
     expect(prompt).toContain('Never cover the world with a panel');
+  });
+
+  it('states the wide canvas window for landscape videos', () => {
+    expect(continuityPrompt({})).toContain("shared world's 1000 by 1000 coordinates");
+    const wide = continuityPrompt({}, 1778);
+    expect(wide).toContain("shared world's 1778 by 1000 coordinates");
+    expect(wide).toContain('centred at x=889');
+    expect(wide).toContain('1778/S units wide and 1000/S tall');
+  });
+});
+
+describe('canvas of an existing shared world', () => {
+  const scenes = [{ id: 'a' }, { id: 'b' }];
+  const world = (canvasWidth?: number): GeneratedAsset => ({
+    manifest: { ...frame.manifest, ...(canvasWidth ? { canvasWidth } : {}) },
+    code: '// SHARED-WORLD:START\nconst WorldBase = () => null;\n// SHARED-WORLD:END',
+  });
+
+  it('keeps an older square world square, even in a landscape video', () => {
+    expect(continuityFor(scenes, { a: world() }, 1).canvasWidth).toBe(1000);
+    expect(continuityFor(scenes, { a: world(1778) }, 1).canvasWidth).toBe(1778);
+    expect(continuityFor(scenes, {}, 0).canvasWidth).toBeUndefined();
+  });
+
+  it('lets the video shape decide only when no world exists yet', () => {
+    const storyboard = { ...generateProceduralStoryboard('Air sungai jadi air bersih', 'story-svg', '16:9'), preset: 'story-svg' as const };
+    expect(sceneCanvasWidth(storyboard)).toBe(1778);
+    expect(sceneCanvasWidth(storyboard, { canvasWidth: 1000 })).toBe(1000);
+    expect(sceneTopicPrompt(storyboard, 0)).toContain('viewBox is "0 0 1778 1000"');
   });
 });

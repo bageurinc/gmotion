@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TEST_USER } from './setup-auth';
 import { generateMainVideoCode, generateSceneFile } from '@/lib/pipeline/coder-agent';
 import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
@@ -329,6 +330,8 @@ describe('draft review flow', () => {
   });
 
   it('marks every scene failed when a 3D world cannot be made, then allows a retry', async () => {
+    // Isometrik is admin-only while in development.
+    vi.stubEnv('ADMIN_EMAILS', TEST_USER.email);
     const res = await createProject(request({ prompt: 'Ceritakan perjalanan biji kopi', preset: 'world', aspectRatio: '9:16' }));
     const { project } = await res.json();
     created.push(project.id);

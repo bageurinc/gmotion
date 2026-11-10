@@ -1,3 +1,5 @@
+import type { User } from '@/lib/auth/session';
+import { sendProjectEmail } from '@/lib/notifications/project-email';
 import { saveProject } from '@/lib/storage/project-store';
 import { usesWorldEngine } from '@/types/studio';
 import type { SceneStage, StudioProject } from '@/types/studio';
@@ -157,7 +159,7 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
   commit(() => ({ checkingScenes: undefined }));
 }
 
-export async function runGeneration(initial: StudioProject): Promise<void> {
+export async function runGeneration(initial: StudioProject, user?: Pick<User, 'email' | 'google_sub'>): Promise<void> {
   if (initial.storySvgReviewPending) return;
   let project = initial;
   activeJobs.add(project.id);
@@ -217,6 +219,7 @@ export async function runGeneration(initial: StudioProject): Promise<void> {
       );
       commit(() => ({ storySvgDraft, storySvgReviewPending: true, storySvgDraftProgress: undefined, status: 'idle' }));
       activeJobs.delete(project.id);
+      if (user) await sendProjectEmail(user, project, 'story-svg');
       return;
     } catch (error) {
       console.error('[GenerationJob] Story SVG draft failed:', error);

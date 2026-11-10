@@ -1,6 +1,7 @@
 import { mapWithConcurrency, PIPELINE_CONCURRENCY } from '@/lib/pipeline/concurrency';
 import { captureSceneSheets, opensWithPreviousScene } from '@/lib/render/scene-check';
 import type { StudioProject } from '@/types/studio';
+import { manifestCanvasWidth } from './asset-contract';
 import { AssetCritique, critiqueAsset, GeneratedAsset, repairAsset, reviseAsset } from './asset-generator';
 import { generateMainVideoCode } from '@/lib/pipeline/coder-agent';
 import { continuedScenes, continuesCamera, continuityFor, hasContinuousCut } from './continuity';
@@ -125,7 +126,7 @@ export function qualityTools(
     current,
     capture: captureSceneSheets,
     critique: async (project, index, asset, sheet) =>
-      (await critiqueAsset(criticModel(), sceneTopicPrompt(project.storyboard, index), asset, sheet, sheetNote(project, index))).critique,
+      (await critiqueAsset(criticModel(), sceneTopicPrompt(project.storyboard, index, undefined, manifestCanvasWidth(asset.manifest)), asset, sheet, sheetNote(project, index))).critique,
     redraw: async (project, index, asset, critique, sheet) => {
       const continuity = project.storyboard.preset === 'story-svg'
         ? continuityFor(project.storyboard.scenes, project.sceneAssets, index, project.storySvgDraft)

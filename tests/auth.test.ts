@@ -219,6 +219,25 @@ describe('project ownership', () => {
   });
 });
 
+describe('admin-only presets', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const draft = (preset: string) => createProject(request('/api/projects', { method: 'POST', body: JSON.stringify({ prompt: 'Aman nggak HP dicas semalaman?', preset }) }));
+
+  it.each(['world'])('refuses %s for a regular account', async (preset) => {
+    vi.stubEnv('ADMIN_EMAILS', 'someone-else@example.com');
+    const res = await draft(preset);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toContain('belum tersedia');
+  });
+
+  it('lets an admin past the preset gate', async () => {
+    vi.stubEnv('ADMIN_EMAILS', TEST_USER.email);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({ ...TEST_USER, credits: 0 });
+    // Zero credit stops the draft right after the preset gate, so no model is called.
+    expect((await draft('world')).status).toBe(402);
+  });
+});
+
 describe('D1 HTTP driver', () => {
   afterEach(() => vi.restoreAllMocks());
 

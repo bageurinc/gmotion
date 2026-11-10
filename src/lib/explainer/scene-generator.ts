@@ -8,6 +8,7 @@ import { ensureContrast } from '@/lib/pipeline/anti-slop';
 import type { ImageShot } from '@/motion-kit/explainer/image-camera';
 import type { ColorPalette, DrawingModel, SceneSpec, Storyboard } from '@/types/studio';
 import { generateAsset, GeneratedAsset, parseAssetResponse, repairAsset, sceneAssetPrompt } from './asset-generator';
+import { CANVAS_HEIGHT, canvasWidthFor } from './asset-contract';
 
 export function assetModel(choice: DrawingModel = 'gemini'): string {
   if (choice === 'deepseek-flash') return process.env.DEEPSEEK_FLASH_MODEL || 'ds/deepseek-v4.1-flash';
@@ -99,8 +100,19 @@ export default ${componentName};
 `;
 }
 
-export function sceneTopicPrompt(storyboard: Storyboard, index: number, continuity?: SceneContinuity): string {
+/** The canvas a scene is drawn on: the shared world's when one exists, else the one for the video shape. */
+export const sceneCanvasWidth = (storyboard: Storyboard, continuity?: SceneContinuity) =>
+  continuity?.canvasWidth ?? canvasWidthFor(storyboard.aspectRatio);
+
+export function sceneTopicPrompt(
+  storyboard: Storyboard,
+  index: number,
+  continuity?: SceneContinuity,
+  /** The canvas of an asset already drawn, for the critic. */
+  drawnCanvasWidth?: number,
+): string {
   const scene = storyboard.scenes[index];
+  const canvasWidth = drawnCanvasWidth ?? sceneCanvasWidth(storyboard, continuity);
   const prompt = sceneAssetPrompt({
     videoTitle: storyboard.title,
     outline: storyboard.scenes.map((item, position) => `${position + 1}. ${item.title}`).join('\n'),
@@ -110,6 +122,8 @@ export function sceneTopicPrompt(storyboard: Storyboard, index: number, continui
     narration: scene.voiceoverText,
     visualPrompt: scene.visualPrompt,
     palette: storyboard.palette,
+    aspectRatio: storyboard.aspectRatio,
+    canvasWidth,
   });
   const cardNote = spokenDataVisual(scene.dataVisual, scene.voiceoverText)
     ? '\nA data card covers the frame below y=800 in this scene, so keep the main subject and its full motion above y=800. The ground may continue behind the card.'
@@ -128,7 +142,17 @@ FULL SVG CHOREOGRAPHY MODE (use the choreography contract from the system prompt
 - No raster images, no ImageStage, no video.
 Narration words with timing: ${JSON.stringify(words.map((w, i) => ({ index: i, ...w })))}
 Shared sequence directions: ${JSON.stringify(storyboard.scenes.map((item, i) => ({ scene: i + 1, title: item.title, narration: item.voiceoverText, visual: item.visualPrompt })))}
-This scene lasts ${scene.durationInFrames / fps} seconds.${cardNote}${continuity ? `\n\n${continuityPrompt(continuity)}` : ''}`;
+This scene lasts ${scene.durationInFrames / fps} seconds.${cardNote}${continuity ? `\n\n${continuityPrompt(continuity, canvasWidth)}` : ''}`;
+}
+
+/**
+ * Records the canvas the asset was drawn on, so the stage frames it the same way later.
+ * A model that kept the square viewBox on a wide canvas gets the wide one, matching the coordinates it was asked for.
+ */
+export function fitToCanvas(asset: GeneratedAsset, canvasWidth: number): GeneratedAsset {
+  const square = `viewBox="0 0 ${CANVAS_HEIGHT} ${CANVAS_HEIGHT}"`;
+  const code = canvasWidth === CANVAS_HEIGHT ? asset.code : asset.code.replace(square, `viewBox="0 0 ${canvasWidth} ${CANVAS_HEIGHT}"`);
+  return { manifest: { ...asset.manifest, canvasWidth }, code };
 }
 
 export function buildAssetScene(
@@ -137,7 +161,7 @@ export function buildAssetScene(
   index: number,
   continuity?: SceneContinuity,
 ): { asset: GeneratedAsset; code: string } {
-  let asset = parseAssetResponse(text);
+  let asset = fitToCanvas(parseAssetResponse(text), sceneCanvasWidth(storyboard, continuity));
   if (storyboard.preset === 'story-svg') {
     if (!asset.manifest.choreography?.length || asset.manifest.views.length !== 1) {
       throw new Error('Full SVG requires choreography actions and one persistent view.');

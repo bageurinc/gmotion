@@ -21,6 +21,26 @@ const StageIcon: React.FC<{ stage: SceneStage }> = ({ stage }) => {
   return <RefreshCw className="h-4 w-4 text-cyan-300 motion-safe:animate-spin" />;
 };
 
+export function DraftAssembly() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 176 128" className="h-32 w-44 max-w-full text-emerald-300">
+      <rect x="27" y="17" width="122" height="94" rx="9" fill="none" stroke="#35443b" strokeDasharray="3 5" />
+      <g className="draft-assembly-layer">
+        <rect x="38" y="41" width="88" height="57" rx="6" fill="#19221d" stroke="#52685a" />
+      </g>
+      <g className="draft-assembly-layer [animation-delay:220ms]">
+        <rect x="44" y="35" width="88" height="57" rx="6" fill="#1c2b22" stroke="#60816e" />
+      </g>
+      <g className="draft-assembly-layer [animation-delay:440ms]">
+        <rect x="50" y="29" width="88" height="57" rx="6" fill="#21372b" stroke="currentColor" />
+        <path d="M63 72l20-18 14 11 11-9 17 16H63Z" fill="#305641" stroke="currentColor" strokeLinejoin="round" />
+        <circle cx="111" cy="45" r="4" fill="currentColor" />
+        <path d="M61 45v-5h5m56 0h5v5" fill="none" stroke="#749684" strokeLinecap="round" />
+      </g>
+    </svg>
+  );
+}
+
 /** Bar and step for the Full SVG object draft, shown where the draft will appear. */
 export const DraftProgressBar: React.FC<{ progress?: DraftProgress; note?: string }> = ({ progress, note }) => {
   const percent = Math.round(progress?.percent ?? 0);

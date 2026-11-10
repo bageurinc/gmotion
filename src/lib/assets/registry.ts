@@ -1,7 +1,9 @@
 import { BUSINESS_ASSETS } from './business';
 import { waterChannelAsset, waterTreatmentAsset } from './water-environment';
 import { wasteSortingAsset } from './waste-sorting';
+import { homeAcAsset, homeIndoorAsset, homeOutdoorAsset, homeCompressorAsset, homeAcRemoteAsset } from './home-ac';
 import { houseAsset, sinkAsset } from './house';
+import { acCompressorAsset, vehicleAcAsset } from './vehicle-ac';
 import { lmpvAsset } from './lmpv';
 import { ISO_CAR_ANCHORS } from '@/motion-kit/isometric/IsoCar';
 import { ISO_ELECTRIC_CAR_ANCHORS } from '@/motion-kit/isometric/ElectricCarMechanics';
@@ -129,7 +131,7 @@ const environmentRoad: AssetEntry = {
   provenance: PROVENANCE,
 };
 
-export const ASSET_REGISTRY: readonly AssetEntry[] = [vehicleCar, lmpvAsset, environmentRoad, wasteSortingAsset, waterChannelAsset, waterTreatmentAsset, houseAsset, sinkAsset, ...BUSINESS_ASSETS];
+export const ASSET_REGISTRY: readonly AssetEntry[] = [vehicleCar, lmpvAsset, vehicleAcAsset, acCompressorAsset, environmentRoad, wasteSortingAsset, waterChannelAsset, waterTreatmentAsset, houseAsset, sinkAsset, homeAcAsset, homeIndoorAsset, homeOutdoorAsset, homeCompressorAsset, homeAcRemoteAsset, ...BUSINESS_ASSETS];
 
 export function getAsset(assetId: string, version?: string, registry: readonly AssetEntry[] = ASSET_REGISTRY) {
   return registry.find((entry) => entry.assetId === assetId && (version === undefined || entry.version === version));

@@ -6,13 +6,15 @@ export type AssetPoint = readonly [number, number, number];
 export type AssetStatus = 'experimental' | 'ready' | 'deprecated';
 export type AssetProjection = 'isometric-30';
 /** Renderer keys map to local components; the model never names a component directly. */
-export type AssetRendererKey = 'IsoCar' | 'IsoLmpv' | 'IsoRoad' | 'IsoWasteSorting' | 'IsoWaterChannel' | 'IsoWaterTreatment' | 'IsoShop' | 'IsoShelf' | 'IsoCheckout' | 'IsoProduct' | 'IsoPosTerminal' | 'IsoHouse' | 'IsoSink';
+export type AssetRendererKey = 'IsoCar' | 'IsoLmpv' | 'IsoVehicleAC' | 'IsoACCompressor' | 'IsoRoad' | 'IsoWasteSorting' | 'IsoWaterChannel' | 'IsoWaterTreatment' | 'IsoShop' | 'IsoShelf' | 'IsoCheckout' | 'IsoProduct' | 'IsoPosTerminal' | 'IsoHouse' | 'IsoSink' | 'IsoHomeAC' | 'IsoHomeCompressor' | 'IsoHomeACIndoor' | 'IsoHomeACOutdoor' | 'IsoHomeACRemote';
 
 interface PropBase {
   /** Limits the prop to these variants. Absent means every variant accepts it. */
   variants?: readonly string[];
   /** Numeric props that a plan action may interpolate over time. */
   animatable?: boolean;
+  /** Degrees or phase units per second when the admin preview is playing. */
+  previewSpeed?: number;
   /**
    * A looping phase the renderer advances from the frame at a readable speed (units per second),
    * while the boolean prop named in activeWhen is true. Plans cannot animate it: models picked

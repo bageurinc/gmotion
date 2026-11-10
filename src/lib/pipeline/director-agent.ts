@@ -113,7 +113,7 @@ ${BgmTrackSchema.options.map((track) => `- ${track}: ${BGM_MOODS[track]}`).join(
    - Optionally specify "timelapse": { "kind": "day-night" | "clock" | "growth" | "crowd" | "weather", "fromLabel": "06:00", "toLabel": "20:00" }.
 
 5. TEXT AND DATA:
-   - textStyle sets the typeface of the whole video, so choose what suits the topic: "tegas" for loud, urgent, or sporty topics; "teknis" for engineering, science, and how things work; "editorial" for history, culture, and calm storytelling; "ramah" for everyday life, food, children, and light topics.
+   - Choose one textStyle for the whole video. It sets the typeface and the matching designs for headlines and captions: "tegas" uses a strong scorecard for urgent or sporty topics; "teknis" uses a blue instrument label for engineering and science; "editorial" uses an archive paper card for history, culture, and calm storytelling; "ramah" uses a warm rounded label for everyday life, food, and light topics.
    - A scene MAY add "dataVisual" when it truly helps. It is optional, and most scenes should not have one. Leave it out rather than forcing it.
    - Use one of: { "kind": "stat", "value": "28", "unit": "persen", "label": "short label" } for one number; { "kind": "compare", "unit": "meter", "items": [{ "label": "...", "value": "12" }] } for 2 to 4 comparable numbers; { "kind": "steps", "items": ["...", "..."] } for 2 to 4 short stages in order.
    - Every number must be spoken in that scene's voiceoverText, written in digits, with the same unit. Never invent a number just to fill a card. A dataVisual with an unspoken number is thrown away.

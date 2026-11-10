@@ -1,5 +1,5 @@
 import { recordUsage } from '@/lib/billing/usage';
-import { AssetManifest, AssetManifestSchema, missingContractIds } from './asset-contract';
+import { AssetManifest, AssetManifestSchema, CANVAS_HEIGHT, canvasWidthFor, missingContractIds } from './asset-contract';
 import { VISUAL_ANTI_SLOP_RULES } from '../pipeline/anti-slop';
 import { validateSceneCode } from '../pipeline/code-validator';
 
@@ -29,7 +29,10 @@ export interface AssetCritique {
 type ChatContent = string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
 
 export const ASSET_SYSTEM_PROMPT = `
-You are a senior editorial vector illustrator and React engineer. You turn ANY topic into one reusable animated SVG asset for a premium vertical explainer video.
+You are a senior editorial vector illustrator and React engineer. You turn ANY topic into one reusable animated SVG asset for a premium explainer video.
+
+CANVAS
+The canvas is W units wide and 1000 tall. The request states W: 1000 for vertical videos, wider for landscape ones (1778 for 16:9). Every coordinate below uses this canvas.
 
 TOPIC HANDLING
 - Physical subject: draw that subject.
@@ -43,10 +46,11 @@ Aim for polished semi-realistic textbook illustration:
 - Use organic cubic Bezier paths. Avoid assembling the subject from plain circles and rectangles.
 - Add believable secondary detail such as fibres, seams, panels, rivets, veins, droplets, grain, or texture lines.
 - Use at least 60 meaningful shapes across the asset, and at least 25 in each view.
-- Compose one large, connected subject that fills the canvas from about 40 to 960 on both axes. Do not scatter small objects across empty space.
+- Compose one large, connected subject that fills the canvas from about x=40 to x=W-40 and y=40 to y=960. Do not scatter small objects across empty space.
+- A wide canvas is a wide stage, not a square with margins. Fill its width with the focal subject plus the related objects, structures, and people this moment really has (what feeds it, what it feeds, its surroundings), all connected in one scene. Empty or bare sides are a failure.
 - Every important object stays fully inside the canvas. Nothing meaningful may be cut off by the edge or placed outside it.
-- The 1000 by 1000 canvas only bounds the subject. The video frame is much larger, and the area beyond the canvas stays visible. Ground, soil layers, road, floor, water, and any other environment surface must run from x=-1000 to x=2000, and anything below the surface must continue down to y=2000. They must never stop at the canvas edge or form a box, card, or diorama slice. Detail may stay near the subject, but the surface colors must continue.
-- Every scene happens in a real place, so draw that place behind the subject and fill the whole frame, from x=-1000 to x=2000 and from y=-1000 to y=2000. A plain empty backdrop is a failure. Outdoors: sky with soft clouds, horizon, distant hills or buildings. Indoors: wall with wallpaper, panels, tiles, or brick, plus a window or shelf that fits the room. Other settings get their own: seabed water and light for the deep sea, stars for space, surrounding tissue inside a body. The setting must fit the topic and the moment in the narration.
+- The W by 1000 canvas only bounds the subject. The video frame is larger, and the area beyond the canvas stays visible. Ground, soil layers, road, floor, water, and any other environment surface must run from x=-1000 to x=W+1000, and anything below the surface must continue down to y=2000. They must never stop at the canvas edge or form a box, card, or diorama slice. Detail may stay near the subject, but the surface colors must continue.
+- Every scene happens in a real place, so draw that place behind the subject and fill the whole frame, from x=-1000 to x=W+1000 and from y=-1000 to y=2000. A plain empty backdrop is a failure. Outdoors: sky with soft clouds, horizon, distant hills or buildings. Indoors: wall with wallpaper, panels, tiles, or brick, plus a window or shelf that fits the room. Other settings get their own: seabed water and light for the deep sea, stars for space, surrounding tissue inside a body. The setting must fit the topic and the moment in the narration.
 - The headline sits over the area above y=100, so keep it a calm, low-contrast tone close to the palette background: open sky or plain wall, with no clouds, objects, or strong patterns there. Keep the setting quieter and lower in contrast than the subject, so the subject stays the clear focus.
 - Each view must show a rich, finished picture on its own. A view that is mostly empty space, or only small icons, is a failure.
 - Do not draw UI cards floating around the subject unless the subject is a screen.
@@ -82,7 +86,7 @@ CHOREOGRAPHY MODE (when the request says FULL SVG CHOREOGRAPHY MODE):
 - Parts still identify the visible structures and react to highlight. Flows must describe a real route in the one view. Keep 3-10 parts, 1-6 flows.
 
 Manifest rules (in choreography mode, the view count rule above replaces the view rules here):
-- All coordinates use the 1000 by 1000 SVG viewBox.
+- All coordinates use the W by 1000 SVG viewBox.
 - 2 to 4 views. The second view needs at least 2 parts and 1 flow.
 - 3 to 10 parts. Every anchor must sit visually on that part. Every focus must frame that part.
 - Flow paths must run through the visible structure they describe.
@@ -94,7 +98,7 @@ export const Asset: React.FC<{ viewOpacity: Record<string, number>; highlight: R
 export default Asset;
 
 Component rules:
-- Return one <svg viewBox="0 0 1000 1000" width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>.
+- Return one <svg viewBox="0 0 W 1000" width="100%" height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>.
 - Wrap each view in <g opacity={viewOpacity.viewId ?? 0}>. Use every manifest view id and part id literally in the code.
 - Every part reacts to highlight.partId with a visible glow or brighter fill. Unhighlighted parts stay fully legible.
 - Use Math.sin(time * ...) for subtle idle motion only. The object must remain stable.
@@ -104,14 +108,14 @@ Component rules:
 `;
 
 export const CRITIC_SYSTEM_PROMPT = `
-You are a strict art director reviewing a generated vertical explainer scene. The image is a contact sheet of frames from one scene, in time order from left to right and top to bottom.
+You are a strict art director reviewing a generated explainer scene. The image is a contact sheet of frames from one scene, in time order from left to right and top to bottom.
 Score each criterion from 1 to 10:
 - recognizability: the subject and topic are immediately understood.
 - illustrationRichness: premium layered illustration with light, depth, and detail. A flat icon, clip art, or basic shapes scores 4 or lower. Dark images are fine when they suit the topic; penalize only murky images where the subject is hard to see.
 - viewConsistency: frames show the same subject with the same proportions.
 - labelAccuracy: labels point at the correct visible parts and facts are right.
 - For choreography mode, penalize static objects, repeated idle loops, ghosted duplicate states, unreadable cause/effect, and actions inconsistent with the narrated words. Judge progression across frames, not just decorative detail.
-- composition: one large clear subject fills the frame, there are no big empty areas or a nearly empty panel, nothing important is cut off, and text remains readable. Ground, water, or any environment surface that stops with a visible edge inside the frame instead of reaching the frame edges is a serious flaw: score composition 4 or lower and name it in issues. So is a plain backdrop with no setting: outdoor scenes need sky, clouds, or landscape, and indoor scenes need a wall surface. Score composition 4 or lower and name what to add.
+- composition: one large clear subject fills the frame, there are no big empty areas or a nearly empty panel, nothing important is cut off, and text remains readable. In a landscape frame, a subject squeezed into a narrow middle column with empty or bare sides, or with objects cut by an invisible square edge, is a serious flaw: score composition 4 or lower and name what should fill the sides. Ground, water, or any environment surface that stops with a visible edge inside the frame instead of reaching the frame edges is a serious flaw: score composition 4 or lower and name it in issues. So is a plain backdrop with no setting: outdoor scenes need sky, clouds, or landscape, and indoor scenes need a wall surface. Score composition 4 or lower and name what to add.
 - When the request says the scene has no part labels, never ask for labels or callouts, and score labelAccuracy on factual correctness alone.
 - When the request says the first frame belongs to the previous scene, use it only as a reference and do not score it. Judge whether the second frame continues it: the same shared objects, in the same shape and place, in a matching pose. Lower viewConsistency for a visible jump and name it in issues.
 Return only JSON: {"imageVisible":true,"scores":{"recognizability":0,"illustrationRichness":0,"viewConsistency":0,"labelAccuracy":0,"composition":0},"issues":["specific fix"]}.
@@ -123,13 +127,27 @@ const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 const MAX_ROUTER_RETRIES = 6;
 const ROUTER_RETRY_DELAY_MS = 100_000;
 
-export async function callChat(options: {
-  model: string;
-  system: string;
-  content: ChatContent;
-  maxTokens: number;
-  timeoutMs?: number;
-}): Promise<{ text: string; finishReason: string; usage: LlmUsage }> {
+type ChatOptions = { model: string; system: string; content: ChatContent; maxTokens: number; timeoutMs?: number };
+
+/** True when the stream broke mid-response (Node's fetch gives up after 5 minutes without a chunk). */
+const streamBroke = (error: unknown) => error instanceof TypeError && /terminated/i.test(error.message);
+
+/**
+ * Streams one chat completion. Routers sometimes go silent for over five minutes while a model
+ * thinks, and Node's fetch then ends the stream; that request is sent again once.
+ */
+export async function callChat(options: ChatOptions): Promise<{ text: string; finishReason: string; usage: LlmUsage }> {
+  try {
+    return await callChatOnce(options);
+  } catch (error) {
+    if (!streamBroke(error)) throw error;
+    recordUsage({ kind: 'chat', model: options.model, durationMs: 0, ok: false });
+    console.warn(`[callChat] Stream from ${options.model} broke (${String((error as Error).cause ?? error)}); sending once more.`);
+    return callChatOnce(options);
+  }
+}
+
+async function callChatOnce(options: ChatOptions): Promise<{ text: string; finishReason: string; usage: LlmUsage }> {
   const baseUrl = (process.env.OPENAI_BASE_URL || '').trim().replace(/\/+$/, '');
   const apiKey = (process.env.OPENAI_API_KEY || '').trim();
   if (!baseUrl || !apiKey) throw new Error('OPENAI_BASE_URL and OPENAI_API_KEY are required');
@@ -220,7 +238,8 @@ export function parseAssetResponse(text: string): GeneratedAsset {
   }
 
   const code = tsx[1].trim();
-  const validation = validateSceneCode(code, 'Asset.tsx');
+  // A draft scene names WorldBase and drafted objects before the renderer inserts their block, so names are checked on the composed scene.
+  const validation = validateSceneCode(code, 'Asset.tsx', { checkUndeclared: false });
   const missing = missingContractIds(manifestResult.data, code);
   const errors = [...validation.errors];
   if (missing.length) errors.push(`Code does not use manifest ids: ${missing.join(', ')}`);
@@ -239,6 +258,10 @@ const COMPACT_RETRY_NOTE =
 
 export async function requestAsset(model: string, content: ChatContent): Promise<{ text: string; usage: LlmUsage }> {
   const first = await callChat({ model, system: ASSET_SYSTEM_PROMPT, content, maxTokens: 48_000 });
+  // An empty answer stopped by the provider's safety filter is not a format mistake; say so.
+  if (first.finishReason === 'content_filter' && !first.text.trim()) {
+    throw new Error(`The model's safety filter blocked this scene (finish_reason content_filter) and returned no answer.`);
+  }
   if (first.finishReason !== 'length') return { text: first.text, usage: first.usage };
 
   const compactContent: ChatContent =
@@ -267,10 +290,20 @@ export interface SceneAssetContext {
   narration: string;
   visualPrompt: string;
   palette: Record<string, string>;
+  aspectRatio?: string;
+  /** Overrides the width the video shape gives, when the shared world was drawn for another canvas. */
+  canvasWidth?: number;
+}
+
+/** States the canvas for this video's shape, so a landscape scene is composed wide instead of square. */
+export function canvasNote(aspectRatio?: string, width = canvasWidthFor(aspectRatio)): string {
+  if (width === CANVAS_HEIGHT) return `Canvas: W=${width}, so the viewBox is "0 0 ${width} ${CANVAS_HEIGHT}" (${aspectRatio ?? 'vertical'} video).`;
+  return `Canvas: W=${width}, so the viewBox is "0 0 ${width} ${CANVAS_HEIGHT}" (${aspectRatio} landscape video). The frame is wide: spread the scene across x=40..${width - 40} with the focal subject plus the related objects that belong in this moment, and keep every object whole inside the canvas. The environment runs from x=-1000 to x=${width + 1000}.`;
 }
 
 export function sceneAssetPrompt(context: SceneAssetContext): string {
   return `Create the asset for scene ${context.sceneNumber} of ${context.sceneCount} in the video "${context.videoTitle}".
+${canvasNote(context.aspectRatio, context.canvasWidth)}
 
 Video outline:
 ${context.outline}

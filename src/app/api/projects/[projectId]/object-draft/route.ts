@@ -1,3 +1,4 @@
+import { notifyProjectAfterResponse } from '@/lib/notifications/project-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireProject } from '@/lib/auth/project-access';
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     }
     const updated = { ...latest, storySvgDraft, storySvgDraftProgress: undefined, updatedAt: Math.max(Date.now(), latest.updatedAt + 1) };
     saveProject(updated);
+    notifyProjectAfterResponse(access.user, updated, 'story-svg');
     return NextResponse.json({ project: updated });
   } catch (error) {
     console.error('[ObjectDraft] Revision failed:', error);

@@ -76,7 +76,7 @@ describe('asset registry', () => {
   });
 
   it('pins versions in a snapshot', () => {
-    expect(registrySnapshot()).toEqual({ 'vehicle.car': '0.1.0', 'vehicle.lmpv': '0.1.0', 'environment.road': '0.1.0', 'environment.waste-sorting': '0.1.0', 'environment.water-channel': '0.1.0', 'environment.water-treatment': '0.1.0', 'building.house': '0.1.0', 'building.sink': '0.1.0', 'business.shop': '0.1.0', 'business.shelf': '0.1.0', 'business.checkout': '0.1.0', 'business.product': '0.1.0', 'business.pos': '0.1.0' });
+    expect(registrySnapshot()).toEqual({ 'vehicle.car': '0.1.0', 'vehicle.lmpv': '0.1.0', 'vehicle.ac': '0.1.0', 'vehicle.ac-compressor': '0.1.0', 'environment.road': '0.1.0', 'environment.waste-sorting': '0.1.0', 'environment.water-channel': '0.1.0', 'environment.water-treatment': '0.1.0', 'building.house': '0.1.0', 'building.sink': '0.1.0', 'building.home-ac': '0.1.0', 'building.home-ac-indoor': '0.1.0', 'building.home-ac-outdoor': '0.1.0', 'building.home-ac-compressor': '0.1.0', 'building.home-ac-remote': '0.1.0', 'business.shop': '0.1.0', 'business.shelf': '0.1.0', 'business.checkout': '0.1.0', 'business.product': '0.1.0', 'business.pos': '0.1.0' });
   });
 });
 

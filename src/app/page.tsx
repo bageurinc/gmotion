@@ -13,6 +13,7 @@ import {
   ART_STYLE_LABELS,
   DRAWING_MODEL_LABELS,
   PRESET_LABELS,
+  presetAllowed,
   supportsArtStyle,
 } from '@/types/studio';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
@@ -61,6 +62,8 @@ export default function HomePage() {
     'loading' | 'ready' | 'error' | 'guest'
   >('loading');
   const [credits, setCredits] = useState<number | null>(null);
+  // Isometrik presets are admin-only while they are in development.
+  const [admin, setAdmin] = useState(false);
   const [accountState, setAccountState] = useState<
     'loading' | 'signed-in' | 'guest' | 'error'
   >('loading');
@@ -101,6 +104,7 @@ export default function HomePage() {
         if (!res.ok) throw new Error();
         const data = await res.json();
         setCredits(data.user?.credits ?? null);
+        setAdmin(data.user?.isAdmin === true);
         setAccountState(data.user ? 'signed-in' : 'guest');
       })
       .catch(() => setAccountState('error'));
@@ -129,9 +133,17 @@ export default function HomePage() {
       setIsGenerating(false);
     }
   };
+  const presets = PRESETS.filter((option) => presetAllowed(option.id, admin));
+  const filters = FILTERS.filter((item) => item === 'all' || presetAllowed(item, admin));
   const starters = STARTER_PROMPTS.filter(
-    (item) => filter === 'all' || item.preset === filter,
+    (item) => presetAllowed(item.preset, admin) && (filter === 'all' || item.preset === filter),
   );
+  // A saved draft or filter may point at a preset this account cannot use.
+  useEffect(() => {
+    if (accountState === 'loading') return;
+    if (!presetAllowed(preset, admin)) setPreset('ads-ui');
+    if (filter !== 'all' && !presetAllowed(filter, admin)) setFilter('all');
+  }, [accountState, admin, preset, filter]);
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -250,7 +262,7 @@ export default function HomePage() {
             <fieldset disabled={isGenerating} className="mt-6">
               <legend className="mb-3 text-sm font-semibold">Gaya video</legend>
               <div className="grid gap-2 sm:grid-cols-2">
-                {PRESETS.map((option) => (
+                {presets.map((option) => (
                   <button
                     type="button"
                     key={option.id}
@@ -262,6 +274,11 @@ export default function HomePage() {
                       {option.id === 'ads-ui'
                         ? 'Iklan produk'
                         : PRESET_LABELS[option.id]}
+                      {!presetAllowed(option.id, false) && (
+                        <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-200">
+                          Admin
+                        </span>
+                      )}
                       {preset === option.id && (
                         <Check
                           aria-hidden="true"
@@ -489,7 +506,7 @@ export default function HomePage() {
               aria-label="Filter contoh"
               className="flex flex-wrap gap-1"
             >
-              {FILTERS.map((item) => (
+              {filters.map((item) => (
                 <button
                   type="button"
                   key={item}

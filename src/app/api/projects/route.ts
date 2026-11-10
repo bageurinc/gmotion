@@ -1,4 +1,5 @@
 import { runWithUsage } from '@/lib/billing/usage';
+import { notifyProjectAfterResponse } from '@/lib/notifications/project-email';
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
@@ -11,7 +12,8 @@ import {
   getProject,
 } from '@/lib/storage/project-store';
 import { CreateProjectSchema } from '@/lib/security/project-input';
-import { StudioProject, supportsArtStyle } from '@/types/studio';
+import { presetAllowed, StudioProject, supportsArtStyle } from '@/types/studio';
+import { isAdmin } from '@/lib/billing/costs';
 
 type DraftJob = { signature: string; promise: Promise<StudioProject> };
 const jobs = globalThis as typeof globalThis & {
@@ -43,6 +45,9 @@ export async function POST(req: NextRequest) {
       );
     }
     const { prompt, preset, aspectRatio, drawingModel, requestId } = input.data;
+    if (!presetAllowed(preset, isAdmin(auth.user))) {
+      return NextResponse.json({ error: 'Gaya video ini belum tersedia untuk akun kamu.' }, { status: 403 });
+    }
     // Other presets do not draw with the image model, so a style choice would be silently ignored.
     const artStyle = supportsArtStyle(preset) ? input.data.artStyle : 'flat';
 
@@ -119,6 +124,7 @@ export async function POST(req: NextRequest) {
       };
 
       saveProject(project);
+      notifyProjectAfterResponse(auth.user, project, 'storyboard');
       return project;
     })();
     activeDrafts.set(projectId, { signature, promise });

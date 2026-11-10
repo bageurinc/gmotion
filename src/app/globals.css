@@ -131,6 +131,21 @@ body {
 .draft-skeleton { animation: draft-breathe 1.8s ease-in-out 2; }
 @keyframes draft-breathe { 50% { opacity: 0.5; } }
 
+@media (prefers-reduced-motion: no-preference) {
+  .draft-assembly-layer {
+    animation-name: draft-assembly-place;
+    animation-duration: 4s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-fill-mode: backwards;
+  }
+}
+
+@keyframes draft-assembly-place {
+  0%, 100% { opacity: 0; transform: translate(12px, -14px); }
+  23%, 79% { opacity: 1; transform: translate(0, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

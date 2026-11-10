@@ -6,6 +6,7 @@ import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { TextStyleId, WordTiming } from '@/types/studio';
 import { SafeOverlay, useSafeOverlay } from './SafeOverlay';
 import { TEXT_STYLES } from './text-style';
+import { TEXT_THEMES } from './text-theme';
 
 export interface SyncedCaptionsProps {
   text: string;
@@ -29,6 +30,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
   textStyle: ownStyle,
 }) => {
   const textStyle = useTextStyle(ownStyle);
+  const theme = textStyle ? TEXT_THEMES[textStyle] : undefined;
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const inSafeOverlay = useSafeOverlay();
@@ -86,11 +88,7 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
     >
       <div
         style={{
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(10px)',
           padding: '12px 24px',
-          borderRadius: 20,
-          border: '1px solid rgba(255, 255, 255, 0.12)',
           fontFamily: textStyle ? TEXT_STYLES[textStyle].bodyFont() : 'Arial, sans-serif',
           fontSize,
           lineHeight: 1.5,
@@ -100,7 +98,13 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
           maxWidth: '85%',
           boxSizing: 'border-box',
           minWidth: 0,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+          ...(theme?.card ?? {
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: 20,
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+          }),
         }}
       >
         {chunkWords.map((word, idx) => {
@@ -112,11 +116,12 @@ export const SyncedCaptions: React.FC<SyncedCaptionsProps> = ({
             <span
               style={{
                 fontSize,
-                fontWeight: 800,
-                color: isActive ? activeColor : inactiveColor,
-                textShadow: isActive
+                fontWeight: theme?.weight ?? 800,
+                color: isActive ? theme?.highlight ?? activeColor : theme?.ink ?? inactiveColor,
+                textShadow: theme ? undefined : isActive
                   ? `0 0 16px ${activeColor}80, 0 2px 4px rgba(0,0,0,0.8)`
                   : '0 2px 4px rgba(0,0,0,0.8)',
+                ...(isActive ? theme?.activeCaption : undefined),
                 display: 'inline',
                 maxWidth: '100%',
                 minWidth: 0,

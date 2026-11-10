@@ -1,4 +1,5 @@
 import { runWithUsage } from '@/lib/billing/usage';
+import { notifyProjectAfterResponse } from '@/lib/notifications/project-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { applyDraftUpdate, DraftUpdateSchema } from '@/lib/pipeline/draft';
 import { requireProject } from '@/lib/auth/project-access';
@@ -94,6 +95,7 @@ export async function POST(
       updatedAt: Date.now(),
     };
     saveProject(updated);
+    notifyProjectAfterResponse(access.user, updated, 'storyboard');
     return NextResponse.json({ project: updated, summary: result.summary, revisionsLeft: MAX_DRAFT_REVISIONS - used - 1 });
   } catch (error) {
     console.error('[API /storyboard POST] Draft revision failed:', error);

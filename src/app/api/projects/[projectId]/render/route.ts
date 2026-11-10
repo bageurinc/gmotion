@@ -1,3 +1,4 @@
+import { sendProjectEmail } from '@/lib/notifications/project-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireProject } from '@/lib/auth/project-access';
 import { getProject, saveProject } from '@/lib/storage/project-store';
@@ -14,7 +15,7 @@ export async function POST(
   try {
     const access = await requireProject(projectId);
     if ('response' in access) return access.response;
-    const { project } = access;
+    const { project, user } = access;
 
     if (project.storySvgReviewPending || project.status === 'generating' || hasFailedScene(project)) {
       return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
@@ -41,6 +42,7 @@ export async function POST(
       project.exportVideoUrl = outputUrl;
       project.updatedAt = Date.now();
       saveProject(project);
+      await sendProjectEmail(user, project, 'export');
       return { success: true, exportVideoUrl: outputUrl, project };
     }, (err) => {
       console.error('[API /render] Error rendering project to MP4:', err);
