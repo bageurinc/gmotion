@@ -14,6 +14,8 @@ import {
   DRAWING_MODEL_LABELS,
   PRESET_LABELS,
   presetAllowed,
+  drawingModelAllowed,
+  DrawingModelSchema,
   supportsArtStyle,
 } from '@/types/studio';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
@@ -21,10 +23,8 @@ import { readDraftIntent, saveDraftIntent } from '@/lib/studio/draft-intent';
 
 const PRESETS: Array<{ id: StylePreset; description: string }> = [
   { id: 'story-2d', description: 'Ilustrasi dan animasi untuk bercerita.' },
-  {
-    id: 'story-svg',
-    description: 'Bentuk vektor yang bergerak mengikuti cerita.',
-  },
+  // Story Canvas replaced the Full SVG engine for new videos; old Full SVG projects still open.
+  { id: 'story-canvas', description: 'Tokoh dan tempat vektor yang bergerak mengikuti cerita.' },
   { id: 'ads-ui', description: 'Mockup produk, grafik, dan ajakan membeli.' },
   { id: 'world', description: 'Benda dan proses dalam ruang isometrik.' },
 ];
@@ -40,7 +40,7 @@ const RATIOS: Array<{ id: AspectRatio; label: string }> = [
 const FILTERS: Array<StylePreset | 'all'> = [
   'all',
   'story-2d',
-  'story-svg',
+  'story-canvas',
   'world',
   'ads-ui',
 ];
@@ -143,7 +143,8 @@ export default function HomePage() {
     if (accountState === 'loading') return;
     if (!presetAllowed(preset, admin)) setPreset('ads-ui');
     if (filter !== 'all' && !presetAllowed(filter, admin)) setFilter('all');
-  }, [accountState, admin, preset, filter]);
+    if (!drawingModelAllowed(drawingModel, admin)) setDrawingModel('gemini');
+  }, [accountState, admin, preset, filter, drawingModel]);
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -375,6 +376,14 @@ export default function HomePage() {
                 <option value="deepseek-flash">
                   {DRAWING_MODEL_LABELS['deepseek-flash']} — biaya lebih rendah
                 </option>
+                {admin &&
+                  DrawingModelSchema.options
+                    .filter((model) => !drawingModelAllowed(model, false))
+                    .map((model) => (
+                      <option key={model} value={model}>
+                        {DRAWING_MODEL_LABELS[model]} — khusus admin
+                      </option>
+                    ))}
               </select>
             </details>
             {error && (

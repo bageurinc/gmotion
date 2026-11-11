@@ -2,36 +2,56 @@ import { z } from 'zod';
 import type { AssetManifest } from '@/lib/explainer/asset-contract';
 import type { StillStretch } from '@/lib/render/motion-check';
 
-export const StylePresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world']);
+export const StylePresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world', 'story-canvas']);
 export type StylePreset = z.infer<typeof StylePresetSchema>;
 
 /** Which model draws the scenes. Absent on saved projects, which were all drawn by Gemini. */
-export const DrawingModelSchema = z.enum(['gemini', 'deepseek-flash']);
+export const DrawingModelSchema = z.enum([
+  'gemini',
+  'deepseek-flash',
+  'claude-sonnet',
+  'claude-opus',
+  'gpt-sol',
+  'gpt-terra',
+]);
 export type DrawingModel = z.infer<typeof DrawingModelSchema>;
 
 export const DRAWING_MODEL_LABELS: Record<DrawingModel, string> = {
   gemini: 'Gemini',
   'deepseek-flash': 'DeepSeek Flash',
+  'claude-sonnet': 'Claude Sonnet 5.5',
+  'claude-opus': 'Claude Opus 5.5',
+  'gpt-sol': 'GPT-6.1 Sol',
+  'gpt-terra': 'GPT-6.1 Terra',
 };
 
+/** Expensive models: only accounts listed in ADMIN_EMAILS may draw with them. */
+export const ADMIN_ONLY_DRAWING_MODELS: readonly DrawingModel[] = ['claude-sonnet', 'claude-opus', 'gpt-sol', 'gpt-terra'];
+export const drawingModelAllowed = (model: DrawingModel, admin: boolean) =>
+  admin || !ADMIN_ONLY_DRAWING_MODELS.includes(model);
+
 /** 'story' and 'ads' were 3D presets for a while, and those saved videos must still open and export. */
-export const StoredPresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world', 'story', 'ads']);
+export const StoredPresetSchema = z.enum(['story-2d', 'story-svg', 'ads-ui', 'world', 'story', 'ads', 'story-canvas']);
 export type StoredPreset = z.infer<typeof StoredPresetSchema>;
 
 /** Presets still in development: only accounts listed in ADMIN_EMAILS may create them. */
 export const ADMIN_ONLY_PRESETS: readonly StylePreset[] = ['world'];
 export const presetAllowed = (preset: StylePreset, admin: boolean) => admin || !ADMIN_ONLY_PRESETS.includes(preset);
 
-/** Isometric videos are one 3D world, while Story 2D and Ads keep one scene file per scene. */
-export const usesWorldEngine = (preset: StoredPreset) => preset === 'world' || preset === 'story' || preset === 'ads';
+/**
+ * Isometric and Story Canvas videos are drawn once for the whole video (one world, shared places
+ * and props), while Story 2D and Ads keep one scene file per scene.
+ */
+export const usesWorldEngine = (preset: StoredPreset) => preset === 'world' || preset === 'story' || preset === 'ads' || preset === 'story-canvas';
 
 export const PRESET_LABELS: Record<StoredPreset, string> = {
   'story-2d': 'Story 2D Campuran',
-  'story-svg': 'Story 2D Full SVG',
+  'story-svg': 'Story 2D (versi lama)',
   'ads-ui': 'Ads',
   world: 'Isometrik',
   story: 'Isometrik',
   ads: 'Isometrik',
+  'story-canvas': 'Story 2D',
 };
 
 /** How image-model scenes are drawn. Absent means flat vector, which every video used before. */
@@ -215,6 +235,12 @@ export interface StudioProject {
   isoCanvasReport?: import('@/lib/explainer/iso-canvas/build').IsoCanvasReport;
   /** The canvas world plan, so scenes can be re-timed or re-framed without redrawing objects. */
   isoCanvasPlan?: import('@/lib/explainer/iso-canvas/plan').IsoCanvasPlan;
+  /** Quality scores of a Story Canvas video's drawings and designs. */
+  storyCanvasReport?: import('@/lib/explainer/iso-canvas/build').IsoCanvasReport;
+  /** The Story Canvas plan (cast, places, props, beats) the files were built from. */
+  storyCanvasPlan?: import('@/lib/explainer/story-canvas/plan').StoryCanvasPlan;
+  /** Where each Story 2D prop's parts and flows are (by prop id), so shots can be rebuilt without redrawing. */
+  storyCanvasMaps?: Record<string, import('@/lib/explainer/story-canvas/dry-run').PropMap>;
   /** What the asset library did for this video, so the editor can say it plainly. */
   libraryReport?: LibraryReport;
 }

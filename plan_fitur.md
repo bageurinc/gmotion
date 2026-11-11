@@ -93,6 +93,7 @@ Sebuah item boleh dicentang hanya jika semua ini terpenuhi:
 
 1. Isometrik Canvas, mulai dari Tahap 1 di bagian [Isometrik Canvas](#isometrik-canvas). Penilaian Isometrik versi gambar AI tidak dilanjutkan.
 1a. Penilaian user atas video Story 2D dan Ads.
+1b. Story 2D: rencana kualitas menuju video yang hidup, mulai dari Tahap 1 (primitif gerak) di bagian [Story 2D: rencana kualitas](#story-2d-rencana-kualitas-menuju-video-yang-hidup).
 2. Rapikan kualitas akhir video dan audio, berdasarkan penilaian itu.
 3. Keamanan dan penjualan sebelum dibuka ke publik.
 
@@ -170,6 +171,7 @@ Bagian ini berlaku untuk Story 2D dan Ads. Pilihan Isometrik memakai bagian Vide
 - [x] Tab Kode dihapus dari studio atas permintaan user karena terlalu teknis. Studio kini hanya punya tab Revisi dan Storyboard. Route `PUT /api/projects/[id]` untuk menyimpan file tetap ada dan tetap divalidasi, hanya tidak punya tombol di UI. 639 test lolos. Belum dicek di browser
 - [x] Pilihan model gambar Gemini atau DeepSeek Flash di halaman utama, tersimpan per proyek dan tampil di daftar proyek serta studio. Uji browser: pilihan tersimpan dan video lebah berhasil dibuat. Batasan: DeepSeek Flash baru diuji pada Story 2D Full SVG, belum pada Campuran, Ads, dan Isometrik
 - [ ] Uji DeepSeek Flash pada Story 2D Campuran, Ads, dan Isometrik
+- [ ] Model gambar khusus admin: Claude Sonnet 5.5 (`cc/claude-sonnet-5-5`), Claude Opus 5.5 (`cc/claude-opus-5-5`), GPT-6.1 Sol (`cx/gpt-6.1-sol`), dan GPT-6.1 Terra (`cx/gpt-6.1-terra`). Hanya muncul di pilihan model untuk akun di `ADMIN_EMAILS`, dan `POST /api/projects` menolak akun lain dengan 403. Test pemetaan dan izin lolos. Belum diuji nyata lewat gateway atau browser, dan tarif keempat model belum diisi di catatan biaya admin
 - [ ] Cek tagihan nyata model gambar `gemini/gemini-3.1-flash-lite-image` (bisa dijawab dari catatan biaya admin di bagian Siap dijual)
 - [x] Pemeriksaan bagian video yang diam di job generate: Story 2D Campuran, Ads, dan Isometrik diukur setelah cek crash, dan hasilnya tampil di pesan chat editor. Uji nyata lewat API: Isometrik 5 adegan, 31,1 detik, 5 bagian diam, frame MP4 diperiksa. Batasan: hanya melapor tanpa memperbaiki, baru dikalibrasi di 9:16, Ads belum diuji, Full SVG dikecualikan karena aksi kecil terbaca diam, dan pesan tidak muncul lagi saat Coba ulang jika chat sudah berisi
 - [ ] Contact sheet per aksi dan frame potongan untuk kritik: frame menghindari fade, memuat pose akhir tiap aksi, dan Full SVG diawali frame terakhir adegan sebelumnya. Catatan kritik kini tersimpan di `sceneProgress.issues`. Uji nyata Full SVG sampai MP4 berhasil (3 adegan, 45,3 detik). Batasan: pada uji 4 potongan, kritik baru menyebut 1 lompatan secara eksplisit, dan lompatan bentuk panel pada video semut tidak disebut
@@ -256,6 +258,10 @@ Keputusan user (11 November 2026): gaya **Isometrik** digambar Gemini dengan mes
 - [ ] Revisi benda: perubahan satu benda berlaku di semua adegan. Dikerjakan lewat jalur di atas: fungsi benda dibaca dan diganti di `IsoObjects.ts` dengan pemindai kurung kurawal (`code-parts.ts`)
 - [ ] Coba ulang per benda atau per adegan tanpa membuat ulang audio. Sebagian: revisi chat sudah tidak membuat ulang audio; tombol coba ulang belum ada
 - [ ] Tab kode menampilkan file Isometrik Canvas dan bisa diedit, dengan validator yang sama
+- [ ] (uji coba) Close-up wajib memakai fungsi benda: benda yang tercantum di `detail.objects` harus digambar lewat `drawX`, bukan digambar ulang dari primitif. `DETAIL_SYSTEM` melarang salinan, `detailRequest` menyertakan tampilan (`look`) dan posisi dunia tiap benda, dan `missingObjectCalls` di `detailProblems` menolak close-up yang tidak memanggil `drawX`, sehingga model diminta menulis ulang. Berlaku juga untuk revisi close-up lewat chat. 3 test di `pipeline.test.ts`, 756 test lulus. Batasan: belum diuji dengan generate Gemini nyata; proyek lama perlu dibuat ulang atau close-up-nya direvisi
+- [ ] (uji coba) Kartu judul pembuka buatan AI untuk Isometrik Canvas: Gemini menulis `IsoTitle.tsx` sendiri per video (`TITLE_TEXT` + `TitleCard`), memilih 1–2 font dari 58 Google Fonts (`title-fonts.ts`, dimuat saat dipakai lewat `useTitleFont`), lalu menentukan tata letak, warna, dan animasi masuk, tahan, dan keluar sesuai topik, tanpa template tetap. Kartu tampil di atas adegan 1 selama sekitar 3,2 detik (dipotong agar adegan 1 masih punya 0,8 detik untuk panelnya), panel judul biasa baru muncul setelahnya, dan caption tetap jalan. Pemeriksaan: `validateSceneCode` dengan impor `react`, `remotion`, dan `@/motion-kit`, nama font harus dari daftar, maksimal 16 kata, angka di `TITLE_TEXT` harus disebut di judul atau narasi, render pratinjau di atas dunia pengganti (crash terdeteksi lewat layar magenta dan ditolak), lalu penilai visi dengan 5 kriteria (keterbacaan, tipografi, gerak, komposisi, akurasi). Ditulis bersamaan dengan gambar benda. Judul yang gagal atau tidak bisa dinilai tidak dipakai, dan video dibuka dengan panel biasa; di video, `TitleBoundary` menyembunyikan judul yang error. Uji lokal tanpa Gemini: render contoh judul berhasil dan font termuat, judul yang melempar error terdeteksi. 762 test lulus. Skrip uji: `scripts/spike-iso-title.ts --from proj_x`. Batasan: belum diuji dengan Gemini sungguhan (diuji user); revisi judul lewat chat belum ada; pratinjau penilai memakai dunia pengganti (kotak polos), bukan gambar asli; baru untuk Isometrik Canvas
+- [ ] (uji coba) Desain subtitle buatan AI untuk Isometrik Canvas: Gemini menulis `IsoCaption.tsx` (`CaptionCard`) per video. Gemini menentukan font (dari daftar yang sama dengan judul), warna, bentuk latar, gaya sorotan kata aktif, dan animasi muncul. Kode judul ikut dikirim supaya desainnya serasi. Mesin tetap mengatur pembagian 5 kata, waktu per kata, dan area aman lewat `CaptionTrack` (`captionAt`). Komponen hanya menerima kata, keadaan (`past`/`active`/`future`), dan jumlah frame sejak kata diucapkan. Ditulis setelah judul, bersamaan dengan gambar benda. Pemeriksaan: `validateSceneCode`, ekspor `CaptionCard`, memakai `.text`, nama font dari daftar, render pratinjau 5 momen di dua grup kata dari adegan dengan kata terbanyak (crash terdeteksi lewat layar magenta), lalu penilai visi 5 kriteria (keterbacaan, kata aktif, gaya, komposisi, tenang). Desain yang gagal atau tidak bisa dinilai tidak dipakai, dan bila error saat video diputar, `CaptionBoundary` kembali ke pil putih. Pil putih lama kini `DefaultCaption` dan dipakai juga oleh video dunia lain. Uji lokal tanpa Gemini: render contoh berhasil, sorotan berpindah, crash terdeteksi. 768 test lulus. Batasan: belum diuji dengan Gemini sungguhan; revisi subtitle lewat chat belum ada; baru untuk Isometrik Canvas
+- [ ] (uji coba) Desain panel judul adegan buatan AI untuk Isometrik Canvas: Gemini menulis `IsoPanel.tsx` (`PanelCard`) per video. Gemini menentukan bentuk, warna, font, hiasan, dan animasi saat judul adegan berganti, menggantikan bar solid dengan gradasi tipis. Kode judul pembuka ikut dikirim supaya desainnya serasi. Mesin tetap menentukan teks adegan, status, jam, dan angka (hanya angka yang disebut cerita, menghitung naik 1,4 detik) lewat `PanelTrack`/`panelAt`, serta batas bawah panel `maxBottom` di 29% tinggi frame, karena label adegan mulai di 31%. Ditulis bersamaan dengan subtitle setelah judul. Pemeriksaan: `validateSceneCode`, ekspor `PanelCard`, memakai `headline` dan `maxBottom`, nama font dari daftar, render pratinjau 3 adegan (5 momen: saat masuk dan saat tampil), deteksi crash magenta, lalu penilai visi 5 kriteria (keterbacaan, hierarki, gaya, komposisi, transisi). Desain yang gagal tidak dipakai, dan bila error saat diputar, `PanelBoundary` kembali ke panel biasa. `Hud` lama kini `DefaultPanel`, tampilannya sama (dicek lewat render) dan dipakai juga oleh video dunia lain. 779 test lulus. Batasan: belum diuji dengan Gemini sungguhan; revisi panel lewat chat belum ada; baru untuk Isometrik Canvas
 
 ### Tahap 6: Uji penerimaan
 
@@ -273,6 +279,139 @@ Keputusan user (11 November 2026): gaya **Isometrik** digambar Gemini dengan mes
 
 - Benda yang dibuat Gemini apakah disimpan ke pustaka untuk dipakai ulang di video lain (lebih murah dan konsisten), atau selalu dibuat baru per video?
 - Batas biaya per video Isometrik, karena 3 putaran per adegan `detail` bisa mencapai sekitar Rp4.000 per adegan.
+
+## Story Canvas (spike)
+
+Pertanyaan user (11 November 2026): apakah Story 2D bisa memakai mesin Canvas seperti Isometrik. Rincian dan hasil ada di KNOWLEDGE.md bagian "Spike mesin Story Canvas dengan Gemini".
+
+- [ ] Mesin 2D tampak samping `createStory` di `src/motion-kit/story-canvas/` dengan bayangan, sorot, dan outline otomatis, parallax, kamera, label, serta `person()` di atas rangka HumanRig (`rig.ts`, disamakan dengan sumber asli lewat test). Contoh dapur dan `STORY_STYLE` ada di `src/lib/explainer/story-canvas/examples.ts`. 5 test lolos. Spike `scripts/spike-story-canvas.ts` untuk 3 topik: skor 5,2 / 5,8 / 5,6, Rp1.400–2.100 per klip 3 detik. Belum dipakai job. Menunggu penilaian user dari `clip.mp4`. Batasan: label belum dikunci ke narasi, kamera kadang membuat orang keluar frame, dan baru 1 percobaan per topik
+
+- [ ] Pose tambahan khusus Story: `bend`, `crouch`, `kneel`, `phone`, `wash`, `wave`, dan `lie` (berbaring di atas permukaan, kepala ke arah `facing`), plus rambut `caping`. Dicek lewat lembar pose `storage/spike/story-canvas/poses/`, ditambah 1 test baru (6 test lolos). Uji ulang Gemini: sawah 4,8 (petani membungkuk dengan caping), HP 5,6 (duduk di tepi kasur sambil memegang HP). Pose dipakai benar, tetapi skor belum naik. Penilaian user 11 November 2026: hasil Canvas lebih rapi. Batasan: pose belum ditambahkan ke HumanRig asli
+
+- [ ] Pipeline Story Canvas sebagai Story 2D (`story-canvas`): rencana dari narasi (pemeran, tempat, props, close-up, beat dengan pose), lalu props dan tempat ditulis Gemini dengan putaran mutu. Close-up ditulis sebagai kode, sedangkan adegan biasa berupa data (kamera membingkai aktor dan props fokus, orang ditaruh mesin di atas kursi atau kasur). Judul, subtitle, dan panel didesain AI seperti Isometrik. Uji kering akhir mengecek orang tetap di frame. Kartu "Story 2D" di halaman utama sekarang memakai mesin ini, sedangkan Full SVG disembunyikan untuk proyek baru dan berlabel "Story 2D (versi lama)". Tanpa konfirmasi draf objek, atas keputusan user. 85 test story/iso canvas dan 544 test `tests` lolos. Uji job nyata sampai MP4: HP sebelum tidur (31,7 detik, generate 860 detik, sekitar Rp14.300; close-up kosong dan subtitle menutupi orang, keduanya sudah diperbaiki) dan sawah diairi (34,3 detik, generate 419 detik, sekitar Rp10.300; close-up terisi dan orang di atas subtitle, frame diperiksa). Menunggu penilaian user. Batasan: revisi chat belum ada; ganti suara dan gaya teks belum didukung (sama seperti Isometrik); 16:9 sudah diperbaiki setelah laporan subtitle menutupi isi (desain judul, subtitle, dan panel kini diukur dari sisi terpendek, dan pita kamera landscape dinaikkan; frame proyek Borobudur diperiksa), sedangkan 4:5 belum diuji; tempat luar ruang masih lemah (sawah 5,2); close-up video HP lama belum digambar ulang
+
+- [ ] Story 2D: tokoh opsional (hanya jika diminta atau ceritanya butuh aksi manusia), skala nyata dalam meter (jantung 12 cm sampai gunung 2 km, kamera menyesuaikan zoom), dan keadaan per adegan untuk tempat (langit gelap, malam, letusan di kejauhan). 16 test story canvas lolos, termasuk bingkai jantung dan gunung. Belum diuji lewat job nyata; user mencobanya sendiri
+
+## Story 2D: rencana kualitas menuju video yang hidup
+
+Permintaan user (12 November 2026): sebelum menambah fitur lagi, susun rencana matang tentang tampilan ideal Story 2D. Patokannya video jantung (`proj_f0f12543…`): jantungnya benar, tetapi darah tidak terlihat mengalir, jantung tidak berdetak, dan kamera diam di bidikan yang sama selama 32 detik. Rencana ini berlaku untuk semua topik yang mirip, bukan hanya jantung.
+
+### Gambaran ideal
+
+Penonton harus bisa memahami prosesnya tanpa mendengar narasi, cukup dari gambarnya:
+- **Yang mengalir terlihat mengalir.** Sel darah bergerak di dalam pembuluh, air di pipa dan sungai, udara masuk ke paru-paru, arus listrik di kabel, paket data di jaringan, mobil di jalan. Arahnya jelas dan kecepatannya bisa berubah sesuai cerita.
+- **Benda yang hidup atau bekerja tidak pernah diam.** Jantung selalu berdetak, kipas berputar, daun bergoyang, mesin bergetar, api berkedip. Keadaan per adegan hanya mengubah seberapa kuat geraknya (detak lebih cepat, aliran lebih deras), bukan menyalakan gerak dari nol.
+- **Kamera bercerita.** Adegan pembuka memakai bidikan lebar untuk konteks. Setelah itu kamera mendekat ke bagian yang sedang dibahas (serambi kanan, katup, akar), bergeser mengikuti aliran dari satu bagian ke bagian berikutnya, lalu mundur lagi untuk kesimpulan. Dua adegan berurutan tidak memakai bidikan yang sama.
+- **Perubahan terjadi saat kata kuncinya diucapkan.** Bilik kanan berkontraksi tepat saat narator berkata "memompa", bukan di detik tetap. Timing per kata sudah tersedia dari TTS (`wordTimings`).
+- **Skala nyata dengan perjalanan skala.** Dari organ ke sel, atau dari kota ke rumah, lewat zoom yang menyambung ke close-up, bukan potongan tiba-tiba.
+- **Latar terasa penuh dan bermakna.** Potongan dada berisi rusuk, paru-paru utuh, dan diafragma. Pesisir berisi laut, ombak, pulau di kejauhan, dan langit. Tidak ada bidang kosong yang luas di area isi.
+
+### Kelompok topik dan bahasa visualnya
+
+Penulis kode dan perencana memakai daftar ini sebagai pola. Contohnya tidak ditulis per topik.
+
+| Kelompok | Contoh topik | Yang wajib terlihat |
+|---|---|---|
+| Aliran dan sirkulasi | jantung, siklus air, pipa rumah, sungai, pernapasan | Jalur aliran yang jelas, partikel bergerak di dalamnya, warna yang berubah saat isinya berubah (biru ke merah, kotor ke bersih), katup atau gerbang yang membuka dan menutup |
+| Listrik dan sinyal | listrik di rumah, saraf, sinyal HP, internet | Kabel atau jalur dengan denyut cahaya yang berjalan, komponen menyala saat dialiri |
+| Mesin dan mekanisme | kulkas, mesin mobil, pompa, kipas | Bagian yang berputar atau bergeser terus, siklus kerja berulang, panas dan dingin ditandai warna dan uap |
+| Pertumbuhan dan perubahan | fotosintesis, adonan mengembang, karat, tumbuhan | Perubahan bentuk bertahap, gelembung atau partikel yang muncul, sumber energi (matahari, panas) yang terlihat bekerja |
+| Skala besar dan alam | gunung meletus, cuaca, gempa, tata surya | Benda seukuran asli di lapisan jauh, latar yang berubah keadaan (langit gelap, laut naik), gerak besar yang lambat |
+| Kebiasaan manusia | HP sebelum tidur, cuci tangan, memasak | Tokoh dengan aksi berbeda tiap adegan, lalu close-up ke sebab ilmiahnya |
+
+### Celah teknis saat ini
+
+1. **Kamera hanya bisa membidik satu props utuh.** Fokus ke bagian props tidak bisa, jadi topik satu benda (jantung) memakai bidikan yang sama di setiap adegan.
+2. **Aliran digambar bebas oleh model.** Setiap props membuat panah dan garis putus-putusnya sendiri, sehingga hasilnya tidak konsisten, sering statis, dan tidak ada partikel yang benar-benar berjalan di jalurnya.
+3. **Gerak terus-menerus tidak diwajibkan.** Prompt menyuruh memakai `t` hanya bila dipicu keadaan, jadi benda hidup tampak beku. Pemeriksa gerak baru melapor setelah video selesai.
+4. **Keadaan hanya berganti per adegan dengan waktu tetap**, tidak mengikuti kata yang diucapkan.
+5. **Penilai hanya melihat beberapa foto diam**, jadi tidak bisa menilai apakah aliran dan gerak benar-benar terjadi.
+6. **Latar tubuh atau abstrak cenderung kosong**, karena contoh dan aturan latar masih berupa ruangan dan alam.
+
+### Tahap 1: Primitif gerak di mesin
+
+Gerak yang bagus dibuat sekali di mesin, lalu dipakai semua topik, seperti pencahayaan otomatis di Isometrik.
+- [ ] `s.tube(path, width, color, {wall, inner})`: pembuluh, pipa, sungai, atau kabel sebagai jalur halus dengan dinding dan isi. Dikerjakan 12 November 2026 sebagai `s.tube(points, w, color, {wall, alpha, smooth})`: jalur Catmull-Rom dengan dinding gelap, isi, dan sorot. Menunggu penilaian user
+- [ ] `s.flow(path, {kind, speed, density, color, size, t})`: partikel berjalan di sepanjang jalur. Dikerjakan: jenis `cells`, `drops`, `bubbles`, `dashes`, `sparks`, `packets`, dan `dots`; jumlah partikel dihitung dari meter, bukan piksel; partikel memudar di ujung jalur; setiap partikel diberi tepi terang supaya terlihat di atas tabung yang warnanya mirip. Menunggu penilaian user. Jenis `cells` (sel darah berbentuk cakram), `drops`, `bubbles`, `dashes`, `sparks` (arus listrik), dan `packets`. Kecepatan dan kepadatan bisa diatur dari keadaan. Posisi partikel dihitung dari `t` saja, supaya tiap frame tetap deterministik.
+- [ ] `s.beat(t, bpm)` dan `s.pulse(...)`: dikerjakan sebagai `s.beat(t, bpm)` → `{phase, squeeze, index}` dan `s.osc(t, period, phase)`; menunggu penilaian user. Siklus berirama dengan fase (kontraksi, relaksasi) untuk jantung, napas, dan pompa. `s.wobble`, `s.spin`, dan `s.sway` untuk gerak diam benda.
+- [ ] `s.emit(x, y, {kind, rate, spread, life, t})`: uap, asap, abu, gelembung, percikan. Dikerjakan dengan jadwal kelahiran tetap, gravitasi, dan pertumbuhan ukuran. Menunggu penilaian user
+- [ ] `s.flowArrow(path, ...)`: panah yang berjalan mengikuti jalur, untuk aliran besar seperti angin dan arus laut. Dikerjakan; menunggu penilaian user
+- [x] Test: setiap primitif deterministik, posisinya benar di awal dan akhir jalur, dan jumlah partikel stabil di semua zoom. `motion.test.ts` berisi 6 test, dan semua 12 test `story-canvas` di motion-kit lolos. Primitif juga sudah masuk ke API prompt penulis props, tempat, dan close-up
+- [ ] Lembar uji yang dinilai user: pembuluh dengan darah, pipa air, kabel listrik, dan uap. Tahap 2 dimulai setelah user puas dengan tampilannya. Dirender di `storage/spike/story-canvas/motion-sheet/` (`clip.mp4`, dan `motion.jpg` berisi tiga frame berjarak 0,2 detik): sel darah, tetes air, percikan listrik, dan panah angin terlihat bergeser antar frame. Menunggu penilaian user
+
+### Tahap 2: Bagian props dan kamera bercerita
+
+- [ ] Rencana: setiap props boleh punya `parts`, yaitu bagian yang dibahas narasi (serambi kanan, katup, akar), dan `flows`, yaitu aliran bernama dengan arti dan arah ("darah tanpa oksigen dari tubuh ke serambi kanan"). Dikerjakan 12 November 2026: `parts` maksimal 8 dan `flows` maksimal 6 per props, dengan aturan di prompt rencana. Menunggu uji model
+- [ ] Dikerjakan: kontrak `export const drawNameMap = { parts: { id: { at, size } }, flows: { id: [[x, y], ...] } }` dibaca server lewat `readPropMaps` di VM. `mapProblems` menolak peta yang hilang, bagian di luar props, atau jalur dengan kurang dari 2 titik, lalu mengirim alasannya balik ke penulis. Prompt meminta aliran digambar dari peta yang sama. Peta disimpan di `project.storyCanvasMaps`. Penulis props wajib mengekspor letak bagian dan jalur aliran sebagai data (misalnya `export const jantungParts = {...}` dan `jantungFlows`). Uji kering memastikan setiap bagian dan aliran di rencana ada, letaknya di dalam batas props, dan jalurnya tidak kosong. Kamera dan label membaca data ini, jadi tidak perlu menebak.
+- [ ] Beat: `focus` boleh menunjuk bagian (`jantung:serambi-kanan`), dengan `shot` (`wide`, `medium`, `close`) dan gerak kamera (`push`, `follow` mengikuti aliran dari bagian lama ke bagian baru, `pull`). Pemeriksa rencana menolak dua adegan berurutan dengan bidikan dan fokus yang sama. Dikerjakan sebagai field `part`, `flow`, `shot`, dan `move` (ditambah `cut`). Kamera dihitung dari peta setelah props jadi: `close` memakai bagian × 1,7, `medium` di antara close dan wide, dan `follow` memakai 8 kunci `glide` dengan kecepatan rata di sepanjang jalur. Menunggu uji model
+- [ ] Label menempel ke bagian yang dibahas, dan saat kamera bergerak `follow`, labelnya ikut berjalan di jalur aliran. Sebagian dikerjakan: label menempel di atas bagian, atau di tengah jalur untuk `follow`. Label yang ikut berjalan belum dikerjakan
+- [ ] Close-up masuk lewat zoom dari bagian props ke detailnya (match cut), bukan potongan kosong. Dikerjakan: 0,6 detik terakhir sebelum close-up, kamera zoom × 1,8 ke bagian yang difokus, dan perjalanan `follow` selesai sebelum zoom ini dimulai. Lembar uji kamera (jantung dan dada tulisan tangan, tanpa model) ada di `storage/spike/story-canvas/camera-sheet/` (`sheet.jpg`, `clip.mp4`). 16 test story canvas dan 801 test seluruhnya lolos. Menunggu penilaian user
+
+### Tahap 3: Waktu mengikuti kata
+
+- [ ] Dikerjakan 12 November 2026 sebagai `set[].word` dan `beat.cue`. `wordTime` mencari kata di `wordTimings`, termasuk imbuhan ("pompa" menemukan "memompa") dan tanda baca. Perubahan dimulai saat kata diucapkan dan selesai dalam 0,9 detik, sedangkan kamera tiba dan label muncul di kata `cue`. Menunggu penilaian user. Rencana: setiap perubahan keadaan boleh menyebut kata pemicunya (`"on": "memompa"`). Mesin mencari kata itu di `wordTimings` adegan dan memulai perubahan tepat saat kata diucapkan. Kalau katanya tidak ditemukan, perubahan jatuh ke waktu bawaan.
+- [ ] Gerak kamera dan munculnya label juga bisa dikaitkan ke kata. Dikerjakan lewat `cue`
+- [ ] Revisi narasi dan ganti suara menghitung ulang waktu ini tanpa model, seperti `retimeSceneCode`. Belum dikerjakan, karena revisi chat dan ganti suara belum ada untuk Story 2D. Kalau keduanya dibuat, cukup panggil ulang `buildStoryScenes` dengan `wordTimings` baru, karena rencana dan peta props sudah tersimpan di proyek
+
+### Tahap 4: Aturan "selalu hidup" dan pemeriksaannya
+
+- [ ] Dikerjakan: props punya `moves`, dan prompt props dan tempat mewajibkan gerak dari `t`. Prompt props dan tempat: benda hidup, mesin, cairan, api, dan alam selalu punya gerak diam dari `t`, sedangkan keadaan hanya mengubah kekuatannya. Aturan ini ditulis konkret dan bisa dilihat, karena pelajaran dari Isometrik: model menerapkan aturan konkret jauh lebih baik daripada contoh saja.
+- [ ] Dikerjakan untuk props (`propMoves`/`motionProblems`, di keadaan 0 dan 1); tempat belum dicek. Uji kering gerak: gambar setiap props dan tempat di t dan t + 0,5 detik dengan keadaan sama. Kalau hasilnya identik padahal rencana menyebut benda itu hidup atau punya aliran, kirim masalahnya balik ke penulis.
+- [ ] Penilai mendapat lembar gerak (4 frame berjarak 0,2 detik) di samping lembar biasa, dengan kriteria baru `flowVisible` dan `alive`. Dikerjakan dalam bentuk lebih sederhana: lembar props berisi frame 2,2 dan 2,4 detik dalam keadaan sama, dengan kriteria `alive`. Sekalian diperbaiki bug pratinjau props yang memakai waktu dibulatkan, sehingga gerak tak pernah terlihat
+- [ ] Pemeriksaan bagian video yang diam setelah job dipakai sebagai ukuran sukses: target tidak ada bagian diam lebih dari 3 detik. Belum tercapai menurut alat ukur, yang masih melaporkan 1–4 bagian per video. Alatnya mengambil sampel 120 × 80 piksel per 0,5 detik dengan ambang 6/255, jadi partikel aliran yang kecil tidak terbaca. Perlu alat ukur yang peka gerak kecil sebelum target ini bisa dinilai
+
+### Tahap 5: Contoh rujukan dan latar penuh
+
+- [ ] Dikerjakan: `EXAMPLE_HEART` dan `EXAMPLE_WATER` di prompt props, `EXAMPLE_PLACE` dan `EXAMPLE_CHEST` di prompt tempat; semua lolos cek props, peta, dan gerak. Belum dirender sendiri untuk dinilai user (jantung dan dada tampil di lembar uji kamera). Dua contoh tulisan tangan yang memakai primitif baru: (1) potongan jantung dengan bagian, aliran darah biru dan merah, katup, dan detak; (2) sistem air (tandon, pompa, pipa, keran) dengan aliran dan gelembung. Keduanya lolos validator dan uji kering, dan dirender untuk dinilai user, seperti contoh AC di Isometrik.
+- [ ] Sebagian: rongga dada sudah ada, pesisir dengan gunung belum. Contoh tempat untuk latar abstrak atau tubuh (potongan dada dengan rusuk, paru-paru, diafragma, dan jaringan) dan untuk latar alam besar (pesisir dengan gunung di kejauhan yang punya keadaan `letusan` dan `langitGelap`).
+- [ ] Aturan komposisi tempat: subjek mengisi pita isi, latar mengisi sampai tepi, dan tidak ada bidang kosong yang luas di antara panel dan subtitle. Dikerjakan di prompt tempat, ditambah aturan rencana: proses selebar bentang alam digambar sebagai diagram potongan, bidikan tanpa fokus hanya untuk pembuka dan penutup, dan props yang lebih pipih dari 8:1 ditolak
+
+### Tahap 6: Uji penerimaan
+
+Lima topik dari kelompok berbeda, dibuat lewat studio oleh user:
+1. Gimana cara kerja jantung memompa darah?
+2. Dari mana air hujan berasal? (siklus air)
+3. Kenapa kulkas bisa dingin?
+4. Gimana listrik sampai ke rumah?
+5. Kenapa main HP sebelum tidur bikin susah tidur? (topik dengan tokoh)
+
+Lolos jika menurut penilaian user saat menonton:
+- aliran atau gerak utama terlihat jelas di setiap adegan
+- kamera berpindah sesuai bagian yang dibahas
+- perubahan pas dengan kata yang diucapkan
+- tidak ada bagian diam lebih dari 3 detik
+- skor penilai props dan tempat rata-rata ≥ 6
+
+Biaya dicatat per video, dengan target tidak lebih dari Rp15.000 di luar TTS.
+
+Hasil uji pertama (12 November 2026), dijalankan dengan GPT-6.1 Terra atas permintaan user. Frame tiap video sudah diperiksa, dan penilaian akhir ada pada user:
+- [ ] Jantung (`proj_1794423688595_storyjob`): kamera bergerak dari lebar ke serambi kanan, mengikuti aliran ke paru-paru dan kembali, lalu mundur di katup. Sel darah mengalir di pembuluh. Skor props 5,2, tempat 6,8. 13 panggilan, generate 208 detik. Bidikan `follow` sempat terlalu dekat dan sudah diperbaiki lewat penyusunan ulang tanpa model.
+- [ ] Siklus air (`proj_1794424764641_storyjob`, uji ulang): diagram potongan laut, daratan, awan, dan hujan. Skor 5,2–7,4. Uji pertama (`proj_1794424052529_storyjob`) gagal secara visual karena sungai dan laut berupa pita tipis berskala asli (sungai 1,4), lalu diperbaiki lewat aturan diagram potongan.
+- [ ] Kulkas (`proj_1794424052842_storyjob`): bidikan dekat ke kompresor dan pipa kapiler bagus, tetapi dua adegan memakai bidikan lebar seluruh dapur. Aturan fokus null hanya untuk pembuka dan penutup ditambahkan setelah uji ini.
+- [ ] Listrik ke rumah (`proj_1794424295644_storyjob`): terbaik. Turbin, trafo, SUTET, gardu, trafo tiang, dan rumah, masing-masing dengan bidikannya sendiri. Skor 4,6–7,4.
+- [ ] HP sebelum tidur (`proj_1794424769776_storyjob`, uji ulang): orang dengan HP di kamar, potongan kepala dengan mata dan otak, lalu kelenjar pineal. Semua skor ≥ 6. Uji pertama gagal seluruhnya karena pemeriksaan "orang di dalam frame" menolak bidikan dekat yang memotong tubuh. Sekarang pemeriksaan itu hanya berlaku untuk bidikan yang membingkai orang, dan tidak lagi menggagalkan video.
+- Token Terra per video: 80–183 ribu masuk dan 12–24 ribu keluar, 13–27 panggilan, generate 177–266 detik. Tarif Terra belum tercatat di kode, jadi biaya rupiahnya belum dihitung.
+
+### Tahap 7: Pembersihan mesin Story 2D lama (pengerjaan akhir)
+
+Keputusan user (12 November 2026): mesin lama (Full SVG, preset `story-svg`) dihapus sebagai pengerjaan terakhir. Tahap ini baru dimulai setelah Tahap 6 lolos dan user menyetujuinya. Sampai saat itu mesin lama tetap ada sebagai pembanding, hanya disembunyikan dari pilihan proyek baru.
+
+- [ ] Hapus pipeline draf objek: `story-svg-draft.ts`, `story-svg-shared.ts`, rute `object-draft`, status `storySvgReviewPending` dan `autoApproveObjectDraft`, serta bagian progres draf objek di `GenerationProgress` dan `studio-progress.ts`
+- [ ] Hapus jalur adegan Full SVG di generate dan revisi (`scene-generator.ts`, kamera nyambung antaradegan di `AssetStage`), catatan sutradara Full SVG, dan aturan `svgOnly` di validator jika tidak dipakai gaya lain
+- [ ] Putuskan nasib sumber rig SVG (`HUMAN_RIG_SOURCE`, `human-rig-runtime.ts`). Jika dihapus, test `story-canvas/rig.ts` diubah supaya tidak lagi membandingkan dengan sumber itu
+- [ ] Hapus atau ubah test yang hanya menguji mesin lama (`draft-flow`, `scene-generator`, `scene-camera`, `scene-quality`, `studio-progress`, dan lainnya)
+- [ ] Hapus `story-svg` dari `StylePresetSchema`, `StoredPresetSchema`, dan label "Story 2D (versi lama)". Proyek uji lama berpreset `story-svg` tidak bisa dibuka lagi; belum ada pengguna, jadi yang terdampak hanya proyek uji user
+- [ ] Perbarui CLAUDE.md, KNOWLEDGE.md, dan plan_fitur.md supaya tidak lagi menyebut Full SVG sebagai jalur aktif
+
+### Urutan dan alasan
+
+Tahap 1 dulu, karena semua tahap lain bergantung pada primitif gerak, dan tampilan aliran adalah keluhan utama. Tahap 2 berikutnya, karena kamera yang diam adalah penyebab terbesar video terasa kaku. Tahap 3 dan 4 menyempurnakan ketepatan dan menjaga mutu. Tahap 5 menaikkan mutu rata-rata lewat contoh. Tahap 7 (hapus mesin lama) selalu terakhir. Setiap tahap selesai dengan lembar uji atau video yang dinilai user sebelum tahap berikutnya dimulai.
+
+### Pertanyaan terbuka
+
+- Apakah close-up tetap ditulis bebas sebagai kode oleh model, atau sebaiknya juga berupa data (zoom ke bagian props), supaya tampilannya pasti sama dengan adegan biasa?
+- Berapa batas putaran mutu per props sekarang props jadi lebih rumit (bagian dan aliran)? Saat ini 2 putaran.
+- Apakah primitif gerak yang sama juga dipakai Isometrik (misalnya `iso.flow` di dalam pipa)?
 
 ## Video 3D (Mode Dunia)
 

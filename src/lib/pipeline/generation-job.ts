@@ -20,6 +20,7 @@ import { buildWorldFiles, WORLD_VIEW_REPAIR } from './world-video';
 import { buildLibraryFiles, type LibraryBuild } from './library-video';
 import { buildIsoCanvasFiles } from '@/lib/explainer/iso-canvas/build';
 import { canvasFinishedMessage } from '@/lib/explainer/iso-canvas/report';
+import { buildStoryCanvasFiles } from '@/lib/explainer/story-canvas/build';
 import { isAssetFileName, isIsoCanvasFileName } from '@/lib/security/project-input';
 
 const globalJobs = globalThis as typeof globalThis & { __gmotionGenerationJobs?: Set<string> };
@@ -56,6 +57,7 @@ function finishedMessage(project: StudioProject): string {
   if (!usesWorldEngine(project.storyboard.preset)) {
     return 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.';
   }
+  if (project.storyboard.preset === 'story-canvas' && project.storyCanvasReport) return canvasFinishedMessage(project.storyCanvasReport, 'Story 2D', false);
   if (project.isoEngine === 'canvas' && project.isoCanvasReport) return canvasFinishedMessage(project.isoCanvasReport);
   const library = project.libraryReport;
   if (library?.used) {
@@ -116,7 +118,23 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
   const failAll = (message: string) => {
     for (const scene of current().storyboard.scenes) setStage(scene.id, 'failed', message);
   };
-  if (current().isoEngine === 'canvas') {
+  if (current().storyboard.preset === 'story-canvas') {
+    try {
+      const built = await buildStoryCanvasFiles(assetModel(current().drawingModel), current());
+      commit((project) => ({
+        files: { ...Object.fromEntries(Object.entries(project.files).filter(([name]) => !isAssetFileName(name) && !isIsoCanvasFileName(name))), ...built.files },
+        storyCanvasReport: built.report,
+        storyCanvasPlan: built.plan,
+        storyCanvasMaps: built.maps,
+        worldRepairs: [],
+        sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
+      }));
+    } catch (err: unknown) {
+      console.error(`[GenerationJob] Story canvas failed for ${current().id}:`, err);
+      failAll(err instanceof Error ? err.message : 'Video Story Canvas gagal dibuat.');
+      return;
+    }
+  } else if (current().isoEngine === 'canvas') {
     try {
       const built = await buildIsoCanvasFiles(assetModel(current().drawingModel), current());
       commit((project) => ({

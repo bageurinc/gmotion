@@ -484,7 +484,9 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
 
               {usesWorldEngine(project.storyboard.preset) && project.isoEngine !== 'canvas' ? (
                 <p className="p-4 border-t border-slate-800 bg-slate-900 text-xs text-slate-300 shrink-0">
-                  Revisi lewat chat belum tersedia untuk video Isometrik versi lama.
+                  {project.storyboard.preset === 'story-canvas'
+                    ? 'Revisi lewat chat belum tersedia untuk Story 2D.'
+                    : 'Revisi lewat chat belum tersedia untuk video Isometrik versi lama.'}
                 </p>
               ) : (
                 <>

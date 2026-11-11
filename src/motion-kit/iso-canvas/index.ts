@@ -5,3 +5,7 @@ export { CanvasScene, type IsoDraw } from './CanvasScene';
 export { statesAt, paintIsoScene, paintIsoFrame } from './scenes';
 export type { IsoStates, IsoWorldDraw, IsoStateChange, IsoSceneLabel, IsoWorldScene, IsoDetailScene, IsoSceneSpec } from './scenes';
 export { IsoCanvasVideo } from './IsoCanvasVideo';
+export { useTitleFont, TitleBoundary } from './title-kit';
+export { TITLE_FONTS, TITLE_FONT_NAMES, type TitleFontName } from './title-fonts';
+export { CaptionTrack, DefaultCaption, captionAt, CAPTION_GROUP, type CaptionProps, type CaptionWord } from '../world/caption-track';
+export { PanelTrack, DefaultPanel, panelAt, PANEL_MAX_BOTTOM, type PanelProps, type PanelBeat } from '../world/panel-track';

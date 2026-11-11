@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assetModel, generateVideoSceneFile } from '@/lib/explainer/scene-generator';
 import { generateProceduralStoryboard } from '@/lib/pipeline/director-agent';
+import { drawingModelAllowed } from '@/types/studio';
 
 const mocks = vi.hoisted(() => ({
   generateAsset: vi.fn(),
@@ -134,6 +135,22 @@ export default Asset;`;
     expect(assetModel()).toBe('gemini-uji');
     expect(assetModel('gemini')).toBe('gemini-uji');
     expect(assetModel('deepseek-flash')).toBe('ds/deepseek-v4.1-flash');
+  });
+
+  it('maps the admin-only models to their gateway ids', () => {
+    expect(assetModel('claude-sonnet')).toBe('cc/claude-sonnet-5-5');
+    expect(assetModel('claude-opus')).toBe('cc/claude-opus-5-5');
+    expect(assetModel('gpt-sol')).toBe('cx/gpt-6.1-sol');
+    expect(assetModel('gpt-terra')).toBe('cx/gpt-6.1-terra');
+  });
+
+  it('lets only admins draw with the admin-only models', () => {
+    for (const model of ['claude-sonnet', 'claude-opus', 'gpt-sol', 'gpt-terra'] as const) {
+      expect(drawingModelAllowed(model, false)).toBe(false);
+      expect(drawingModelAllowed(model, true)).toBe(true);
+    }
+    expect(drawingModelAllowed('gemini', false)).toBe(true);
+    expect(drawingModelAllowed('deepseek-flash', false)).toBe(true);
   });
 
   it('keeps the CTA scene on the button-capable generator', async () => {

@@ -26,7 +26,8 @@ export const COMPOSITION_ID = 'MainVideo';
  * drawing onto a software GPU process (~2 s per frame on Windows), so they keep the default.
  */
 export function chromiumOptionsFor(project: Pick<StudioProject, 'storyboard'> & { isoEngine?: StudioProject['isoEngine'] }): ChromiumOptions {
-  if (!usesWorldEngine(project.storyboard.preset) || project.isoEngine === 'canvas') return {};
+  // Both canvas engines draw with Canvas 2D and need no WebGL.
+  if (!usesWorldEngine(project.storyboard.preset) || project.isoEngine === 'canvas' || project.storyboard.preset === 'story-canvas') return {};
   const gl = process.env.RENDER_GL === 'swangle' || process.env.RENDER_GL === 'angle' ? process.env.RENDER_GL : undefined;
   return { gl: gl ?? (process.platform === 'darwin' ? 'angle' : 'swangle') };
 }

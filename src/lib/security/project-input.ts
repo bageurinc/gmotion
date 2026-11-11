@@ -6,12 +6,15 @@ const VIRTUAL_FILE_NAME = /^(?:Scene\d{1,2}|MainVideo)\.tsx$/;
 /** Published library assets a library video bundles. Written by the job only, never edited by users. */
 const ASSET_FILE_NAME = /^(?:Asset\d{1,2}|Environment)\.tsx$/;
 /** Isometric canvas video modules. Written by the job; user edits come with the editor stage. */
-const ISO_CANVAS_FILE_NAME = /^Iso(?:Objects|World|Scenes)\.ts$/;
+const ISO_CANVAS_FILE_NAME = /^Iso(?:(?:Objects|World|Scenes)\.ts|(?:Title|Caption|Panel)\.tsx)$/;
+/** Story canvas video modules, written by the job only. */
+const STORY_CANVAS_FILE_NAME = /^Story(?:(?:Props|Places|Scenes)\.ts|(?:Title|Caption|Panel)\.tsx)$/;
 const MAX_FILE_LENGTH = 200_000;
 
 export const isValidProjectId = (id: string) => PROJECT_ID.test(id);
-export const isVirtualFileName = (name: string) => VIRTUAL_FILE_NAME.test(name) || ASSET_FILE_NAME.test(name) || ISO_CANVAS_FILE_NAME.test(name);
-export const isIsoCanvasFileName = (name: string) => ISO_CANVAS_FILE_NAME.test(name);
+export const isVirtualFileName = (name: string) => VIRTUAL_FILE_NAME.test(name) || ASSET_FILE_NAME.test(name) || ISO_CANVAS_FILE_NAME.test(name) || STORY_CANVAS_FILE_NAME.test(name);
+/** Files of either canvas engine, dropped together so a retry never mixes engines. */
+export const isIsoCanvasFileName = (name: string) => ISO_CANVAS_FILE_NAME.test(name) || STORY_CANVAS_FILE_NAME.test(name);
 export const isAssetFileName = (name: string) => ASSET_FILE_NAME.test(name);
 
 export const CreateProjectSchema = z.object({

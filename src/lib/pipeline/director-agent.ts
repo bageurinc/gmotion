@@ -304,6 +304,10 @@ const WORLD_DIRECTOR_NOTE = `
 This video happens inside ONE continuous 3D world while a camera travels across it. Every scene is one camera stop. A story that moves between places treats them as neighboring areas of that world.
 Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
 
+const STORY_CANVAS_DIRECTOR_NOTE = `
+This video is drawn as flat 2D illustrations of what the topic is really about, in one to three settings at their real scale: a heart topic shows the heart, a volcano topic the volcano erupting, a battery topic the battery. Every scene shows one clear change that explains its line. Add people only when the user asks for them or a human action is the point (cooking, farming, a daily habit); many topics have none. Keep the same things and settings across scenes.
+Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
+
 export function durationInstruction(budget: DurationBudget): string {
   return `
 TARGET DURATION: ${budget.targetSeconds} seconds. The narration is read at about ${WORDS_PER_SECOND} words per second, and every scene adds a short pause.
@@ -332,7 +336,7 @@ Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
-FPS: 30${usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action. When scenes explain parts of one object, such as the frame, dampers, and foundation of one building, write each visualPrompt as the camera moving into that part of the same object, not as a new separate drawing, cutaway card, or blueprint. Camera directions go only in visualPrompt: voiceoverText is what the narrator says and never mentions the camera, shots, or scenes.' : ''}${budget ? durationInstruction(budget) : ''}${options.libraryNote ? `\n${options.libraryNote}` : ''}`;
+FPS: 30${preset === 'story-canvas' ? STORY_CANVAS_DIRECTOR_NOTE : usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action. When scenes explain parts of one object, such as the frame, dampers, and foundation of one building, write each visualPrompt as the camera moving into that part of the same object, not as a new separate drawing, cutaway card, or blueprint. Camera directions go only in visualPrompt: voiceoverText is what the narrator says and never mentions the camera, shots, or scenes.' : ''}${budget ? durationInstruction(budget) : ''}${options.libraryNote ? `\n${options.libraryNote}` : ''}`;
       const ask = async (extra = '') => {
         const response = await generateText({ model: getDirectorModel(), system: DIRECTOR_SYSTEM_PROMPT, prompt: basePrompt + extra });
         return parseStoryboardFromLLMResponse(response.text, userPrompt, preset, aspectRatio);

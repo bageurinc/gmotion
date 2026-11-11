@@ -167,7 +167,7 @@ describe('presets', () => {
   });
 
   it('refuses the old names for new projects but still reads them from saved ones', () => {
-    expect(StylePresetSchema.options).toEqual(['story-2d', 'story-svg', 'ads-ui', 'world']);
+    expect(StylePresetSchema.options).toEqual(['story-2d', 'story-svg', 'ads-ui', 'world', 'story-canvas']);
     expect(StylePresetSchema.safeParse('story').success).toBe(false);
     expect(StoredPresetSchema.safeParse('story').success).toBe(true);
   });

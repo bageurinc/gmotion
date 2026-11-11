@@ -173,17 +173,35 @@ export function overlayBeats(storyboard: Storyboard, plan: IsoCanvasPlan) {
   });
 }
 
-/** The composition both the preview and the export run. */
-export function isoCanvasMainVideo(storyboard: Storyboard, plan: IsoCanvasPlan): string {
+/**
+ * Length of the opening title card in frames: long enough to read (about 3.2 s), never longer
+ * than the first scene, because the panel for scene 1 must still get its turn.
+ */
+export function isoTitleFrames(storyboard: Storyboard): number {
+  const first = storyboard.scenes[0]?.durationInFrames ?? 0;
+  const wanted = Math.round(storyboard.fps * 3.2);
+  return Math.max(0, Math.min(wanted, first - Math.round(storyboard.fps * 0.8)));
+}
+
+/**
+ * The composition both the preview and the export run. `designs` says which optional
+ * model-written files exist: IsoTitle.tsx opens the video, IsoCaption.tsx styles captions,
+ * IsoPanel.tsx styles the top panel.
+ */
+export function isoCanvasMainVideo(storyboard: Storyboard, plan: IsoCanvasPlan, designs: { title?: boolean; caption?: boolean; panel?: boolean } = {}): string {
   const script = { unit: plan.unit, palette: plan.palette, music: storyboard.bgmTrack, beats: overlayBeats(storyboard, plan) };
+  const frames = designs.title ? isoTitleFrames(storyboard) : 0;
+  const title = frames > 0;
+  const caption = Boolean(designs.caption);
+  const panel = Boolean(designs.panel);
   return `import React from 'react';
 import { IsoCanvasVideo } from '@/motion-kit';
 import { drawWorld } from './IsoWorld';
 import { scenes } from './IsoScenes';
-
+${title ? "import { TitleCard } from './IsoTitle';\n" : ''}${caption ? "import { CaptionCard } from './IsoCaption';\n" : ''}${panel ? "import { PanelCard } from './IsoPanel';\n" : ''}
 const script = ${JSON.stringify(script)};
 
-export const MainVideo: React.FC = () => <IsoCanvasVideo scenes={scenes} drawWorld={drawWorld} script={script as never} />;
+export const MainVideo: React.FC = () => <IsoCanvasVideo scenes={scenes} drawWorld={drawWorld} script={script as never}${title ? ` title={TitleCard} titleFrames={${frames}}` : ''}${caption ? ' caption={CaptionCard}' : ''}${panel ? ' panel={PanelCard}' : ''} />;
 
 export default MainVideo;
 `;

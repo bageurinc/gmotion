@@ -81,6 +81,9 @@ export async function POST(
   if (!input.success) {
     return NextResponse.json({ error: 'Pesan revisi tidak valid.' }, { status: 400 });
   }
+  if (project.storyboard.preset === 'story-canvas') {
+    return NextResponse.json({ error: 'Revisi lewat chat belum tersedia untuk Story 2D.' }, { status: 409 });
+  }
   if (usesWorldEngine(project.storyboard.preset)) {
     if (project.isoEngine !== 'canvas') {
       return NextResponse.json({ error: 'Revisi lewat chat belum tersedia untuk video Isometrik versi lama.' }, { status: 409 });

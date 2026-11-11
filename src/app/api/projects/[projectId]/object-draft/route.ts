@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
   const project = getProject(projectId);
   if (input.data.action === 'auto') {
-    if (project?.storyboard.preset !== 'story-svg') return NextResponse.json({ error: 'Pilihan ini hanya untuk gaya Full SVG.' }, { status: 409 });
+    if (project?.storyboard.preset !== 'story-svg') return NextResponse.json({ error: 'Pilihan ini hanya untuk gaya Story 2D versi lama.' }, { status: 409 });
     const enabled = input.data.enabled;
     // A draft already waiting for review is approved at once, unless a correction is being drawn.
     if (enabled && project.storySvgReviewPending && project.storySvgDraft && !isGenerationActive(projectId) && !revising.has(projectId)) {

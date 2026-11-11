@@ -33,3 +33,37 @@ export function validateIsoCanvasFiles(files: IsoCanvasFiles): string[] {
     return validateIsoCanvasFile(name, files[name]).errors;
   });
 }
+
+/**
+ * IsoTitle.tsx: `export const TITLE_TEXT: string[]` (every word the card shows) and
+ * `export const TitleCard: React.FC<{ duration: number }>`, the opening title written for the
+ * video. Optional: without it the video opens with the headline panel as before.
+ */
+export const ISO_TITLE_FILE = 'IsoTitle.tsx';
+export const ISO_TITLE_IMPORTS = ['react', 'remotion', '@/motion-kit'] as const;
+
+export function validateIsoTitle(code: string) {
+  return validateSceneCode(code, ISO_TITLE_FILE, { allowedImports: ISO_TITLE_IMPORTS });
+}
+
+/**
+ * IsoCaption.tsx: `export const CaptionCard: React.FC<CaptionProps>`, how captions look in this
+ * video. Optional: the engine still groups, times, and places the words, and falls back to the
+ * plain caption pill when the file is missing or throws.
+ */
+export const ISO_CAPTION_FILE = 'IsoCaption.tsx';
+
+export function validateIsoCaption(code: string) {
+  return validateSceneCode(code, ISO_CAPTION_FILE, { allowedImports: ISO_TITLE_IMPORTS });
+}
+
+/**
+ * IsoPanel.tsx: `export const PanelCard: React.FC<PanelProps>`, how the top panel of each scene
+ * looks. Optional: the engine still decides the headline, status, and stated numbers, and falls
+ * back to the plain panel when the file is missing or throws.
+ */
+export const ISO_PANEL_FILE = 'IsoPanel.tsx';
+
+export function validateIsoPanel(code: string) {
+  return validateSceneCode(code, ISO_PANEL_FILE, { allowedImports: ISO_TITLE_IMPORTS });
+}

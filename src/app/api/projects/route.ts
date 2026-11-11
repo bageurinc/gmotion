@@ -11,7 +11,7 @@ import {
   getProject,
 } from '@/lib/storage/project-store';
 import { CreateProjectSchema } from '@/lib/security/project-input';
-import { presetAllowed, StudioProject, supportsArtStyle } from '@/types/studio';
+import { drawingModelAllowed, presetAllowed, StudioProject, supportsArtStyle } from '@/types/studio';
 import { isAdmin } from '@/lib/billing/costs';
 
 type DraftJob = { signature: string; promise: Promise<StudioProject> };
@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
     const { prompt, preset, aspectRatio, drawingModel, requestId } = input.data;
     if (!presetAllowed(preset, isAdmin(auth.user))) {
       return NextResponse.json({ error: 'Gaya video ini belum tersedia untuk akun kamu.' }, { status: 403 });
+    }
+    if (!drawingModelAllowed(drawingModel, isAdmin(auth.user))) {
+      return NextResponse.json({ error: 'Model gambar ini belum tersedia untuk akun kamu.' }, { status: 403 });
     }
     // Other presets do not draw with the image model, so a style choice would be silently ignored.
     const artStyle = supportsArtStyle(preset) ? input.data.artStyle : 'flat';

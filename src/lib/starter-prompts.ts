@@ -8,7 +8,7 @@ export interface StarterPrompt {
 }
 
 const story2d = (title: string, prompt: string): StarterPrompt => ({ title, prompt, preset: 'story-2d', ratio: '9:16' });
-const fullSvg = (title: string, prompt: string): StarterPrompt => ({ title, prompt, preset: 'story-svg', ratio: '9:16' });
+const fullSvg = (title: string, prompt: string): StarterPrompt => ({ title, prompt, preset: 'story-canvas', ratio: '9:16' });
 const isometric = (title: string, prompt: string): StarterPrompt => ({ title, prompt, preset: 'world', ratio: '9:16' });
 const ads = (title: string, prompt: string): StarterPrompt => ({ title, prompt, preset: 'ads-ui', ratio: '9:16' });
 

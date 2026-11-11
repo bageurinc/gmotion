@@ -923,3 +923,163 @@ Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada ben
 - Revisi gambar yang skornya turun lebih dari 0,15 ditolak, karena penilai tidak melihat permintaan user dan penurunan biasanya berarti perubahan merusak yang sudah baik.
 - Hasil di `storage/spike/canvas-iso/{gate-motion.mp4,gate-frames/motion.jpg,gate-frames/motion2.jpg}`.
 - Langkah kaki: benda yang hanya digeser mesin tampak seperti potongan kertas yang meluncur. Revisi gerak dengan `walks: true` langsung menulis ulang gambar benda itu agar melangkah hanya saat keadaan `jalan` di antara 0 dan 1 (faktor `Math.min(1, Math.min(k, 1 - k) * 20)` supaya siklus muncul dan hilang halus), dan tetap berdiri diam di 0 dan 1. Langkah tidak dipasang bila skornya turun lebih dari 0,15, tetapi gerak tetap berlaku. Uji nyata: 449 detik dan sekitar Rp4.500, kaki bergantian terlihat pada frame berjarak 0,25 detik.
+
+## Close-up Isometrik Canvas memakai fungsi benda (11 November 2026)
+
+- Pemicu: di proyek gerbang tol (`proj_4e0654b9…`), mobil di adegan dunia berwarna biru dan membulat (`drawMobil`), sedangkan kedua close-up menggambar mobil sendiri dari kotak dan prisma abu `#78929A` dengan bentuk dan posisi lain. Dalam satu video ada tiga versi mobil.
+- Penyebab: `DETAIL_SYSTEM` membolehkan "call the listed object functions … or model new parts from primitives", `detailRequest` hanya memberi nama fungsi, ukuran, dan keadaan tanpa tampilan atau posisi, `detailProblems` hanya uji kering, dan penilai close-up tidak melihat adegan dunia sebagai pembanding. Gemini memilih menggambar ulang.
+- Bandingan lemo-opuscar: konsistensi di sana datang dari arsitektur, bukan prompt. Satu fungsi gambar per benda, dan close-up hanya geser dan zoom kamera di dunia yang sama.
+- Perbaikan: benda di `detail.objects` wajib lewat `drawX` dan ditempatkan di posisi dunianya; primitif hanya untuk bagian dalam, potongan, kawat, medan, aliran, dan panah. `missingObjectCalls` (komentar dibuang dulu) menolak close-up yang tidak memanggil `drawX`, dan pesan tolakannya dikirim balik lewat `writeUntilValid`.
+- Jebakan: cek ini hanya memastikan `drawX` dipanggil, belum mencegah model menambahkan salinan kedua di samping pemanggilan itu. Kalau masih muncul, tambahkan pembanding frame dunia ke penilai close-up.
+
+## Kartu judul pembuka buatan AI (11 November 2026)
+
+- Permintaan user: judul video punya animasi berbeda sesuai tema, seperti sampul Shorts (kalimat pengantar kecil dan kata kunci besar dua warna). User menolak usulan awal berupa 4 tema tetap: "harusnya AI model bisa menentukan".
+- lemo-opuscar tidak punya arahan judul per tema. Yang dipakai darinya: hook dalam 3 detik pertama tanpa logo yang muncul pelan, dan waktu baca sekitar huruf ÷ 15 + 1,5 detik.
+- Keputusan: Gemini menulis komponen React utuh (`IsoTitle.tsx`), bukan memilih preset. Batas kreativitasnya hanya kontrak (`TITLE_TEXT`, `TitleCard({ duration })`), daftar font, aturan tata letak (di bawah 7% atas sampai sekitar 55% tinggi frame, margin 7%), dan aturan anti-ngarang.
+- Daftar font dipisah ke `title-fonts.ts` tanpa `'use client'`, karena `prompts.ts` berjalan di server. Mengimpor modul client dari kode server Next bisa mengubah ekspornya menjadi referensi client.
+- `useTitleFont` memilih bobot font terdekat dari `getInfo()`, jadi tebakan bobot yang salah tidak membuat render gagal.
+- `compileVirtualProject` punya error boundary sendiri yang menampilkan kartu error, jadi render tidak gagal saat judul crash. Pratinjau penilai membungkus judul dengan `TitleBoundary` berlatar magenta, lalu frame yang hampir seluruhnya magenta dianggap crash.
+- Jebakan yang sempat terjadi: `buildWorldScenes` memetakan semua beat rencana, sehingga memberinya satu durasi saja melempar error, dan error itu terjadi sebelum `.catch` sehingga bisa menggagalkan seluruh job. Sekarang pembuatan tugas judul ada di dalam rantai promise, dan bidikan lebar dibuat dari rencana dengan satu beat.
+
+## Desain subtitle buatan AI (11 November 2026)
+
+- User ingin subtitle juga diserahkan ke AI supaya lebih kreatif. Keputusan: AI hanya mendesain tampilan, sedangkan mesin tetap mengatur waktu. Alasannya, subtitle tampil sepanjang video dan harus pas dengan suara per kata, sementara pembagian 5 kata dan area aman platform sudah teruji. Kode model yang error di sini akan merusak seluruh video, tidak hanya 3 detik seperti judul.
+- `CaptionTrack` (di `world/caption-track.tsx`) menggantikan `CaptionPill` di `WorldOverlay`, dengan perilaku default yang sama (`DefaultCaption`). Bedanya, adegan tanpa kata tidak lagi menampilkan pil kosong.
+- Desain subtitle ditulis setelah judul supaya bisa memakai font dan warnanya. Keduanya berjalan bersamaan dengan gambar benda, jadi biasanya tidak memperpanjang job.
+- Prompt melarang ukuran kata aktif berubah di tata letak (hanya boleh `transform`), karena kata yang bergeser setiap kali sorotan pindah melelahkan dilihat sepanjang video. Penilai punya kriteria "calm" untuk hal ini.
+- Deteksi crash di pratinjau memakai `position: fixed` berlatar magenta di dalam boundary, karena subtitle berada di kotak bawah, bukan memenuhi frame.
+
+## Spike mesin Story Canvas dengan Gemini (11 November 2026)
+
+- Pemicu: user puas dengan Isometrik Canvas dan bertanya apakah Story bisa memakai cara yang sama. Hipotesis: yang membuat Isometrik bagus adalah mesin yang memberi gaya otomatis, bukan Canvas-nya. Jadi Story butuh mesin 2D sendiri, bukan sekadar pindah dari SVG ke Canvas.
+- Mesin `src/motion-kit/story-canvas/engine.ts` (`createStory`): tampak samping, satuan meter, y ke atas, garis tanah y = 0. Setiap bentuk (`rect`, `circle`, `ellipse`, `poly` dengan `smooth`, `capsule`) otomatis diberi pita bayangan di kanan-bawah dan sorot di kiri-atas, dibuat dari jalur bentuk itu dikurangi salinannya yang digeser (`fill('evenodd')` di dalam `clip`), ditambah outline dari warna yang sama yang digelapkan. Ada juga `ground`, `band`, `shadow`, `glow`, `line` dengan aliran dash, `layer(depth)` untuk parallax yang bergeser dari kunci kamera pertama, `camPath`, `at`/`rotate`/`scale`/`fade`, dan label (memakai `layoutLabels` dari iso).
+- Orang hanya lewat `s.person()`, digambar di atas rangka HumanRig. `story-canvas/rig.ts` adalah salinan bertipe dari bagian matematika `HUMAN_RIG_SOURCE` (tanpa komponen SVG). Test membandingkan semua pose dan jalan dengan sumber aslinya lewat `loadHumanRig`, jadi keduanya tidak boleh menyimpang. Kostum yang tersedia: rambut (short, long, bun, curly, bald, hijab, cap), atasan, bawahan, celana atau rok, lengan panjang, celemek, jas, kacamata, ekspresi, dan benda di tangan (`hold`).
+- Contoh tulisan tangan (dapur, adonan mengembang) ada di `src/lib/explainer/story-canvas/examples.ts` bersama `STORY_STYLE`, dan ikut dalam prompt.
+- Skrip `scripts/spike-story-canvas.ts` memakai putaran yang sama dengan spike iso: tulis, uji kering, render 4 frame, nilai, lalu perbaiki (maksimal 2 putaran, ambang 6). Kriteria "isometricCorrectness" diganti "characters".
+- Hasil Gemini (`ag/gemini-3.8-flash-high`), satu percobaan per topik:
+  - Sawah diairi: 5,0 lalu 5,2, sekitar Rp1.400.
+  - HP sebelum tidur: 5,8, sekitar Rp2.100 (revisi tidak mengembalikan kode).
+  - Cuci tangan pakai sabun: 4,6 lalu 5,6, sekitar Rp2.000.
+  - Waktu tulis per putaran 36–152 detik. Skor ini setara spike pertama Isometrik (5,2–5,8), sebelum ada gaya rumah dan contoh AC.
+- Yang sudah jalan: tempat langsung dikenali (sawah dengan bukit dan padi berbaris, kamar malam dengan jam dan lampu meja, wastafel dengan keran dan sabun). Gemini juga kreatif, misalnya lingkaran pembesar kuman di adegan cuci tangan dan genangan air yang naik di sawah. Warna gelap hanya muncul di topik malam.
+- Kelemahan utama ada di karakter (skor 3–5), dan sumbernya rig, bukan Gemini:
+  - Pose terbatas. Tidak ada pose membungkuk, jongkok, berbaring, mencuci tangan, atau melihat HP, sehingga orang hanya berdiri kaku. Contohnya, orang di topik HP berdiri di samping kasur, bukan berbaring.
+  - Kaki selalu lurus.
+  - Gemini menumpuk caping di atas `hairStyle: 'cap'`.
+- Kelemahan lain: label berisi fakta yang tidak ada di narasi ("Batang padi punya rongga udara khusus"), karena spike tidak punya rencana narasi. Di pipeline, label harus berasal dari rencana seperti `iso-canvas/plan.ts`. Selain itu, sepertiga bawah frame sering berisi tanah kosong.
+- Jebakan: pengecekan identifier terlarang di spike iso ikut membaca komentar, jadi komentar seperti `// window with a sky view` ditolak. Spike Story membuang komentar sebelum mengecek.
+- Hasil di `storage/spike/story-canvas/{example,sawah,hp-tidur,cuci-tangan}/` (frame per putaran, `critique.json`, `clip.mp4`, `summary.txt`).
+- Pose tambahan khusus Story di `story-canvas/rig.ts`, tidak ditambahkan ke HumanRig asli:
+  - `bend`: membungkuk, tangan ke arah tanah.
+  - `crouch`: jongkok.
+  - `kneel`: berlutut satu kaki.
+  - `phone`: kedua tangan memegang benda di depan dada, kepala menunduk.
+  - `wash`: lengan bawah datar di depan pinggang.
+  - `wave`: melambai.
+  - `lie`: berbaring telentang.
+- Semua pose baru dicek lewat test: telapak kaki tetap di y = 0. Bahu di rig diukur relatif terhadap badan, jadi pose membungkuk menambahkan sudut condong ke sudut bahu supaya lengan tetap menggantung.
+- Cara kerja `lie`: `person()` menggambar figur berdiri, lalu memutarnya seperempat putaran di sekitar panggul dan menurunkannya sampai punggung menempel di permukaan y. Kepala mengarah ke `facing` dan wajah menghadap ke atas. Selama diputar, figur di dalamnya selalu menghadap berlawanan dengan sisi kepala supaya tidak meloncat di tengah blend.
+- Ditambahkan juga `hairStyle: 'caping'`, dan prompt melarang menggambar topi lagi di atasnya.
+- Uji ulang Gemini setelah pose ditambah, satu percobaan per topik:
+  - Sawah: 4,6 lalu 4,8, sekitar Rp1.400. Petani memakai caping dan `bend`.
+  - HP sebelum tidur: 5,0 lalu 5,6, sekitar Rp3.400. Orang duduk di tepi kasur sambil memegang HP dengan `sit` → `phone`, menggantikan versi lama yang berdiri di samping kasur.
+- Pose dipakai dengan benar, tetapi skor tidak naik (selisihnya masih dalam rentang kebetulan satu percobaan). Keluhan penilai bergeser ke komposisi dan label:
+  - Di sawah, kamera bergeser menjauh sehingga petani keluar frame, dan saat blend `bend` → `point` hanya lengannya yang tersisa di tepi atas.
+  - Penunjuk label masih meleset.
+  - Kalau dilanjutkan, uji kering bisa mengecek apakah kepala dan kaki setiap orang tetap di dalam frame di semua waktu sampel, lalu masalahnya dikirim balik ke penulis. Ini lebih baik daripada hanya menambah aturan di prompt.
+- Hasil di `storage/spike/story-canvas/{poses,sawah-v2,hp-tidur-v2}/`.
+- Penilaian user (11 November 2026) setelah menonton: hasil Story dengan Canvas lebih rapi. Belum ada keputusan untuk menjadikannya jalur generate.
+
+## Desain panel judul adegan buatan AI (11 November 2026)
+
+- User menilai panel atas (bar warna solid dan gradasi tipis) terlalu sederhana, lalu meminta panel juga diserahkan ke AI. Polanya sama dengan subtitle: AI mendesain tampilan, mesin menentukan isi.
+- Angka tetap dihitung mesin (`panelAt`): angka baru muncul setelah cerita menyebutnya, dan hitung naiknya berlangsung 1,4 detik. Desain hanya menerima `number.reached`, `value`, `history`, dan `all`, jadi tidak bisa mengarang angka.
+- Batas `maxBottom` di 29% tinggi frame, karena label adegan Canvas (`LABEL_TOP`) mulai di 31% dan close-up menjaga subjeknya di bawah 30%. Kalau panel lebih tinggi, label dan subjek akan tertutup. Penilai memeriksa ini di kriteria komposisi.
+- `Hud` dipindah ke `world/panel-track.tsx` sebagai `DefaultPanel` tanpa perubahan tampilan. `WorldOverlay` dipakai juga oleh `IsoVideo` dan `IsoPicture`, jadi render default dibandingkan dengan screenshot lama.
+- Urutan job: judul selesai lebih dulu, lalu panel dan subtitle ditulis bersamaan dengan memakai kode judul. Semuanya berjalan selagi benda digambar.
+
+## Pipeline Story Canvas menjadi Story 2D (12 November 2026)
+
+- Keputusan user: setelah memahami aturan baru Isometrik (judul, subtitle, dan panel didesain AI), Story Canvas dijadikan pipeline sungguhan. Karena belum ada pengguna, Story Canvas langsung menggantikan kartu "Story 2D" di halaman utama. Kartu mesin lama (preset `story-svg`) disembunyikan untuk proyek baru dan diberi label "Story 2D (versi lama)" supaya proyek lama tetap bisa dibuka. Preset baru bernama `story-canvas` dan tidak lagi khusus admin. Contoh prompt yang dulu memakai Full SVG sekarang membuat proyek `story-canvas`.
+- Keputusan user: tidak ada konfirmasi draf objek, sama seperti Isometrik. Kalau tokoh atau tempat sering meleset, opsi berikutnya adalah jeda setelah rencana dan sebelum menggambar, dengan tombol setujui otomatis.
+- Arsitekturnya sengaja meniru Isometrik Canvas:
+  - Rencana dari narasi (`story-canvas/plan.ts`) berisi pemeran dengan tampilan tetap, 1–3 tempat dengan lebar dalam meter, props dengan posisi dan tinggi permukaan, close-up, dan beat. Setiap beat berisi tempat, fokus, aktor (x, arah, pose, poseTo, walkTo, `on`, hold), dan perubahan keadaan.
+  - Gemini hanya menulis fungsi props (`StoryProps.ts`), fungsi tempat (`StoryPlaces.ts`), dan close-up.
+  - Adegan biasa berupa data di `StoryScenes.ts`, bersama `world` (peta tempat, props, dan pemeran). `paintStoryScene` menggambar tempat, props, orang, props depan, lalu label.
+- Orang tidak pernah ditulis model, jadi tampilan tokoh sama persis di semua adegan. `placeActor` menaruh orang yang duduk atau berbaring di atas permukaan props (tinggi panggul dihitung dari rig), sehingga rencana tidak perlu tahu ukuran rangka.
+- Kamera membingkai semua aktor beat itu ditambah props fokus. Kamera bergerak dari bidikan sebelumnya hanya di tempat yang sama. Pindah tempat atau kembali dari close-up dihitung sebagai potongan (cut), bukan geser.
+- Putaran mutu memakai `improve` dari Isometrik. `improve` kini menerima `criticSystem`, dan `IsoQualityItem.kind` mendapat `prop` dan `place`. Judul, subtitle, dan panel memakai prompt Isometrik yang sama, dengan pratinjau dari tempat dan props pengganti. Hasilnya disimpan di `StoryTitle.tsx`, `StoryCaption.tsx`, dan `StoryPanel.tsx`.
+- Uji kering akhir memakai `framing: true`, yaitu memeriksa kepala dan kaki setiap orang di dalam frame setelah kamera tiba (bukan di t = 0, karena kamera masih bergerak).
+- Revisi chat belum ada untuk gaya ini. Rute revisi dan studio mengatakannya dengan jelas, dan pesan selesai tidak menyarankan revisi.
+- Jebakan pita kamera: pita Isometrik potret (pusat 58%, tinggi 46%) membuat kaki dan kasur tertutup kotak subtitle AI, yang mulai sekitar 62% tinggi frame. Story memakai pita sendiri untuk potret, yaitu pusat 46,5% dan tinggi 31% (antara panel 29% dan subtitle 62%). Orang jadi lebih kecil, sekitar 490 px untuk tinggi 1,7 m. Rasio 4:5 dan 16:9 masih memakai pita Isometrik dan belum diuji.
+- Jebakan zoom close-up: di job pertama Gemini menulis `s.look(0, -0.08, 1.05)`, mengira zoom adalah faktor skala, sehingga gambar mata hanya sebesar 1 piksel dan frame kosong. Putaran perbaikan tidak membantu (3,0 → 3,2) karena penilai hanya melihat frame kosong. Prompt close-up sekarang menjelaskan zoom dalam piksel per meter dengan contoh angka. Uji kering menolak close-up dengan zoom di bawah 100, diukur dari `s.P(1, 0) − s.P(0, 0)` setelah adegan digambar.
+- Job 1, "Kenapa main HP sebelum tidur bikin susah tidur?" (`proj_1794415984595_storyjob`, sebelum dua perbaikan di atas):
+  - 5 adegan, 31,7 detik. Generate 860 detik, export 28 detik.
+  - 30 panggilan Gemini, 172.940 token masuk dan 176.234 keluar, sekitar Rp14.300.
+  - Skor: props 6–6,5, tempat 6, judul 7,2, panel 6,8, subtitle 7,2. Kedua close-up kosong (3,2 dan 3,4), dan subtitle menutupi orang.
+  - Pose `phone` dan berbaring di atas kasur tampil benar.
+- Job 2, "Kenapa sawah harus selalu diairi?" (`proj_1794417015607_storyjob`, setelah perbaikan):
+  - 6 adegan, 34,3 detik. Generate 419 detik, export 18 detik.
+  - 29 panggilan Gemini, 175.435 token masuk dan 116.711 keluar, sekitar Rp10.300.
+  - Frame MP4 diperiksa: kedua close-up terisi (potongan batang dengan rongga udara 5,8, akar dengan nutrisi 6,6), dan petani berada di atas kotak subtitle. Petani bercaping memakai pose `bend`, `point`, dan `wave`.
+  - Yang lemah: tempat sawah 5,2 (air hanya pita tipis dan padi hanya satu rumpun, bukan barisan), rumpun padi 4,8, label close-up yang rendah tertutup subtitle, dan setengah bawah frame berisi tanah gelap.
+- Hasil frame di `storage/spike/story-canvas/{job-hp-frames,job-sawah-frames}/sheet.jpg`.
+
+## Subtitle menutupi isi di 16:9 (12 November 2026)
+
+- Laporan user: di `proj_3458ee93…` (Borobudur, Story 2D, 16:9) subtitle menghalangi konten. Frame menunjukkan kotak subtitle AI dua baris setinggi sekitar sepertiga frame (55–90%), sedangkan kamera menaruh orang dan candi di 25–75%.
+- Penyebab 1: prompt desain subtitle, judul, dan panel menyuruh mengukur dari `width` ("0,045–0,07 × width"). Di 16:9 lebar 1920 menghasilkan huruf 86–134 px pada frame setinggi 1080. Ini juga berlaku untuk Isometrik 16:9 karena prompt-nya sama. Sekarang ukuran dihitung dari sisi terpendek (`unit = Math.min(width, height)`), dan subtitle dibatasi paling lebar 0,8 × width.
+- Penyebab 2: Story 2D di 16:9 dan 4:5 masih memakai pita kamera Isometrik (pusat 50%, tinggi 50%). Sekarang pitanya pusat 47% dengan tinggi 38% untuk 16:9, dan pusat 47% dengan tinggi 34% untuk 4:5.
+- Proyek itu diperbaiki lewat skrip sekali pakai. Bidikan disusun ulang dari `storyCanvasPlan` tanpa panggilan model (close-up dibiarkan), subtitle didesain ulang (skor 8,6), lalu `MainVideo.tsx` disusun ulang. Cadangan ada di `storage/spike/story-canvas/backup-proj_3458ee93….json`. Frame sesudahnya ada di `storage/spike/story-canvas/bug-16x9-fixed/sheet.jpg`: subtitle satu baris kecil di bawah, orang dan candi di atasnya.
+- Sisa masalah: close-up "saling mengunci" mengatur kameranya sendiri, sehingga bagian bawah balok masih tertutup subtitle. Proyek Isometrik 16:9 lama tetap memakai desain subtitle lamanya.
+
+## Story 2D: tokoh opsional, skala nyata, keadaan tempat (12 November 2026)
+
+- Pemicu: proyek Krakatau (`proj_4a149b34…`) rapi (skor 5,8–8,4), tetapi ada tiga masalah. Gunung dan tsunami dibuat setinggi 1,8 m supaya muat di samping "pengamat pesisir", sehingga mirip diorama kelas. Langit tidak menggelap saat narasi berkata "siang jadi malam". Tokoh hanya menunjuk di ketujuh adegan.
+- Keputusan user: tokoh hanya muncul jika diminta atau jika ceritanya memang butuh, seperti di Full SVG dulu. Selebihnya AI bebas dan kreatif, misalnya topik jantung menampilkan organ sesuai prompt.
+- Catatan sutradara dan prompt rencana Story 2D kini menampilkan inti topiknya. Orang hanya muncul untuk aksi manusia (memasak, bertani, kebiasaan memakai HP) atau bila diminta, dan contoh JSON memakai `cast: []`.
+- Skala nyata dalam meter: lebar tempat 0,01–20.000 m, ukuran props tanpa batas 12 m. `fitStoryZoom` memakai margin yang sebanding dengan ukuran subjek dan zoom 1e-4 sampai 1e7. Test: jantung 12 cm dibingkai dengan zoom di atas 2.000 px/m, gunung 2,5 km di bawah 1 px/m. Bidikan lebar tanpa aktor dan fokus membingkai semua props tempat itu, atau seluruh lebar tempat.
+- Tempat punya `states` sendiri (langit gelap, malam, letusan di kejauhan). `set` beat boleh menunjuk id tempat, dan `StoryPlaceDraw` sekarang `(s, t, state)`. Prompt tempat meminta keadaan mengubah seluruh latar, dan contoh dapur memakai keadaan `malam`.
+- Gaya rumah penulis tidak lagi membahas orang, karena penulis memang tidak bisa menggambar orang. Penilai tempat memberi 10 untuk kriteria karakter jika tidak ada orang.
+- Uji job topik jantung dihentikan atas permintaan user, yang ingin mencobanya sendiri. Proyek setengah jadi `proj_1794421246750_storyjob` tertinggal dengan status generating. Perubahan ini belum diuji lewat job nyata.
+- Proyek jantung buatan user (`proj_f0f12543…`) gagal di rencana tiga kali dengan pesan "The answer did not follow the required format". Setelah panggilan rencana diulang, penyebabnya ketemu: `props.0.states` berisi lebih dari 3 item. Jantung secara wajar punya banyak keadaan, dan prompt baru memang meminta setiap beat berubah. Sekarang daftar keadaan (maksimal 6), `set` (8), close-up (2), pemeran (3), dan aktor (3) dipotong, tidak lagi ditolak. Teks pendek seperti headline dan label juga dipotong. Props dinaikkan menjadi maksimal 8. Pesan gagal sekarang menyertakan detail skema. User ingin mencoba ulang sendiri, jadi perbaikan ini belum diuji lewat job.
+
+## Primitif gerak Story 2D, Tahap 1 rencana kualitas (12 November 2026)
+
+- `src/motion-kit/story-canvas/motion.ts` berisi matematika murni:
+  - `samplePath`: Catmull-Rom dengan panjang busur.
+  - `pointAt`: titik dan arah di jarak tertentu sepanjang jalur.
+  - `flowParticles`: partikel di jalur sebagai fungsi `t` saja. Jumlahnya dihitung dari meter dibagi jarak antarpartikel, sehingga stabil di semua zoom dan tidak berkedip. Ada sedikit acakan per partikel supaya tidak terlihat seperti ban berjalan, dan partikel memudar di dekat ujung jalur.
+  - `emitParticles`: kelahiran partikel dengan jadwal tetap `k / rate`, sehingga frame paralel saat export selalu sama.
+  - `beatAt` dan `oscAt`: siklus berirama dan gelombang.
+- Mesin menambah `s.tube`, `s.flow`, `s.flowArrow`, `s.emit`, `s.beat`, dan `s.osc`. Partikel digambar langsung ke canvas tanpa bayangan dan sorot otomatis, karena jumlahnya bisa ratusan per frame.
+- Jebakan: sel darah biru di pembuluh biru hampir tidak terlihat. Sekarang setiap partikel diberi tepi terang, dan prompt meminta warna aliran jelas lebih terang dari tabungnya.
+- Penilaian dari foto diam tidak cukup untuk gerak. Lembar uji dibandingkan lewat tiga frame berjarak 0,2 detik yang diambil dari MP4.
+- Pengujian yang memanggil model untuk fitur ini memakai GPT-6.1 Terra (`gpt-terra`), atas permintaan user 12 November 2026.
+
+## Bagian props dan kamera bercerita, Tahap 2 rencana kualitas (12 November 2026)
+
+- Geometri bagian ditulis oleh penulis props, bukan oleh perencana. Perencana tidak tahu di mana serambi kanan digambar, jadi ia hanya memberi nama `parts` dan `flows`. Penulis mengekspor `drawNameMap` di koordinat props, lalu server membacanya lewat VM (`readPropMaps`, hasilnya di-clone ke JSON) setelah props selesai dan menyusun ulang bidikan dengan `buildStoryScenes(plan, timings, frame, maps)`. Bidikan sebelum props jadi (`draftScenes`) hanya dipakai untuk mengetahui beat mana yang close-up.
+- Jenis bidikan: `close` membingkai bagian × 1,7, karena bagian × 1 terlalu rapat (serambi kanan terpotong). `medium` berukuran bagian × 2,2 tetapi tidak lebih besar dari 0,8 × props. Batas ini perlu, karena × 3,2 di uji pertama malah lebih lebar dari bidikan wide.
+- `follow` memakai kunci kamera `glide`: `camPath` mengisi kunci ini secara linear, tidak di-ease. Tanpa itu kamera berhenti sebentar di setiap kunci, karena `ramp` adalah smoothstep per segmen.
+- Zoom sebelum close-up (match cut) menghapus kunci yang jatuh di 0,6 detik terakhir. Karena itu perjalanan `follow` dibuat selesai di `d − 0,65` kalau adegan berikutnya close-up, supaya tidak terpotong.
+- Pemeriksa rencana menolak dua beat berurutan dengan fokus, bagian, dan jenis bidikan yang sama, kecuali beat kedua memakai `follow`. Inilah penyebab kamera diam selama 32 detik di video jantung.
+- Contoh rujukan baru di `examples.ts`: `EXAMPLE_HEART` (empat ruang, katup, detak `s.beat`, dua aliran sel darah dari peta yang sama) dan `EXAMPLE_CHEST` (rusuk, paru-paru bernapas, diafragma). Keduanya lolos `propProblems`/`placeProblems`. Ini juga bahan untuk Tahap 5.
+- Perbaikan sampingan: `WorldOverlay` tidak lagi membuat `<Audio>` untuk adegan tanpa audio. Sebelumnya `staticFile('')` mengambil `/public/` dan render MP4 gagal dengan 404.
+- Test preset di `world-video.test.ts` diperbarui untuk preset `story-canvas`. Test itu gagal sejak preset ditambahkan, dan baru ketahuan saat suite penuh dijalankan.
+
+## Tahap 3–6 rencana kualitas Story 2D (12 November 2026)
+
+- Tahap 3: `set[].word` dan `beat.cue`. `wordTime` mencocokkan kata pertama `cue` dengan `wordTimings`: sama persis, mengandung atau terkandung (minimal 4 huruf), atau dengan peluluhan awalan Indonesia (p/t/k/s hilang setelah me-/pe-, misalnya pompa → memompa). Jebakan yang ketahuan dari test: "pompa" tidak ada di dalam "memompa", karena huruf p luluh.
+- Kamera dengan `cue` yang jatuh terlambat menahan bidikan lama dulu, lalu bergerak dengan waktu tempuh biasa (1,1 detik) supaya tiba tepat di kata itu.
+- Tahap 4: `propMoves` menggambar props di 1,1 vs 1,6 detik dan 2,3 vs 2,9 detik dengan keadaan sama, lalu membandingkan rekaman panggilan canvas. Props `moves` atau yang punya `flows` wajib bergerak di keadaan 0 maupun 1. Jebakan: pratinjau props dulu memanggil props dengan `t = step × 0,4`, sehingga frame dalam satu detik selalu identik dan penilai tidak pernah melihat gerak.
+- Tahap 5: contoh rujukan di prompt adalah jantung dan pompa air untuk props, serta dapur dan rongga dada untuk tempat. Aturan latar penuh ditambahkan.
+- Tahap 6, temuan dari lima topik dengan GPT-6.1 Terra:
+  - Topik bentang alam butuh diagram potongan. Siklus air berskala asli menghasilkan sungai dan laut berupa pita tipis (skor sungai 1,4). Setelah aturan diagram potongan dan penolakan props yang lebih pipih dari 8:1, skor naik ke 5,2–7,4 dan frame terisi.
+  - Pemeriksaan bingkai orang tidak boleh menggagalkan video. Bidikan dekat ke HP di tangan wajar memotong tubuh. Sekarang adegan punya `keep` (pemeran yang wajib utuh, hanya untuk bidikan yang tidak memfokuskan bagian props), dan hasil pemeriksaan bingkai hanya dicatat sebagai peringatan.
+  - Bidikan `follow` awalnya membingkai 35% panjang jalur, terlalu dekat sampai jantung hilang. Sekarang ukurannya maksimal dari 0,75 × bentang jalur, 0,55 × props, dan 2,2 × bagian. Proyek jantung disusun ulang tanpa model dari rencana dan peta yang tersimpan.
+  - `PUSH` dinaikkan dari 1,06 ke 1,1 supaya tahan bidikan tidak terasa diam.
+  - Pemeriksa bagian diam (`motion-check.ts`: 120 × 80 piksel, setiap 0,5 detik, ambang 6/255) tidak membaca partikel aliran yang kecil. Video yang alirannya jelas bergerak tetap dilaporkan punya 1–4 bagian diam. Alat ukurnya perlu dibuat lebih peka sebelum target "tidak ada bagian diam lebih dari 3 detik" bisa dinilai.
+- Jebakan skrip: di zsh, `$J --prompt ...` dengan `J="npx tsx ..."` tidak dipecah menjadi kata, sehingga job gagal dengan "no such file or directory". Pakai fungsi shell. `spike-iso-job.ts` sekarang punya `--drawing-model` dan tidak mencoba export bila ada adegan gagal.
+- Frame semua uji ada di `storage/spike/story-canvas/accept/{jantung,hujan,hujan2,kulkas,listrik,hp2}/sheet.jpg`.

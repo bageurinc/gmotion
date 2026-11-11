@@ -11,8 +11,14 @@ import { generateAsset, GeneratedAsset, parseAssetResponse, repairAsset, sceneAs
 import { CANVAS_HEIGHT, canvasWidthFor } from './asset-contract';
 
 export function assetModel(choice: DrawingModel = 'gemini'): string {
-  if (choice === 'deepseek-flash') return process.env.DEEPSEEK_FLASH_MODEL || 'ds/deepseek-v4.1-flash';
-  return process.env.ASSET_MODEL || process.env.CODER_MODEL || 'ag/gemini-3.8-flash-high';
+  switch (choice) {
+    case 'deepseek-flash': return process.env.DEEPSEEK_FLASH_MODEL || 'ds/deepseek-v4.1-flash';
+    case 'claude-sonnet': return 'cc/claude-sonnet-5-5';
+    case 'claude-opus': return 'cc/claude-opus-5-5';
+    case 'gpt-sol': return 'cx/gpt-6.1-sol';
+    case 'gpt-terra': return 'cx/gpt-6.1-terra';
+    default: return process.env.ASSET_MODEL || process.env.CODER_MODEL || 'ag/gemini-3.8-flash-high';
+  }
 }
 
 /** Captions sit on a dark box, so their highlight must read on black whatever the palette is. */

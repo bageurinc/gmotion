@@ -411,7 +411,7 @@ export async function reviseIsoCanvas(model: string, project: StudioProject, mes
   const iso = { 'IsoObjects.ts': nextFiles['IsoObjects.ts'], 'IsoWorld.ts': nextFiles['IsoWorld.ts'], 'IsoScenes.ts': nextFiles['IsoScenes.ts'] };
   const check = dryRunIsoCanvas(iso);
   if (!check.ok) return unchanged(`Hasil revisi tidak lolos pemeriksaan video (${check.problems[0]}), jadi video dikembalikan ke versi sebelumnya.`);
-  nextFiles['MainVideo.tsx'] = isoCanvasMainVideo(storyboard, nextPlan);
+  nextFiles['MainVideo.tsx'] = isoCanvasMainVideo(storyboard, nextPlan, { title: Boolean(nextFiles['IsoTitle.tsx']), caption: Boolean(nextFiles['IsoCaption.tsx']), panel: Boolean(nextFiles['IsoPanel.tsx']) });
   return {
     project: { ...project, files: nextFiles, isoCanvasPlan: nextPlan, isoCanvasReport: report },
     changed: true,
