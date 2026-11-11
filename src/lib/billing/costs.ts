@@ -2,9 +2,15 @@ import { z } from 'zod';
 import { getDb } from '@/lib/db/client';
 import { hasVerifiedEmail, type User } from '@/lib/auth/session';
 
-/** Admins are listed by email in ADMIN_EMAILS, comma separated. Nobody is an admin by default. */
+/**
+ * Admins are listed by email in ADMIN_EMAILS, comma separated. Nobody is an admin by default.
+ * Only Google sign-in proves the email, so password accounts never count, except under
+ * `next dev`: a local machine without Google OAuth configured has no other way to reach the
+ * admin-only presets. Builds and tests run with another NODE_ENV and keep the strict rule.
+ */
 export function isAdmin(user: Pick<User, 'email' | 'google_sub'> | null): boolean {
-  if (!user || !hasVerifiedEmail(user)) return false;
+  if (!user) return false;
+  if (!hasVerifiedEmail(user) && process.env.NODE_ENV !== 'development') return false;
   const admins = (process.env.ADMIN_EMAILS ?? '')
     .split(',')
     .map((email) => email.trim().toLowerCase())

@@ -251,9 +251,9 @@ Keputusan user (11 November 2026): gaya **Isometrik** digambar Gemini dengan mes
 
 ### Tahap 5: Editor
 
-- [ ] Revisi chat per adegan: instruksi user diteruskan ke Gemini bersama kode dan frame adegan itu, lalu melewati putaran mutu yang sama
-- [ ] Revisi benda: perubahan satu benda berlaku di semua adegan
-- [ ] Coba ulang per benda atau per adegan tanpa membuat ulang audio
+- [ ] Revisi chat per adegan: instruksi user diteruskan ke Gemini bersama kode dan frame adegan itu, lalu melewati putaran mutu yang sama. Dikerjakan 11 November 2026 di `iso-canvas/revise.ts`: satu panggilan Gemini kecil menentukan sasaran (benda, dunia, close-up, bidikan, atau tidak bisa), lalu hanya bagian itu yang diubah. Benda, dunia, dan close-up ditulis ulang dari kode lama plus instruksi user lewat `improve` (validator, uji kering, penilai, maksimal 2 putaran). Bidikan (lebih dekat atau jauh lewat `zoomScale`, ganti fokus, ganti atau hapus label) hanya mengubah rencana tanpa menggambar, dan label baru tetap dicek terhadap kata narasi. Hasil akhir harus lolos `dryRunIsoCanvas`, kalau tidak video dikembalikan. Narasi, audio, dan durasi tidak berubah. Route `revise` memakai jalur ini untuk proyek `isoEngine: 'canvas'` dengan biaya 1 jatah per revisi, jatah dikembalikan bila tidak ada yang berubah; studio menampilkan kotak revisi dan saran khusus Isometrik. Uji nyata pada salinan proyek gerbang detektor: revisi benda "Pengunjung aman" 340 detik, skor 5,3 → 6,5, frame menunjukkan rambut, wajah, tangan, dan lengan mengayun di semua adegan; revisi "adegan 2 kamera lebih dekat" 5 detik, frame lebih dekat; total 6 panggilan Gemini, sekitar Rp3.200. 9 test di `revise.test.ts`, 743 test lulus. Batasan: belum diuji lewat klik di studio; revisi benda butuh sekitar 5 menit; orang masih tampak seperti boneka kotak karena mesin belum punya primitif orang; frame lama tidak dikirim ke penulis pada tulisan pertama, hanya di putaran perbaikan
+- [ ] Revisi benda: perubahan satu benda berlaku di semua adegan. Dikerjakan lewat jalur di atas: fungsi benda dibaca dan diganti di `IsoObjects.ts` dengan pemindai kurung kurawal (`code-parts.ts`)
+- [ ] Coba ulang per benda atau per adegan tanpa membuat ulang audio. Sebagian: revisi chat sudah tidak membuat ulang audio; tombol coba ulang belum ada
 - [ ] Tab kode menampilkan file Isometrik Canvas dan bisa diedit, dengan validator yang sama
 
 ### Tahap 6: Uji penerimaan

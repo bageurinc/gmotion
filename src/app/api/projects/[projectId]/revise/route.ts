@@ -9,6 +9,8 @@ import { planSceneRevision, reviseScenes, type SceneRevisionOutcome } from '@/li
 import { generateSceneAudio } from '@/lib/pipeline/tts-engine';
 import { releaseRevision, reserveRevision, revisionsLeft } from '@/lib/billing/credits';
 import { ProjectChatMessage, StudioProject, usesWorldEngine } from '@/types/studio';
+import { reviseIsoCanvas } from '@/lib/explainer/iso-canvas/revise';
+import { assetModel } from '@/lib/explainer/scene-generator';
 
 // One revision per project at a time; a second one would overwrite the first one's files.
 const globalRevisions = globalThis as typeof globalThis & { __gmotionRevisions?: Set<string> };
@@ -75,13 +77,15 @@ export async function POST(
   if (project.status === 'generating') {
     return NextResponse.json({ error: 'Tunggu sampai semua adegan selesai dibuat.' }, { status: 409 });
   }
-  if (usesWorldEngine(project.storyboard.preset)) {
-    return NextResponse.json({ error: 'Revisi lewat chat belum tersedia untuk video 3D.' }, { status: 409 });
-  }
-
   const input = RevisionInputSchema.safeParse(await req.json().catch(() => null));
   if (!input.success) {
     return NextResponse.json({ error: 'Pesan revisi tidak valid.' }, { status: 400 });
+  }
+  if (usesWorldEngine(project.storyboard.preset)) {
+    if (project.isoEngine !== 'canvas') {
+      return NextResponse.json({ error: 'Revisi lewat chat belum tersedia untuk video Isometrik versi lama.' }, { status: 409 });
+    }
+    return reviseIsoCanvasProject(project, user.id, input.data.userMessage, input.data.sceneId);
   }
   const { userMessage } = input.data;
   const indexes = targetIndexes(project, input.data.sceneId, userMessage);
@@ -152,6 +156,61 @@ export async function POST(
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Revisi gagal. Coba lagi.' }, { status: 500 });
   } finally {
     // Nothing was produced, so the reserved allowance goes back.
+    if (reservationId) await releaseRevision(reservationId).catch(() => undefined);
+    activeRevisions.delete(projectId);
+  }
+}
+
+/**
+ * Isometric canvas revision: one change to an object, the world, a close-up, or a shot. It costs
+ * one revision however many scenes show the changed part, and nothing when nothing changed.
+ */
+async function reviseIsoCanvasProject(project: StudioProject, userId: string, userMessage: string, sceneId: string | undefined) {
+  const projectId = project.id;
+  let chosen: number | null = null;
+  if (sceneId) {
+    chosen = project.storyboard.scenes.findIndex((scene) => scene.id === sceneId);
+    if (chosen < 0) return NextResponse.json({ error: 'Adegan itu tidak ditemukan.' }, { status: 404 });
+  }
+  if (activeRevisions.has(projectId)) {
+    return NextResponse.json({ error: 'Revisi sebelumnya masih berjalan.' }, { status: 409 });
+  }
+  activeRevisions.add(projectId);
+  let reservationId: string | null = null;
+  try {
+    const reservation = await reserveRevision(userId, projectId, 1);
+    if (!reservation.id) {
+      return NextResponse.json(
+        { error: `Jatah revisi video ini tinggal ${reservation.left}.`, code: 'revision_limit', revisionsLeft: reservation.left },
+        { status: 402 }
+      );
+    }
+    reservationId = reservation.id;
+    console.log(`[API /revise] Isometric canvas revision for project ${projectId}...`);
+    const result = await runWithUsage({ userId, projectId, preset: project.storyboard.preset, stage: 'revision' }, () =>
+      reviseIsoCanvas(assetModel(project.drawingModel), project, userMessage, chosen));
+    // An unchanged video keeps the allowance: the reservation is released in finally.
+    if (result.changed) reservationId = null;
+    else {
+      await releaseRevision(reservation.id);
+      reservationId = null;
+    }
+    const left = await revisionsLeft(projectId);
+    const revised = result.project;
+    const targetedSceneId = chosen !== null ? project.storyboard.scenes[chosen].id : undefined;
+    const now = Date.now();
+    revised.chatHistory = [
+      ...project.chatHistory,
+      { id: `msg_user_${now}`, sender: 'user', content: userMessage, timestamp: now, targetedSceneId },
+      { id: `msg_ai_${now}`, sender: 'assistant', content: `${result.reply}\n\nSisa revisi untuk video ini: ${left}.`, timestamp: now, targetedSceneId },
+    ];
+    revised.updatedAt = now;
+    saveProject(revised);
+    return NextResponse.json({ project: revised, revisionOutcome: result.changed ? 'ok' : 'unchanged', revisionsLeft: left });
+  } catch (err: unknown) {
+    console.error('[API /revise] Error revising isometric canvas project:', err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Revisi gagal. Coba lagi.' }, { status: 500 });
+  } finally {
     if (reservationId) await releaseRevision(reservationId).catch(() => undefined);
     activeRevisions.delete(projectId);
   }

@@ -898,3 +898,18 @@ Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada ben
 - Jebakan mesin ini: `nodemailer` ada di `package.json` dan lockfile tetapi belum terpasang di `node_modules`, sehingga `scripts/spike-iso-job.ts` gagal di impor. Dipasang dengan `npm install --no-save nodemailer@10.4.0 @types/nodemailer@8.0.2`.
 - Uji job AC dengan gaya rumah: 4 dari 5 benda mencapai skor 6. Masalah baru: kode dunia Gemini memanggil `iso.label` sendiri dengan keterangan berbahasa Inggris, yang tampil di setiap bidikan dan bertumpuk dengan label rencana. Hasil di `storage/spike/canvas-iso/{ac-gpu.mp4,ac-swangle.mp4,ac-frames}/`.
 - Perbaikan label: kode benda dan dunia ditolak bila memanggil `iso.label`, dan alasannya dikirim balik ke model lewat `writeUntilValid`. Label di lapisan itu tampil di semua bidikan sepanjang video, sehingga tidak bisa diatur waktunya terhadap narasi dan lolos dari pemeriksaan label rencana.
+
+## Admin lokal tanpa login Google (11 November 2026)
+
+- Gejala: `ADMIN_EMAILS` sudah benar, tetapi pilihan Isometrik tidak muncul. Akun lokal user adalah akun email + password (`google_sub` berawalan `password:`), dan `isAdmin` sengaja tidak menghitung akun password karena emailnya tidak terverifikasi. `.env` lokal juga belum punya `GOOGLE_CLIENT_ID`, jadi login Google tidak bisa dipakai.
+- Keputusan user: di bawah `next dev` (`NODE_ENV=development`) akun password yang emailnya ada di `ADMIN_EMAILS` dihitung admin. Build produksi dan vitest (`NODE_ENV=test`) tetap memakai aturan ketat, sehingga test lama di `tests/auth.test.ts` tidak berubah. Test baru di `src/lib/billing/costs.test.ts`.
+- Jebakan: deploy yang menjalankan `next dev` di server publik akan ikut melonggarkan aturan ini. Server publik harus memakai `next build` + `next start`.
+
+## Revisi chat untuk Isometrik Canvas (11 November 2026)
+
+- Satu video Isometrik adalah satu dunia, jadi revisi tidak bisa per file adegan seperti Story 2D. `reviseIsoCanvas` menentukan sasaran dulu (benda, dunia, close-up, bidikan, atau tidak bisa) lewat satu panggilan Gemini kecil, lalu `resolveTarget` membuang sasaran yang tidak ada: id benda asing, nomor adegan di luar rentang, close-up yang ternyata adegan world, atau sebaliknya.
+- Revisi bidikan (`zoomScale`, fokus, label) hanya mengubah rencana, lalu `IsoScenes.ts` disusun ulang dari `buildWorldScenes`. Karena itu `zoomScale` disimpan di beat rencana, bukan di data kamera, supaya ikut bertahan saat framing dihitung ulang. Uji nyata: 5 detik, tanpa panggilan model untuk menggambar.
+- Isi close-up dibaca kembali dari `IsoScenes.ts` dan fungsi benda dari `IsoObjects.ts` dengan pemindai kurung kurawal yang melewati string, template literal, dan komentar (`code-parts.ts`). Jumlah close-up yang terbaca harus sama dengan jumlah adegan detail, kalau tidak revisi bidikan dan close-up ditolak dengan jujur.
+- `build.ts` sekarang membangun tugas putaran mutu lewat `objectTask`, `worldTask`, dan `detailTask`, yang juga dipakai revisi dengan permintaan berisi kode lama dan instruksi user. Perilaku generate tidak berubah.
+- Jebakan uji: menyalin proyek untuk diuji harus ikut menyalin folder `assets` dan mengganti URL audio di storyboard dan di `MainVideo.tsx`, karena skrip overlay menanam URL audio per adegan. `scripts/spike-iso-revise.ts` sudah melakukannya.
+- Jebakan test: tiga test (`browser-compiler` dengan batas 50 ms, `draft-flow`, `elevenlabs`) bisa gagal saat suite penuh berjalan di komputer yang sibuk, tetapi lolos saat dijalankan terpisah dan pada putaran suite berikutnya (743 lulus).

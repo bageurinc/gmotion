@@ -3,9 +3,9 @@ import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
 import { validateSceneCode } from '@/lib/pipeline/code-validator';
 import { AspectRatioDimensions, type StudioProject } from '@/types/studio';
 import { callChat, parseCritique, type AssetCritique } from '../asset-generator';
-import { assembleObjects, assembleScenes, buildWorldScenes, fitZoom, isoCanvasMainVideo, sceneTimings, type FrameSize } from './assemble';
+import { assembleObjects, assembleScenes, buildWorldScenes, fitZoom, isoCanvasMainVideo, sceneTimings, type FrameSize, type SceneTiming } from './assemble';
 import { dryRunIsoCanvas } from './dry-run';
-import { generateIsoCanvasPlan, type IsoCanvasObject, type IsoCanvasPlan } from './plan';
+import { generateIsoCanvasPlan, type IsoCanvasDetail, type IsoCanvasObject, type IsoCanvasPlan } from './plan';
 import {
   criticSystem, DETAIL_SYSTEM, detailRequest, objectFunctionName, objectRequest, OBJECT_SYSTEM, revisionRequest, WORLD_SYSTEM, worldRequest,
   type CriticKind,
@@ -67,7 +67,7 @@ async function critique(model: string, kind: CriticKind, context: string, sheet:
  * render, score, and revise from the frames and the critic's issues while below the threshold.
  * The best-scoring round is kept, because a later round can be worse.
  */
-async function improve(options: {
+export async function improve(options: {
   model: string;
   kind: CriticKind;
   id: string;
@@ -139,7 +139,7 @@ function fallbackObject(object: IsoCanvasObject): string {
 }`;
 }
 
-function fallbackWorld(plan: IsoCanvasPlan): string {
+export function fallbackWorld(plan: IsoCanvasPlan): string {
   const calls = [...plan.objects]
     .sort((a, b) => a.at[0] + a.at[1] - (b.at[0] + b.at[1]))
     .map((object) => `  iso.at(${object.at.join(', ')}, () => ${objectFunctionName(object.id)}(iso, states['${object.id}'] ?? {}, t));`)
@@ -151,7 +151,7 @@ ${calls}
 }`;
 }
 
-const worldFile = (plan: IsoCanvasPlan, body: string) => {
+export const worldFile = (plan: IsoCanvasPlan, body: string) => {
   const names = plan.objects.map((object) => objectFunctionName(object.id));
   return `import type { Iso, IsoStates } from '@/motion-kit';\nimport { ${names.join(', ')} } from './IsoObjects';\n\n${body.trim()}\n`;
 };
@@ -184,7 +184,7 @@ export function objectProblems(object: IsoCanvasObject, code: string): string[] 
 }
 
 /** Preview.tsx for an object sheet: state 0 at the start, every state at 1 later, as time runs. */
-function objectPreview(object: IsoCanvasObject, frame: FrameSize): string {
+export function objectPreview(object: IsoCanvasObject, frame: FrameSize): string {
   const name = objectFunctionName(object.id);
   const zoom = fitZoom(object.size, frame, 0.8);
   const keys = JSON.stringify(object.states.map((state) => state.key));
@@ -214,7 +214,7 @@ export default function Preview() {
 }
 
 /** Preview.tsx for the world: a wide shot and up to two focus shots, each mid-scene. */
-function worldPreview(scenes: IsoWorldScene[]): string {
+export function worldPreview(scenes: IsoWorldScene[]): string {
   return `import React from 'react';
 import { CanvasScene, paintIsoScene } from '@/motion-kit';
 import type { IsoSceneSpec } from '@/motion-kit';
@@ -236,7 +236,7 @@ export default function Preview() {
 `;
 }
 
-function detailPreview(body: string, objectNames: string[]): string {
+export function detailPreview(body: string, objectNames: string[]): string {
   return `import React from 'react';
 import { CanvasScene } from '@/motion-kit';
 import type { Iso } from '@/motion-kit';
@@ -252,9 +252,104 @@ export default function Preview() {
 }
 
 /** Picks the world scenes the world critic sees: the first wide shot and two focus shots. */
-function sampleWorldScenes(scenes: IsoWorldScene[]): IsoWorldScene[] {
+export function sampleWorldScenes(scenes: IsoWorldScene[]): IsoWorldScene[] {
   if (scenes.length <= 3) return scenes;
   return [scenes[0], scenes[Math.floor(scenes.length / 2)], scenes[scenes.length - 1]];
+}
+
+/** What every drawing task of one video shares. */
+export interface IsoTaskContext {
+  model: string;
+  plan: IsoCanvasPlan;
+  frame: FrameSize;
+  /** Topic and setting line given to every critic. */
+  topic: string;
+  browser: IsoBrowser;
+}
+
+type ImproveOptions = Parameters<typeof improve>[0];
+
+/** The quality-loop task for one object; request defaults to the generate request. */
+export function objectTask(ctx: IsoTaskContext, object: IsoCanvasObject, request = objectRequest(ctx.plan, object)): ImproveOptions {
+  return {
+    model: ctx.model,
+    kind: 'object',
+    id: object.id,
+    label: object.label,
+    system: OBJECT_SYSTEM,
+    request,
+    check: (code) => objectProblems(object, code),
+    render: (code) => renderIsoSheet(ctx.browser, { 'IsoObjects.ts': assembleObjects([code]), 'Preview.tsx': objectPreview(object, ctx.frame) }, [0.2, 1.2, 2.2, 3.2], ctx.frame),
+    criticContext: `${ctx.topic}\nObject: ${object.label}. ${object.look}\nFrames go from state 0 to every state at 1: ${object.states.map((state) => state.meaning).join('; ') || 'no states'}.`,
+  };
+}
+
+/** World scenes the world check and critic look at (a wide shot when every beat is a close-up). */
+export function worldSamples(plan: IsoCanvasPlan, worldScenes: Array<IsoWorldScene | null>, frame: FrameSize): IsoWorldScene[] {
+  const playable = worldScenes.filter((scene): scene is IsoWorldScene => Boolean(scene));
+  const probeScenes = playable.length ? playable : [{ kind: 'world' as const, start: 0, duration: 2, camera: buildWorldScenes({ ...plan, beats: [{ ...plan.beats[0], focus: null }] }, [{ start: 0, duration: 2 }], frame)[0]?.camera ?? [], states: {} }];
+  return sampleWorldScenes(probeScenes);
+}
+
+export function worldProblems(plan: IsoCanvasPlan, objectsFile: string, sampled: IsoWorldScene[], code: string): string[] {
+  if (!/export\s+function\s+drawWorld\s*\(/.test(code)) return ['Export exactly: export function drawWorld(iso: Iso, t: number, states: IsoStates).'];
+  if (/^\s*import\s/m.test(code)) return ['Do not write imports; the object functions are already imported.'];
+  if (callsLabel(code)) return [LABEL_FORBIDDEN];
+  const scenes = sampled.map((scene, index) => ({ ...scene, start: index === 0 ? 0 : sampled.slice(0, index).reduce((sum, item) => sum + item.duration, 0) }));
+  const probe = { 'IsoObjects.ts': objectsFile, 'IsoWorld.ts': worldFile(plan, code), 'IsoScenes.ts': `import type { IsoSceneSpec } from '@/motion-kit';\n\nexport const scenes: IsoSceneSpec[] = ${JSON.stringify(scenes)};\n` };
+  return dryRunIsoCanvas(probe).problems;
+}
+
+export function worldTask(ctx: IsoTaskContext, objectsFile: string, sampled: IsoWorldScene[], request = worldRequest(ctx.plan)): ImproveOptions {
+  const { plan } = ctx;
+  return {
+    model: ctx.model,
+    kind: 'world',
+    id: 'world',
+    label: 'Dunia',
+    system: WORLD_SYSTEM,
+    request,
+    check: (code) => worldProblems(plan, objectsFile, sampled, code),
+    render: (code) => renderIsoSheet(ctx.browser, { 'IsoObjects.ts': objectsFile, 'IsoWorld.ts': worldFile(plan, code), 'Preview.tsx': worldPreview(sampled) }, sampled.map((_, index) => index + 0.5), ctx.frame),
+    criticContext: `${ctx.topic}\nFrames: a wide shot of the world, then shots focused on: ${sampled.map((scene) => scene.labels?.[0]?.text ?? 'wide').join(', ')}. Objects: ${plan.objects.map((object) => object.label).join(', ')}.`,
+  };
+}
+
+export function detailProblems(plan: IsoCanvasPlan, objectsFile: string, detail: IsoCanvasDetail, duration: number, body: string): string[] {
+  if (/^\s*(?:import|export)\s/m.test(body)) return ['Return only the function body: statements, no imports or exports.'];
+  // Close-up probes need some IsoWorld.ts; the plain world is enough for a runtime check.
+  const probe = {
+    'IsoObjects.ts': objectsFile,
+    'IsoWorld.ts': worldFile(plan, fallbackWorld(plan)),
+    'IsoScenes.ts': assembleScenes([null], [{ start: 0, duration, body }], detail.objects.map(objectFunctionName)),
+  };
+  try {
+    return dryRunIsoCanvas(probe).problems;
+  } catch (error) {
+    return [String(error instanceof Error ? error.message : error)];
+  }
+}
+
+export function detailTask(ctx: IsoTaskContext, objectsFile: string, detail: IsoCanvasDetail, index: number, timing: SceneTiming, request?: string): ImproveOptions {
+  const { plan } = ctx;
+  const beat = plan.beats[index];
+  const names = detail.objects.map(objectFunctionName);
+  return {
+    model: ctx.model,
+    kind: 'detail',
+    id: `${detail.id}-${index + 1}`,
+    label: detail.label,
+    system: DETAIL_SYSTEM,
+    request: request ?? detailRequest(plan, detail, beat.text, timing.duration),
+    check: (body) => detailProblems(plan, objectsFile, detail, timing.duration, body),
+    render: (body) => renderIsoSheet(ctx.browser, { 'IsoObjects.ts': objectsFile, 'Preview.tsx': detailPreview(body, names) }, [0.3, timing.duration / 2, Math.max(0.4, timing.duration - 0.3)], ctx.frame),
+    criticContext: `${ctx.topic}\nClose-up: ${detail.label}. ${detail.draw}\nSpoken line: "${beat.text}"`,
+  };
+}
+
+export function fallbackDetail(plan: IsoCanvasPlan, detail: IsoCanvasDetail): string {
+  const names = detail.objects.map(objectFunctionName);
+  return `iso.background('${plan.background.top}', '${plan.background.bottom}');\niso.look(0, 0, 1, 160);\niso.ground('${plan.palette.ground}');\n${names.map((name) => `${name}(iso, {}, t);`).join('\n')}`;
 }
 
 /**
@@ -275,79 +370,25 @@ export async function buildIsoCanvasFiles(model: string, project: StudioProject)
 
   return withIsoBrowser(async (browser: IsoBrowser) => {
     const items: IsoQualityItem[] = [];
+    const ctx: IsoTaskContext = { model, plan, frame, topic, browser };
 
     const objects = await mapWithConcurrency(plan.objects, OBJECT_CONCURRENCY, async (object) => {
-      const result = await improve({
-        model,
-        kind: 'object',
-        id: object.id,
-        label: object.label,
-        system: OBJECT_SYSTEM,
-        request: objectRequest(plan, object),
-        check: (code) => objectProblems(object, code),
-        render: (code) => renderIsoSheet(browser, { 'IsoObjects.ts': assembleObjects([code]), 'Preview.tsx': objectPreview(object, frame) }, [0.2, 1.2, 2.2, 3.2], frame),
-        criticContext: `${topic}\nObject: ${object.label}. ${object.look}\nFrames go from state 0 to every state at 1: ${object.states.map((state) => state.meaning).join('; ') || 'no states'}.`,
-      });
+      const result = await improve(objectTask(ctx, object));
       items.push(result.item);
       return result.code ?? fallbackObject(object);
     });
     const objectsFile = assembleObjects(objects);
-
-    const playable = worldScenes.filter((scene): scene is IsoWorldScene => Boolean(scene));
-    const probeScenes = playable.length ? playable : [{ kind: 'world' as const, start: 0, duration: 2, camera: buildWorldScenes({ ...plan, beats: [{ ...plan.beats[0], focus: null }] }, [{ start: 0, duration: 2 }], frame)[0]?.camera ?? [], states: {} }];
-    const sampled = sampleWorldScenes(probeScenes);
+    const sampled = worldSamples(plan, worldScenes, frame);
     // The world and the close-ups only need the objects, so they are written at the same time.
-    const worldJob = improve({
-      model,
-      kind: 'world',
-      id: 'world',
-      label: 'Dunia',
-      system: WORLD_SYSTEM,
-      request: worldRequest(plan),
-      check: (code) => {
-        if (!/export\s+function\s+drawWorld\s*\(/.test(code)) return ['Export exactly: export function drawWorld(iso: Iso, t: number, states: IsoStates).'];
-        if (/^\s*import\s/m.test(code)) return ['Do not write imports; the object functions are already imported.'];
-        if (callsLabel(code)) return [LABEL_FORBIDDEN];
-        const probe = { 'IsoObjects.ts': objectsFile, 'IsoWorld.ts': worldFile(plan, code), 'IsoScenes.ts': `import type { IsoSceneSpec } from '@/motion-kit';\n\nexport const scenes: IsoSceneSpec[] = ${JSON.stringify(sampled.map((scene, index) => ({ ...scene, start: index === 0 ? 0 : sampled.slice(0, index).reduce((sum, item) => sum + item.duration, 0) })))};\n` };
-        return dryRunIsoCanvas(probe).problems;
-      },
-      render: (code) => renderIsoSheet(browser, { 'IsoObjects.ts': objectsFile, 'IsoWorld.ts': worldFile(plan, code), 'Preview.tsx': worldPreview(sampled) }, sampled.map((_, index) => index + 0.5), frame),
-      criticContext: `${topic}\nFrames: a wide shot of the world, then shots focused on: ${sampled.map((scene) => scene.labels?.[0]?.text ?? 'wide').join(', ')}. Objects: ${plan.objects.map((object) => object.label).join(', ')}.`,
-    });
-    // Close-up probes need some IsoWorld.ts; the plain world is enough for a runtime check.
-    const probeWorld = worldFile(plan, fallbackWorld(plan));
+    const worldJob = improve(worldTask(ctx, objectsFile, sampled));
     const detailsJob = mapWithConcurrency(plan.beats.map((beat, index) => ({ beat, index })), OBJECT_CONCURRENCY, async ({ beat, index }) => {
       if (worldScenes[index]) return null;
       const detail = plan.details.find((item) => item.id === beat.focus);
       if (!detail) return null;
       const timing = timings[index];
-      const names = detail.objects.map(objectFunctionName);
-      const probeFor = (body: string) => ({
-        'IsoObjects.ts': objectsFile,
-        'IsoWorld.ts': probeWorld,
-        'IsoScenes.ts': assembleScenes([null], [{ start: 0, duration: timing.duration, body }], names),
-      });
-      const result = await improve({
-        model,
-        kind: 'detail',
-        id: `${detail.id}-${index + 1}`,
-        label: detail.label,
-        system: DETAIL_SYSTEM,
-        request: detailRequest(plan, detail, beat.text, timing.duration),
-        check: (body) => {
-          if (/^\s*(?:import|export)\s/m.test(body)) return ['Return only the function body: statements, no imports or exports.'];
-          try {
-            return dryRunIsoCanvas(probeFor(body)).problems;
-          } catch (error) {
-            return [String(error instanceof Error ? error.message : error)];
-          }
-        },
-        render: (body) => renderIsoSheet(browser, { 'IsoObjects.ts': objectsFile, 'Preview.tsx': detailPreview(body, names) }, [0.3, timing.duration / 2, Math.max(0.4, timing.duration - 0.3)], frame),
-        criticContext: `${topic}\nClose-up: ${detail.label}. ${detail.draw}\nSpoken line: "${beat.text}"`,
-      });
+      const result = await improve(detailTask(ctx, objectsFile, detail, index, timing));
       items.push(result.item);
-      const fallbackBody = `iso.background('${plan.background.top}', '${plan.background.bottom}');\niso.look(0, 0, 1, 160);\niso.ground('${plan.palette.ground}');\n${names.map((name) => `${name}(iso, {}, t);`).join('\n')}`;
-      return { start: timing.start, duration: timing.duration, body: result.code ?? fallbackBody };
+      return { start: timing.start, duration: timing.duration, body: result.code ?? fallbackDetail(plan, detail) };
     });
     const [world, details] = await Promise.all([worldJob, detailsJob]);
     items.push(world.item);

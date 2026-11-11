@@ -482,16 +482,19 @@ export const StudioWorkspaceClient: React.FC<StudioWorkspaceClientProps> = ({
                 )}
               </div>
 
-              {usesWorldEngine(project.storyboard.preset) ? (
+              {usesWorldEngine(project.storyboard.preset) && project.isoEngine !== 'canvas' ? (
                 <p className="p-4 border-t border-slate-800 bg-slate-900 text-xs text-slate-300 shrink-0">
-                  Revisi lewat chat belum tersedia untuk video 3D.
+                  Revisi lewat chat belum tersedia untuk video Isometrik versi lama.
                 </p>
               ) : (
                 <>
                 {/* Quick Prompt Suggestions */}
                 <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/60 flex items-center gap-2 overflow-x-auto [scrollbar-width:none] text-[11px] shrink-0">
                   <span className="text-slate-500 font-semibold whitespace-nowrap">Saran:</span>
-                  {['Perbesar judul', 'Pendekkan narasi', 'Buat warna lebih hangat'].map((suggestion) => (
+                  {(project.isoEngine === 'canvas'
+                    // Isometric revisions change objects, the world, close-ups, or the camera; narration stays.
+                    ? ['Kamera lebih dekat', 'Perjelas bentuk bendanya', 'Tambah detail di sekitarnya']
+                    : ['Perbesar judul', 'Pendekkan narasi', 'Buat warna lebih hangat']).map((suggestion) => (
                     <button
                       key={suggestion}
                       onClick={() => handleSendRevision(suggestion)}

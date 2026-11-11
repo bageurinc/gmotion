@@ -28,6 +28,8 @@ export const IsoCanvasPlanSchema = z.object({
   details: z.array(z.object({ id: Id, label: z.string().min(1).max(24), draw: z.string().min(20).max(900), objects: z.array(Id).max(3) })).max(2),
   beats: z.array(IsoBeatSchema.extend({
     set: z.array(z.object({ object: Id, key: StateKey, value: z.number().min(0).max(1) })).max(4),
+    /** Set only by chat revisions ("closer", "wider"): multiplies the fitted zoom of the shot. */
+    zoomScale: z.number().min(0.4).max(2.5).optional(),
   })).min(1).max(14),
 });
 

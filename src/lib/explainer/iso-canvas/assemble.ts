@@ -98,7 +98,8 @@ export function buildWorldScenes(plan: IsoCanvasPlan, timings: SceneTiming[], fr
       for (const change of beat.set) states[change.object][change.key] = change.value;
       return null;
     }
-    const target = shotFor(beat.focus);
+    const fitted = shotFor(beat.focus);
+    const target = { look: fitted.look, zoom: fitted.zoom * (beat.zoomScale ?? 1) };
     const arrive = Math.min(MOVE_SECONDS, timing.duration * 0.4);
     const camera: CameraKey[] = [
       { at: 0, look: previous.look, zoom: previous.zoom },
@@ -147,9 +148,10 @@ export function overlayBeats(storyboard: Storyboard, plan: IsoCanvasPlan) {
   return storyboard.scenes.map((scene, index) => {
     const start = from;
     from += scene.durationInFrames;
-    // `set` only drives the canvas; the overlay reads the panel fields.
-    const { set: _set, ...beat } = plan.beats[index];
+    // `set` and `zoomScale` only drive the canvas; the overlay reads the panel fields.
+    const { set: _set, zoomScale: _zoomScale, ...beat } = plan.beats[index];
     void _set;
+    void _zoomScale;
     return {
       ...beat,
       text: scene.voiceoverText,
