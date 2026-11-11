@@ -1,3 +1,4 @@
+import { ISO_STYLE, objectExamples, worldExample } from './examples';
 import type { IsoCanvasDetail, IsoCanvasObject, IsoCanvasPlan } from './plan';
 
 /** The engine API as the model sees it. Kept in one place so every writer agrees. */
@@ -42,7 +43,11 @@ Rules:
 - It must be instantly recognizable as the real thing, with correct proportions and the characteristic parts a viewer knows. Build it from many primitives: 20–80 calls is normal. A stack of plain blocks is a failure.
 - Read each state as \`state.key ?? 0\`, a number from 0 to 1, and make the change clearly visible. Use t (seconds) only for continuous motion such as spinning or flowing, scaled by the state that drives it.
 - Draw only the object and its shadow: no background, ground, camera, or labels.
-- Use real-world colors. Outlines and shading come from the engine.`;
+- Use real-world colors. Outlines and shading come from the engine.
+
+${ISO_STYLE}
+
+${objectExamples()}`;
 
 export function objectRequest(plan: IsoCanvasPlan, object: IsoCanvasObject): string {
   const states = object.states.length ? object.states.map((state) => `- ${state.key}: ${state.meaning}`).join('\n') : '- none';
@@ -70,7 +75,12 @@ Rules:
 - Place every object exactly at its given position with iso.at(x, y, z, () => drawName(iso, states['id'] ?? {}, t)).
 - Add the surroundings the setting describes so the place is recognizable, built from primitives and kept lower or behind the objects so they stay visible. Surroundings must not cover the objects.
 - Draw back to front: things with smaller x+y first.
-- Keep movement subtle in the surroundings; the objects carry the story.`;
+- Keep movement subtle in the surroundings; the objects carry the story.
+- Never call iso.label: the scenes add their own labels, timed to the narration.
+
+${ISO_STYLE}
+
+${worldExample()}`;
 
 export function worldRequest(plan: IsoCanvasPlan): string {
   const objects = plan.objects.map((object) => `- ${object.label}: call ${fnName(object.id)}(iso, states['${object.id}'] ?? {}, t) at [${object.at.join(', ')}], size ${JSON.stringify(object.size)}`).join('\n');
@@ -91,7 +101,9 @@ Rules:
 - Use iso.ground when the close-up stands on a surface, so the floor reaches the frame edges.
 - Show exactly what the description says, recognizably, with something moving that explains the line.
 - You may call the listed object functions, scaled with a larger zoom, or model new parts from primitives.
-- At most 2 labels, words taken from the spoken line, without sub text.`;
+- At most 2 labels, words taken from the spoken line, without sub text.
+
+${ISO_STYLE}`;
 
 export function detailRequest(plan: IsoCanvasPlan, detail: IsoCanvasDetail, line: string, duration: number): string {
   const objects = detail.objects.map((id) => plan.objects.find((object) => object.id === id)).filter((object): object is IsoCanvasObject => Boolean(object));
@@ -129,6 +141,7 @@ const CRITERIA: Record<CriticKind, string> = {
 - isometricCorrectness: consistent isometric view, parts do not pass through each other, nothing drawn in front of what should cover it, nothing floats.
 - detail: enough parts, materials, and color to read as a premium illustration, not clip art.
 - stateChange: the frames show the object's states changing visibly (frames go from state 0 to state 1).
+The object is shown alone on a plain floor on purpose: the world around it is drawn by another program. Never score down or ask for a table, road, room, background, or other surroundings.
 Return scores for exactly these keys: recognizability, isometricCorrectness, detail, stateChange.`,
   world: `- recognizability: the place and every object are instantly recognized for the topic.
 - isometricCorrectness: consistent isometric view, objects do not pass through each other, nothing floats.

@@ -23,4 +23,10 @@ describe('chromiumOptionsFor', () => {
   it('always gives world videos a WebGL renderer', () => {
     expect(chromiumOptionsFor(project('world')).gl).toMatch(/angle/);
   });
+
+  it('keeps isometric canvas videos on the default renderer, even with RENDER_GL', () => {
+    vi.stubEnv('RENDER_GL', 'swangle');
+    expect(chromiumOptionsFor({ storyboard: { preset: 'world' }, isoEngine: 'canvas' } as never)).toEqual({});
+    vi.unstubAllEnvs();
+  });
 });

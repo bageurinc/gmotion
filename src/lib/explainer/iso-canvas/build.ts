@@ -167,10 +167,19 @@ function objectProbe(object: IsoCanvasObject, code: string) {
   };
 }
 
-function objectProblems(object: IsoCanvasObject, code: string): string[] {
+/**
+ * Objects and the world are drawn in every shot, so a label written there would sit on screen
+ * for the whole video and outside the narration (the AC test showed English sub lines such as
+ * "Fixed Speed (On/Off)"). Scene labels come from the plan and are checked against the line.
+ */
+export const LABEL_FORBIDDEN = 'Do not call iso.label here: labels are added by the scenes, timed to the narration.';
+const callsLabel = (code: string) => /\biso\s*\.\s*label\s*\(/.test(code);
+
+export function objectProblems(object: IsoCanvasObject, code: string): string[] {
   const name = objectFunctionName(object.id);
   if (!new RegExp(`export\\s+function\\s+${name}\\s*\\(`).test(code)) return [`Export exactly: export function ${name}(iso: Iso, state: Record<string, number>, t: number).`];
   if (/^\s*import\s/m.test(code)) return ['Do not write imports; return only the function.'];
+  if (callsLabel(code)) return [LABEL_FORBIDDEN];
   return dryRunIsoCanvas(objectProbe(object, code)).problems;
 }
 
@@ -298,6 +307,7 @@ export async function buildIsoCanvasFiles(model: string, project: StudioProject)
       check: (code) => {
         if (!/export\s+function\s+drawWorld\s*\(/.test(code)) return ['Export exactly: export function drawWorld(iso: Iso, t: number, states: IsoStates).'];
         if (/^\s*import\s/m.test(code)) return ['Do not write imports; the object functions are already imported.'];
+        if (callsLabel(code)) return [LABEL_FORBIDDEN];
         const probe = { 'IsoObjects.ts': objectsFile, 'IsoWorld.ts': worldFile(plan, code), 'IsoScenes.ts': `import type { IsoSceneSpec } from '@/motion-kit';\n\nexport const scenes: IsoSceneSpec[] = ${JSON.stringify(sampled.map((scene, index) => ({ ...scene, start: index === 0 ? 0 : sampled.slice(0, index).reduce((sum, item) => sum + item.duration, 0) })))};\n` };
         return dryRunIsoCanvas(probe).problems;
       },

@@ -877,3 +877,24 @@ Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada ben
 - Label di kode close-up buatan model sering memakai baris keterangan berisi klaim tambahan ("Kawat Tembaga Berarus"). `paintIsoScene` membuang `sub` untuk adegan `detail`; label dunia dari rencana tetap boleh punya keterangan.
 - Jebakan: garis tepi tutup silinder harus hanya digambar untuk tutup yang menghadap penonton, kalau tidak lingkaran alas tembus terlihat.
 - Hasil di `storage/spike/canvas-iso/{sanity,kipas,kipas-v2,hp,hp-v2,jantung,jantung-v2,mobil,mobil-v2,q-mobil,q-jantung,stage1,s1-mobil,contract}/`.
+
+## Gaya rumah dan contoh AC untuk Isometrik Canvas (11 November 2026)
+
+- Pemicu: skor benda tertahan di 5,2–5,8, dan prompt benda hanya berisi API dan aturan, tanpa contoh kode yang bagus. Pelajaran dari lemo-opuscar: karya acuan menaikkan mutu lebih dari aturan. File sumber video AC buatan user tidak ada di mesin ini, jadi contoh ditulis ulang dengan API mesin sekarang.
+- `iso-canvas/examples.ts`: `ISO_STYLE` plus unit outdoor AC (casing, grille dari loop batang, bilah berputar, panel servis, katup, pipa, panah udara panas), unit indoor AC (profil prism, flap berengsel, LED, aliran udara dingin), dan dunia sudut ruangan. Contoh ikut lolos validator dan uji kering, karena contoh yang melanggar aturan akan ditiru model.
+- Jebakan: `iso.mixColor` dulu mengembalikan `rgb(...)`, sedangkan bayangan bidang hanya membaca `#hex`, jadi warna campuran berubah abu-abu 128. Sekarang `#hex`.
+- Jebakan: dengan cahaya (0,45; 0,1; 1) sisi +y hanya mendapat kecerahan sekitar 0,57, sehingga semua bagian depan benda yang menghadap kiri tampak kusam. Cahaya sekarang (0,5; 0,35; 1) dengan 0,6 + 0,45 × normal·cahaya: atas sekitar 0,98, sisi +x 0,79, sisi +y 0,73.
+- Penilai benda menerima teks latar (`Setting`) dan selalu meminta meja atau jalan, walau benda sengaja digambar sendiri. Ini berisiko membuat putaran perbaikan menambah latar ke fungsi benda. Kriteria benda sekarang melarangnya.
+- A/B putaran pertama (1 percobaan per benda, tanpa putaran perbaikan): kipas 5,0 → 5,3, mobil 4,8 → 5,3, HP 5,0 → 5,5. Dari frame: mobil lama punya lempeng hitam menembus atap, versi baru bersih; kipas tetap memakai cakram padat sebagai pelindung di kedua versi. Setelah aturan "bagian tembus pandang dari jeruji" dan "sorot cahaya transparan": kipas 5,3 dengan jeruji kawat dan bilah terlihat, mobil 5,8 dengan sorot lampu lembut. Token masuk naik sekitar 3.000 per panggilan benda (sekitar Rp40), sedangkan token keluar tidak naik.
+- Model menerapkan aturan yang konkret dan terlihat (jeruji, transparansi) jauh lebih baik daripada contoh saja: contoh AC berjeruji tidak membuat kipas berjeruji sampai aturannya ditulis.
+- Hasil di `storage/spike/canvas-iso/{examples,examples-oldlight,style-ab,style-ab2}/`.
+
+## Export Isometrik Canvas lambat karena swangle (11 November 2026)
+
+- Gejala: export proyek AC (32 detik, 9:16) memakan 1.124 detik di Windows, padahal export Isometrik sebelumnya sekitar 13 detik. Satu proses `chrome-headless-shell --type=gpu-process --use-angle=swiftshader` memakan sekitar 4.600 detik CPU dalam 15 menit, sementara RTX 2050 menganggur.
+- Penyebab: `chromiumOptionsFor` memberi `gl: 'swangle'` ke semua preset dunia di luar Mac, aturan dari mesin 3D lama yang butuh WebGL. Mesin Canvas tidak memakai WebGL, tetapi dengan swangle rasterisasi canvas 2D (termasuk `ctx.filter = blur(...)` di `iso.shadow`) ikut dikerjakan CPU.
+- Perbaikan: proyek `isoEngine: 'canvas'` memakai opsi bawaan Chromium. Export yang sama 77 detik, dan selisih piksel antar kedua MP4 rata-rata sekitar 1 dari 255.
+- Jebakan saat mengukur: mengukur render sambil export berjalan membuat keduanya berebut CPU. Progres export lompat dari 14% ke 42% begitu pengukuran selesai.
+- Jebakan mesin ini: `nodemailer` ada di `package.json` dan lockfile tetapi belum terpasang di `node_modules`, sehingga `scripts/spike-iso-job.ts` gagal di impor. Dipasang dengan `npm install --no-save nodemailer@10.4.0 @types/nodemailer@8.0.2`.
+- Uji job AC dengan gaya rumah: 4 dari 5 benda mencapai skor 6. Masalah baru: kode dunia Gemini memanggil `iso.label` sendiri dengan keterangan berbahasa Inggris, yang tampil di setiap bidikan dan bertumpuk dengan label rencana. Hasil di `storage/spike/canvas-iso/{ac-gpu.mp4,ac-swangle.mp4,ac-frames}/`.
+- Perbaikan label: kode benda dan dunia ditolak bila memanggil `iso.label`, dan alasannya dikirim balik ke model lewat `writeUntilValid`. Label di lapisan itu tampil di semua bidikan sepanjang video, sehingga tidak bisa diatur waktunya terhadap narasi dan lolos dari pemeriksaan label rencana.

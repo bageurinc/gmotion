@@ -11,7 +11,9 @@ type Axis = 'x' | 'y' | 'z';
 
 const COS30 = Math.sqrt(3) / 2;
 const VIEW: Vec3 = norm([1, 1, 1]);
-const LIGHT: Vec3 = norm([0.45, 0.1, 1]);
+// Key light from above, a little toward +x. The +y side still gets some of it: with almost
+// none (the old 0.1), every left face came out at ~57% and white casings read as grey.
+const LIGHT: Vec3 = norm([0.5, 0.35, 1]);
 const OUTLINE = 'rgba(20,28,40,0.55)';
 
 function norm([x, y, z]: Vec3): Vec3 {
@@ -44,12 +46,15 @@ export function lit(color: string, brightness: number, alpha = 1): string {
   return `rgba(${channel(r)},${channel(g)},${channel(b)},${alpha})`;
 }
 
-/** Linear mix between two #RRGGBB colors. */
+/**
+ * Linear mix between two #RRGGBB colors. Returns #RRGGBB so the result can be passed to any
+ * shape: the shading code only parses hex, and an rgb() string would turn grey.
+ */
 export function mixColor(a: string, b: string, amount: number): string {
   const ca = parseColor(a);
   const cb = parseColor(b);
   const k = Math.max(0, Math.min(1, amount));
-  return `rgb(${ca.map((value, i) => Math.round(value + (cb[i] - value) * k)).join(',')})`;
+  return `#${ca.map((value, i) => Math.round(value + (cb[i] - value) * k).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** Smooth 0→1 between seconds a and b (clamped). */
@@ -260,7 +265,8 @@ export function createIso(ctx: CanvasRenderingContext2D, width: number, height: 
       .filter((face): face is NonNullable<typeof face> => face !== null)
       .sort((a, b) => a.depth - b.depth);
     for (const face of prepared) {
-      const brightness = style.flat ? 1 : 0.52 + 0.55 * Math.max(-0.2, dot(face.normal, LIGHT));
+      // Top ≈ 0.98, +x side ≈ 0.79, +y side ≈ 0.73: the sides stay apart without going muddy.
+      const brightness = style.flat ? 1 : 0.6 + 0.45 * Math.max(-0.2, dot(face.normal, LIGHT));
       strokePath(face.points.map(screen));
       ctx.fillStyle = lit(face.color, brightness * (style.glow ?? 1), style.alpha ?? 1);
       ctx.fill();
