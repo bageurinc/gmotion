@@ -3,7 +3,6 @@ import { notifyProjectAfterResponse } from '@/lib/notifications/project-email';
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateStoryboard } from '@/lib/pipeline/director-agent';
-import { libraryDraftNote } from '@/lib/pipeline/library-video';
 import { canAccessProject, requireUser } from '@/lib/auth/project-access';
 import { CREDITS_PER_VIDEO } from '@/lib/billing/credits';
 import {
@@ -105,8 +104,7 @@ export async function POST(req: NextRequest) {
         { userId: auth.user.id, projectId, preset, stage: 'draft' },
         async () => generateStoryboard(prompt, preset, aspectRatio, {
           strict: true,
-          // Library-first isometric drafts are written knowing which assets can draw them.
-          libraryNote: preset === 'world' ? await libraryDraftNote(prompt).catch(() => undefined) : undefined,
+          // Canvas isometric videos draw any object, so drafts are no longer limited to library assets.
         }),
       );
       const project: StudioProject = {
@@ -120,7 +118,7 @@ export async function POST(req: NextRequest) {
         files: {},
         chatHistory: [],
         status: 'draft',
-        ...(preset === 'world' ? { visualPolicy: 'library-first' as const } : {}),
+        ...(preset === 'world' ? { isoEngine: 'canvas' as const } : {}),
       };
 
       saveProject(project);

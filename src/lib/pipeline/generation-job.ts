@@ -18,7 +18,9 @@ import { hasFailedScene, normalizeSceneOrder } from './draft';
 import { generateSceneAudio } from './tts-engine';
 import { buildWorldFiles, WORLD_VIEW_REPAIR } from './world-video';
 import { buildLibraryFiles, type LibraryBuild } from './library-video';
-import { isAssetFileName } from '@/lib/security/project-input';
+import { buildIsoCanvasFiles } from '@/lib/explainer/iso-canvas/build';
+import { canvasFinishedMessage } from '@/lib/explainer/iso-canvas/report';
+import { isAssetFileName, isIsoCanvasFileName } from '@/lib/security/project-input';
 
 const globalJobs = globalThis as typeof globalThis & { __gmotionGenerationJobs?: Set<string> };
 const activeJobs = (globalJobs.__gmotionGenerationJobs ??= new Set<string>());
@@ -54,6 +56,7 @@ function finishedMessage(project: StudioProject): string {
   if (!usesWorldEngine(project.storyboard.preset)) {
     return 'Semua adegan selesai dibuat. Tonton hasilnya di player, lalu minta revisi per adegan di sini.';
   }
+  if (project.isoEngine === 'canvas' && project.isoCanvasReport) return canvasFinishedMessage(project.isoCanvasReport);
   const library = project.libraryReport;
   if (library?.used) {
     const drawn = library.generated?.length ? ` Objek sederhana yang belum ada di pustaka digambar AI khusus untuk video ini: ${library.generated.join(', ')}.` : '';
@@ -113,7 +116,23 @@ async function generateWorld(pending: number[], { current, commit, setStage }: W
   const failAll = (message: string) => {
     for (const scene of current().storyboard.scenes) setStage(scene.id, 'failed', message);
   };
-  try {
+  if (current().isoEngine === 'canvas') {
+    try {
+      const built = await buildIsoCanvasFiles(assetModel(current().drawingModel), current());
+      commit((project) => ({
+        // Files from another engine are dropped, so a retry never mixes engines.
+        files: { ...Object.fromEntries(Object.entries(project.files).filter(([name]) => !isAssetFileName(name) && !isIsoCanvasFileName(name))), ...built.files },
+        isoCanvasReport: built.report,
+        isoCanvasPlan: built.plan,
+        worldRepairs: [],
+        sceneProgress: Object.fromEntries(project.storyboard.scenes.map((scene) => [scene.id, { stage: 'ready' as const }])),
+      }));
+    } catch (err: unknown) {
+      console.error(`[GenerationJob] Canvas world failed for ${current().id}:`, err);
+      failAll(err instanceof Error ? err.message : 'Dunia gagal dibuat.');
+      return;
+    }
+  } else try {
     // Library-first: projects that opted in try registered assets before the painted world.
     let library: LibraryBuild | null = null;
     if (current().visualPolicy === 'library-first') {

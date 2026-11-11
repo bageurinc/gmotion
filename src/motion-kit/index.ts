@@ -22,6 +22,7 @@ export * from './timelapse/examples';
 export * from './docs';
 export * from './world/IsoPicture';
 export * from './isometric';
+export * from './iso-canvas';
 
 // Library videos: the plan renderer and the code asset catalog it starts from.
 export { PlanVideo, planDurationInFrames } from './assets/PlanVideo';

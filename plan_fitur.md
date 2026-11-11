@@ -1,6 +1,6 @@
 # Plan Fitur gmotion
 
-Terakhir diperbarui 9 November 2026.
+Terakhir diperbarui 11 November 2026.
 
 Rencana pustaka aset reusable, pengaturan warna dan tema, serta integrasi video
 berbasis aset tersedia di [plan_asset.md](plan_asset.md). Dokumen tersebut membedakan
@@ -91,7 +91,7 @@ Sebuah item boleh dicentang hanya jika semua ini terpenuhi:
 
 ## Prioritas berikutnya
 
-1. Penilaian user atas Isometrik versi gambar AI: jantung, paru-paru, dan iklan kasir. Jika disetujui, hapus mesin 3D lama yang tidak terpakai.
+1. Isometrik Canvas, mulai dari Tahap 1 di bagian [Isometrik Canvas](#isometrik-canvas). Penilaian Isometrik versi gambar AI tidak dilanjutkan.
 1a. Penilaian user atas video Story 2D dan Ads.
 2. Rapikan kualitas akhir video dan audio, berdasarkan penilaian itu.
 3. Keamanan dan penjualan sebelum dibuka ke publik.
@@ -193,9 +193,85 @@ Bagian ini berlaku untuk Story 2D dan Ads. Pilihan Isometrik memakai bagian Vide
 - [ ] Pilih musik di layar draf
 - [ ] Bedakan narasi per adegan agar nada tetap menyambung
 
+## Isometrik Canvas
+
+Keputusan user (11 November 2026): gaya **Isometrik** digambar Gemini dengan mesin Canvas 2D, menggantikan dunia gambar AI dan jalur pustaka SVG. Dasarnya spike di `scripts/spike-canvas-iso.ts`: kipas, mobil di jalan kota, HP, dan jantung, 3 detik per klip, skor penilai terbaik 5,2–5,8, biaya Rp1.000–4.300 per klip. Hasil dan jebakan ada di KNOWLEDGE.md bagian "Spike mesin Canvas isometrik dengan Gemini". Isometrik tetap hanya untuk admin sampai user menyetujui hasil Tahap 6.
+
+### Bentuk video
+
+- **Satu dunia per video.** Mengikuti masukan user sebelumnya bahwa Isometrik harus satu dunia: tanah, latar, dan letak benda ditulis sekali. Adegan berpindah lewat gerak kamera tanpa fade, dan keadaan benda bertahan antaradegan.
+- **Benda ditulis sekali per video.** Gemini menulis fungsi benda seperti `drawMobil(iso, state)`, mengikuti pola `drawODU()` di video AC. Semua adegan memanggil fungsi yang sama, sehingga mobil di adegan 1 dan 5 tetap sama.
+- **Dua jenis adegan.**
+  - `world`: berupa data saja (target kamera, zoom, keadaan benda, label, aliran) di dunia bersama. Murah karena tidak ada kode baru.
+  - `detail`: punya fungsi `draw(iso, t)` sendiri untuk close-up, potongan dalam, atau diagram, lalu kembali ke dunia lewat gerak kamera.
+- **Teks tetap di lapisan HTML.** Judul, subtitle, dan kartu data memakai komponen yang sudah ada. Canvas hanya untuk label yang menempel di benda, dengan posisi dari `iso.P()`.
+
+### Tahap 1: Mesin
+
+- [ ] Pindahkan mesin dari `src/motion-kit/iso-canvas/` ke ekspor resmi `@/motion-kit`: `createIso`, `CanvasScene`, `ramp`, `win`. Dikerjakan 11 November 2026: diekspor bersama `layoutLabels`, `lit`, `mixColor`, dan tipe-tipenya; `CanvasScene` menerima `timeOffset` untuk waktu global. Belum dipakai job
+- [ ] Label otomatis di dalam area aman platform: kotak digeser masuk jika keluar tepi, dan dua label yang bertabrakan dipisah. Dua masalah ini muncul di hampir setiap kritik spike. Dikerjakan: `label()` diantrikan dan `finish()` menatanya dengan `layoutLabels` di dalam `useSafeInsets`; garis penunjuk berakhir di titik kotak terdekat. Diperiksa pada render uji: label yang diminta di luar frame masuk ke area aman tanpa bertumpuk. Batasan: garis penunjuk dua label bisa bersilangan; label belum menghindari benda
+- [ ] `iso.ground(color)`: tanah, lantai, atau air yang selalu memanjang sampai tepi frame berapa pun zoom kamera. Pengganti tanah buatan Gemini yang berhenti di tengah layar. Dikerjakan bersama `iso.strip` (jalan, trotoar, sungai tanpa ujung) dan `iso.dashes` (marka bergerak), dihitung dari sudut layar yang diproyeksikan balik ke bidang tanah. Batasan: Gemini masih kadang menggambar lempeng sendiri di samping `ground` (uji mobil putaran 3)
+- [ ] `iso.shadow(x, y, w, d)` untuk bayangan lembut di bawah benda, karena di spike benda tampak melayang. Dikerjakan dengan `ctx.filter = blur(...)`
+- [ ] Kamera dunia: `iso.camTo(target, zoom)` dengan easing antar-keyframe, dihitung dari waktu global video. Dikerjakan sebagai `iso.look(x, y, z, zoom)` dan `iso.camPath(keys, t)`: tahan sebelum key pertama, easing di antara key, zoom dihitung di skala log
+- [ ] Font Inter dimuat dengan `delayRender` sebelum frame pertama. Dikerjakan lewat `@remotion/google-fonts/Inter` dan `waitUntilDone`; canvas digambar ulang setelah font siap. Butuh internet saat render, sama seperti teks lain
+- [ ] Test: proyeksi, culling, urutan bidang, determinisme (frame yang sama dua kali identik), label tidak keluar area aman. Dikerjakan: 12 test di `engine.test.ts`, termasuk tanah menutup frame di dua zoom dan `camPath`. Uji ulang Gemini topik mobil dengan mesin baru: 5,2 → 5,4 → 6,0, ambang 6 tercapai di putaran 3, sekitar Rp3.680. Masalah yang tersisa di kritik: kendaraan bertumpuk, pohon tanpa daun, dan angka "90 km/jam" yang dikarang Gemini di label
+
+### Tahap 2: Kontrak kode dan validator
+
+- [ ] Kontrak file:
+  - `IsoObjects.ts`: fungsi benda, masing-masing dengan daftar keadaan yang dijelaskan
+  - `IsoWorld.ts`: latar, tanah, dan letak benda
+  - `IsoScenes.ts`: data adegan `world` dan fungsi `draw` adegan `detail`
+  - `MainVideo.tsx`: rangkaian adegan, audio, dan subtitle
+  - Dikerjakan 11 November 2026: kontrak di `src/lib/explainer/iso-canvas/contract.ts`; tipe adegan (`IsoWorldScene` berupa data kamera, keadaan, perubahan keadaan, dan label; `IsoDetailScene` dengan fungsi `draw`) serta `paintIsoScene` dan `statesAt` di `@/motion-kit`. Urutan impor dikunci (IsoObjects ← IsoWorld ← IsoScenes) supaya tidak ada impor melingkar. `start` tiap adegan adalah detik global, jadi gerak dunia tidak meloncat antaradegan. Fixture kipas dirender di Remotion: adegan dunia dan detail tampil benar. `MainVideo.tsx` belum dibuat, masuk Tahap 3
+- [ ] `validateSceneCode` menerima file Isometrik Canvas: hanya mengimpor `@/motion-kit`; dilarang `Math.random`, `Date`, timer, `fetch`, `window`, `document`, gambar, dan `eval`. Nama file baru diterima `isVirtualFileName` dan `ProjectUpdateSchema`. Dikerjakan: opsi `canvas` di `validateSceneCode` menolak `canvas`, `ownerDocument`, `drawImage`, `getImageData`, `putImageData`, `createImageData`, `createPattern`, `toDataURL`, `toBlob`, `filter`, dan lainnya; `iso.ctx` tidak lagi diekspos; impor per file dibatasi. `isVirtualFileName` menerima `IsoObjects.ts`, `IsoWorld.ts`, dan `IsoScenes.ts` untuk bundel. Batasan: `ProjectUpdateSchema` sengaja belum menerima nama ini sampai editor Tahap 5, supaya edit user tidak melewati validator canvas; akses properti terhitung (`iso['c' + 'tx']`) tetap tidak tertangkap validator, sama seperti adegan lain
+- [ ] Uji kering di server dengan konteks Canvas palsu, seperti di spike, dijalankan di `vm` dengan batas waktu per frame. Error dikirim balik ke Gemini, maksimal 3 percobaan. Dikerjakan: `dryRunIsoCanvas` memuat ketiga modul di konteks `vm` baru (tanpa eval string, batas 1 detik per panggilan), lalu menggambar setiap benda sendiri, dunia, dan 3 momen tiap adegan ke canvas perekam. Yang dilaporkan: error, frame lebih dari 1 detik, koordinat NaN atau tak hingga, benda atau frame kosong, frame yang berbeda saat digambar dua kali, ekspor yang hilang, dan `start` adegan yang tidak menyambung. `writeUntilValid` mengirim masalah dan jawaban sebelumnya ke model sampai lolos (maksimal 3), dan `parseNamedBlocks` membaca blok kode per nama file. 13 test baru, 715 test lulus. Belum dipakai job; prompt penulisnya masuk Tahap 3
+
+### Tahap 3: Pipeline generate
+
+- [ ] Rencana dunia dari narasi yang sudah disetujui: 1–5 benda utama dengan keadaannya, latar, dan per adegan memilih jenis `world` atau `detail`, fokus, label, dan aliran. Label hanya boleh berisi hal yang disebut narasi (aturan anti-slop). Dikerjakan di `iso-canvas/plan.ts`: benda dengan ukuran dan posisi dalam meter, keadaan 0–1, close-up, dan beat dengan `set` perubahan keadaan. Narasi dikunci kata per kata, fokus yang tidak dikenal menjadi bidikan lebar, angka yang tidak diucapkan dibuang (`keepStatedNumbers`), dan label yang memakai kata di luar baris, topik, atau nama benda dibuang. Draf Isometrik baru tidak lagi dibatasi petunjuk pustaka
+- [ ] Gemini menulis benda paralel (maksimal 4 sekaligus). Tiap benda dirender sebagai lembar keadaan, lalu dinilai. Dikerjakan: lembar 4 frame dari keadaan 0 ke 1, dirender lewat satu bundel pratinjau (`preview-root.tsx`) yang mengompilasi kode dari input props seperti pratinjau studio, dengan satu browser per job
+- [ ] Gemini menulis dunia dan adegan `detail`. Adegan `world` disusun dari data tanpa panggilan model. Dikerjakan: kamera tiba dari bidikan sebelumnya dalam 1,1 detik lalu mendorong 8%, zoom dihitung dari ukuran benda, keadaan berlanjut antaradegan, dan label menempel di atas benda fokus di bawah panel. Dunia dan close-up ditulis bersamaan setelah benda selesai
+- [ ] Putaran mutu per benda dan per adegan `detail`: penilai 5 kriteria dari spike (dikenali, kebenaran isometrik, komposisi, gerak, ketepatan label). Di bawah ambang, Gemini memperbaiki dari frame dan masukan penilai. Maksimal 2 putaran (semula 3), dan yang dipakai adalah putaran dengan skor terbaik, bukan putaran terakhir. Dikerjakan di `iso-canvas/build.ts` dengan kriteria per jenis (benda: dikenali, isometrik, detail, perubahan keadaan; dunia: dikenali, isometrik, komposisi, latar, label; close-up: dikenali, isometrik, komposisi, gerak, label). Kode yang tidak pernah lolos uji kering diganti bentuk sederhana dan ditandai
+- [ ] Ambang diatur lewat `ISO_QUALITY_THRESHOLD`, awalnya 6. Diturunkan ke 5,5 jika data Tahap 6 menunjukkan 6 terlalu sering tidak tercapai. Skor setiap putaran disimpan di proyek. Dikerjakan: `ISO_QUALITY_THRESHOLD` (bawaan 6) dan `ISO_QUALITY_ROUNDS`, skor tersimpan di `isoCanvasReport`. Batas putaran bawaan diturunkan ke 2 atas keputusan user (11 November 2026), karena putaran ketiga jarang menaikkan skor pada uji kipas. Belum diuji ulang dengan 2 putaran
+- [ ] Benda atau adegan yang tetap di bawah ambang disebut terus terang di chat editor, beserta skor dan masalah utamanya. Dikerjakan dengan nama dan skor; masalah dari penilai tidak ditampilkan karena berbahasa Inggris dan ditujukan ke model
+- [ ] Job memakai jalur ini untuk proyek Isometrik baru. Proyek Isometrik lama tetap memakai mesin lamanya. Dikerjakan: `POST /api/projects` memberi `isoEngine: 'canvas'` untuk preset `world`, dan job memakai `buildIsoCanvasFiles`. Uji nyata lewat `scripts/spike-iso-job.ts` "Gimana cara kerja kipas angin?": 6 adegan, 31,3 detik, ruang kerja dengan meja, kipas, orang duduk, tanaman, dan jendela, plus 3 close-up motor dan bilah; export 13 detik, frame MP4 diperiksa. Skor: benda 5,5 / 5,8 / 5,5, dunia 5,2, close-up 6,0 / 6,2 / 6,2. Batasan: generate 1.256 detik (21 menit, sebelum dunia dan close-up dijadikan paralel), 33 panggilan Gemini dengan 201.464 token masuk dan 239.196 keluar (sekitar Rp19.000 di luar TTS), 4 bagian hampir diam terdeteksi, label close-up kadang memakai keterangan tambahan yang tidak ada di narasi, belum dicoba dari browser, belum dinilai user
+- [ ] Biaya setiap panggilan (penulis dan penilai) tercatat di pencatat biaya yang sudah ada dan tampil di `/admin/biaya`. Dikerjakan otomatis lewat `callChat` → `recordUsage` dalam konteks job; dicek dari tabel `ai_usage` pada uji kipas. Halaman admin belum dibuka untuk dicek
+
+### Tahap 4: Pratinjau, export, dan pemeriksaan
+
+- [ ] `browser-compiler` memetakan file Isometrik Canvas, supaya pratinjau dan export memakai kode yang sama. Dikerjakan tanpa perubahan: impor relatif `./IsoObjects` sudah diselesaikan ke `IsoObjects.ts`, dan `IsoCanvasVideo` diekspor dari `@/motion-kit`. Compiler yang sama dipakai bundel pratinjau server pada setiap putaran mutu. Batasan: pratinjau di studio belum dibuka di browser karena butuh login user
+- [ ] Export membundel semua file Isometrik Canvas. Dikerjakan lewat `isVirtualFileName`; export 9:16 dan 16:9 masing-masing 13 detik
+- [ ] Cek crash dan cek bagian diam yang sudah ada ikut berjalan. Terbukti pada dua uji job: cek crash lolos, cek diam melaporkan 4 bagian (9:16) dan 2 bagian (16:9)
+- [ ] Rasio 9:16 dulu, lalu 16:9 dan 4:5 dengan menyesuaikan kamera, tanpa mengubah benda. Dikerjakan: `viewBand` menentukan titik tengah kamera dan tinggi benda dari rasio frame (potret 58% / 46%, 4:5 55% / 42%, lanskap 50% / 50%), karena di 16:9 subtitle menutupi bagian bawah benda. Uji job 16:9 "Gimana cara kerja kipas angin?" dengan 2 putaran: 6 adegan, 32,8 detik, generate 556 detik, 23 panggilan Gemini dengan 132.772 token masuk dan 147.858 keluar (sekitar Rp11.900 di luar TTS); skor stopkontak 6, pengguna 4,8, kipas 5,3, dunia 5,2, close-up 5,8 / 5,8. Framing baru diterapkan ke proyek itu dan diexport ulang: kipas di atas subtitle. Rencana dunia kini disimpan di `isoCanvasPlan` supaya framing bisa dihitung ulang tanpa menggambar ulang. Label close-up kehilangan baris keterangan (`sub`) karena kerap berisi klaim di luar narasi. Batasan: 4:5 belum diuji nyata; orang masih tampak kaku dan skornya rendah
+
+### Tahap 5: Editor
+
+- [ ] Revisi chat per adegan: instruksi user diteruskan ke Gemini bersama kode dan frame adegan itu, lalu melewati putaran mutu yang sama
+- [ ] Revisi benda: perubahan satu benda berlaku di semua adegan
+- [ ] Coba ulang per benda atau per adegan tanpa membuat ulang audio
+- [ ] Tab kode menampilkan file Isometrik Canvas dan bisa diedit, dengan validator yang sama
+
+### Tahap 6: Uji penerimaan
+
+- [ ] 5 topik lewat job dan export, frame diperiksa: AC biasa vs inverter, mobil di jalan, HP dicas semalaman, jantung memompa darah, dan iklan kasir. Catat skor per putaran, berapa kali ambang tercapai, waktu generate, dan biaya per video
+- [ ] User menonton dan menilai kelima video. Ambang akhir (6 atau 5,5) dan batas putaran ditetapkan dari data ini
+- [ ] Harga kredit Isometrik ditinjau dari biaya nyata per video
+
+### Tahap 7: Pembersihan setelah disetujui user
+
+- [ ] Hapus jalur dunia gambar AI Isometrik (`iso-picture.ts`, `world-video.ts`, cek sudut pandang) dan jalur pustaka SVG untuk Isometrik, jika tidak dipakai proyek lama yang masih perlu dibuka
+- [ ] Hapus `IsoStage`, `three`, `@react-three/fiber`, dan `@remotion/three` jika tidak ada lagi pemakainya
+- [ ] Buka Isometrik untuk semua akun, atas keputusan user
+
+### Pertanyaan terbuka
+
+- Benda yang dibuat Gemini apakah disimpan ke pustaka untuk dipakai ulang di video lain (lebih murah dan konsisten), atau selalu dibuat baru per video?
+- Batas biaya per video Isometrik, karena 3 putaran per adegan `detail` bisa mencapai sekitar Rp4.000 per adegan.
+
 ## Video 3D (Mode Dunia)
 
-Status saat ini: tersedia sebagai pilihan **Isometrik**, untuk rasio 9:16. Sejak 8 November 2026, Isometrik memakai satu gambar dunia dari model gambar, bukan objek 3D dari balok dan blob. User menilai versi 3D buruk karena objek tidak dikenali dan selalu berdiri di atas alas. Item 3D di bawah tetap dicatat sebagai riwayat, dan kodenya belum dihapus.
+Status saat ini: akan diganti oleh [Isometrik Canvas](#isometrik-canvas) (keputusan user 11 November 2026). Bagian ini menjadi riwayat. Sebelumnya tersedia sebagai pilihan **Isometrik**, untuk rasio 9:16. Sejak 8 November 2026, Isometrik memakai satu gambar dunia dari model gambar, bukan objek 3D dari balok dan blob. User menilai versi 3D buruk karena objek tidak dikenali dan selalu berdiri di atas alas. Item 3D di bawah tetap dicatat sebagai riwayat, dan kodenya belum dihapus.
 
 - [x] Isometrik hanya untuk admin selama masih dikembangkan (keputusan user 10 November 2026). Beranda menyembunyikan pilihan, filter, dan contoh prompt Isometrik untuk akun di luar `ADMIN_EMAILS`. Admin melihat label "Admin" pada pilihan itu. Draf tersimpan yang memakai preset tersebut kembali ke Iklan produk. `POST /api/projects` menolak dengan 403 untuk akun biasa. `/api/me` mengirim `isAdmin`. Proyek Isometrik lama tetap bisa dibuka pemiliknya. Test server lolos. Belum dicek di browser
 - [x] Isometrik 3D dihapus seluruhnya (keputusan user 10 November 2026): preset `world-3d`, adegan HP dan mobil GLB, pemeriksa kemampuan model 3D, layanan container `bpy` beserta container dan image Docker-nya, model di `public/models`, aset `storage/assets/three-car` dan `three-phone`, skrip terkait, proyek uji, dan baris Diminta `world-3d`. Mesin `IsoStage` tetap ada karena dipakai preset Isometrik
@@ -372,6 +448,7 @@ Risiko: rig SVG buatan AI bisa terlihat kaku atau murahan, dan gaya serius sanga
   - [ ] (uji coba) Hibrida per objek di Isometrik: bentuk sulit dari pustaka, objek sederhana yang belum ada digambar AI khusus untuk video itu. Setelah rencana pertama, maksimal 3 objek (bukan aksi) digambar paralel dengan `generateProp` (satu varian, maksimal 2 warna, 2 percobaan) memakai kit dan proyeksi pustaka, divalidasi seperti draf, lalu rencana disusun ulang dengan objek itu di katalog. Objek buatan ini tidak masuk pustaka, tetapi tetap tercatat di tab Diminta. Video jatuh ke gambar AI hanya jika tidak ada aset yang cocok atau kekurangan menyentuh lebih dari separuh adegan; selebihnya adegan yang kurang memakai aset terdekat dan chat editor menyebutnya. Uji ujung ke ujung "air sungai dijernihkan, lalu lewat pipa sampai keran di rumah": 6 adegan dari sungai dan pengolahan air, "pipa bawah tanah dan keran rumah" digambar AI, "mikroorganisme" dilaporkan memakai aset terdekat, generate 291 detik (sebelumnya 107 detik tanpa objek buatan), export 13 detik, frame diperiksa. Batasan: menambah sekitar 3 menit per video yang punya objek kurang; objek buatan sederhana dan belum ditinjau manusia; model bisa menggabungkan dua objek menjadi satu gambar; belum diuji dari klik browser
   - [ ] (uji coba) Cek sudut pandang gambar dunia Isometrik: prompt melarang langit, cakrawala, titik hilang, dan merek; model visi memeriksa hasil, dan dunia yang gagal digambar ulang sekali dari kanvas kosong. Uji nyata 1 kali dengan narasi "mobil limbung di tikungan": gambar pertama perspektif ditolak, gambar ulang dilihat dari atas tanpa langit. Batasan: menambah 1 panggilan visi per video dan 1 gambar saat gagal; close-up tidak dicek; baru 1 topik; belum dinilai user
   - [ ] (uji coba) Isometrik pustaka sebagai satu dunia (`WorldPlanVideo`): semua objek ditata sekali, setiap adegan adalah gerak kamera tanpa fade. Uji render ulang 2 proyek, frame diperiksa. Batasan: masih 3–5 bagian hampir diam karena kamera diam setelah tiba; belum dinilai user
+  - [ ] (uji coba) Mesin Canvas isometrik (`src/motion-kit/iso-canvas/`): box, silinder, kerucut, prisma, bidang, bola, pipa dengan aliran, label, geser, dan putar; pencahayaan otomatis dari arah hadap tiap sisi dan sisi belakang tidak digambar. `CanvasScene` menggambar ulang per frame di Remotion. Uji Gemini lewat `scripts/spike-canvas-iso.ts`, "Kipas angin meja berputar", 3 detik 9:16: percobaan 1 (147 detik, 56 bentuk) terbaca kipas tapi pelindung padat seperti parabola, bilah tak terlihat, label terpotong; satu putaran perbaikan dengan Gemini melihat frame sendiri (47 detik) menghasilkan kipas meja yang jelas: jeruji kawat, 4 bilah berputar, kepala menggeleng, tombol di alas. Render 90 frame 2 detik. Uji lanjutan dengan cara yang sama: "HP dicas semalaman" gagal (latar gelap, terbaca sebagai papan sirkuit, bukan HP, juga setelah perbaikan) dan "Jantung memompa darah" gagal (gumpalan bola dan pipa, bukan jantung, juga setelah perbaikan). Token per video (2 panggilan): kipas 14.092 masuk / 27.330 keluar (sekitar Rp2.050), HP 11.500 / 12.344 (sekitar Rp995), jantung 12.489 / 15.087 (sekitar Rp1.196), mobil di jalan kota 14.999 / 24.409 (sekitar Rp1.863; terbaca jelas: jalan bermarka bergerak, trotoar, pohon, lampu jalan, gedung, taksi menyalip, tapi bawah frame kosong biru karena jalan berhenti, taksi menembus mobil utama, label "Marka Lajur" menunjuk mobil, perbaikan malah terlalu dekat), memakai tarif `ag/gemini-3.8-flash-high` Rp13.597,5 dan Rp67.987,5 per juta token. Keputusan user: Isometrik dibuat Gemini dengan Canvas, dengan putaran nilai dan perbaikan berambang 6 (atau 5,5). Putaran nilai di skrip spike (penilai 5 kriteria, maksimal 3 putaran, simpan yang terbaik): mobil terbaik 5,8 (Rp4.325), jantung terbaik 5,2 (Rp3.501); ambang 6 belum tercapai. Batasan: label sering terpotong tepi; belum masuk validator dan job; belum dinilai user
   - [ ] Tampilkan laporan cakupan di layar draf, sebelum generate: user diberi tahu objek yang belum tersedia dan memilih lanjut dengan aset yang ada atau memakai ilustrasi AI. Saat ini laporan baru muncul di chat editor setelah generate. Belum dimulai
 - [ ] Set 30 prompt acuan untuk mengukur kualitas
 - [ ] Perbarui README

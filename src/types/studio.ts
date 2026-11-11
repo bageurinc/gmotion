@@ -206,6 +206,15 @@ export interface StudioProject {
    * back to the painted world. Absent on older projects, which keep their original engine.
    */
   visualPolicy?: 'library-first';
+  /**
+   * Isometric projects created after 11 November 2026 are drawn by the canvas engine. Absent on
+   * older isometric projects, which keep the library or painted world they were made with.
+   */
+  isoEngine?: 'canvas';
+  /** Quality scores of the canvas drawings, so the editor can say which ones stayed weak. */
+  isoCanvasReport?: import('@/lib/explainer/iso-canvas/build').IsoCanvasReport;
+  /** The canvas world plan, so scenes can be re-timed or re-framed without redrawing objects. */
+  isoCanvasPlan?: import('@/lib/explainer/iso-canvas/plan').IsoCanvasPlan;
   /** What the asset library did for this video, so the editor can say it plainly. */
   libraryReport?: LibraryReport;
 }

@@ -45,6 +45,15 @@ const FORBIDDEN_ELEMENTS = new Set([
 ]);
 
 const URL_PROPERTIES = new Set(['src', 'href', 'xlinkHref', 'srcDoc', 'action', 'formAction']);
+
+/**
+ * Canvas members an isometric canvas scene never needs: reaching the DOM element, reading or
+ * exporting pixels, drawing images, or setting filters (which accept url()).
+ */
+const CANVAS_FORBIDDEN_MEMBERS = new Set([
+  'canvas', 'ownerDocument', 'drawImage', 'getImageData', 'putImageData', 'createImageData', 'createPattern',
+  'toDataURL', 'toBlob', 'transferToImageBitmap', 'filter', 'getContextAttributes',
+]);
 const EXTERNAL_URL = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 const isNode = (value: unknown): value is AstNode =>
@@ -118,6 +127,7 @@ function inspectAst(
   allowedImports?: readonly string[],
   providedNames: readonly string[] = [],
   checkUndeclared = true,
+  canvas = false,
 ) {
   const declared = declaredNames(ast);
   providedNames.forEach((name) => declared.add(name));
@@ -161,6 +171,7 @@ function inspectAst(
         report(`Detected 'Date.now()' in ${fileName}. Remotion requires deterministic rendering. Animate with useTimelapseProgress() or useCurrentFrame().`);
       }
       if (name && FORBIDDEN_PROPERTIES.has(name)) report(`Forbidden property '${name}' in ${fileName}.`);
+      if (canvas && name && CANVAS_FORBIDDEN_MEMBERS.has(name)) report(`Canvas member '${name}' is not allowed in ${fileName}. Draw with the iso API instead.`);
     }
 
     if (node.type === 'Identifier' && !isNameOnly(node, parent) && !declared.has(node.name as string)) {
@@ -201,7 +212,7 @@ export function validateSceneCode(
    * providedNames: names the runtime defines around a piece checked on its own, such as the human rig.
    * checkUndeclared: false for a fragment whose shared block is inserted later; the composed file is checked then.
    */
-  options: { svgOnly?: boolean; allowedImports?: readonly string[]; providedNames?: readonly string[]; checkUndeclared?: boolean } = {},
+  options: { svgOnly?: boolean; allowedImports?: readonly string[]; providedNames?: readonly string[]; checkUndeclared?: boolean; canvas?: boolean } = {},
 ): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -221,7 +232,7 @@ export function validateSceneCode(
       logLevel: 'silent',
       tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
     });
-    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false, options.allowedImports, options.providedNames, options.checkUndeclared ?? true);
+    inspectAst(parse(javascript, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as AstNode, fileName, errors, options.svgOnly ?? false, options.allowedImports, options.providedNames, options.checkUndeclared ?? true, options.canvas ?? false);
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     errors.push(`Export compilation error in ${fileName}: ${errorMsg}`);
