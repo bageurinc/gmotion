@@ -209,3 +209,36 @@ describe('label layout', () => {
     }
   });
 });
+
+describe('deferred groups', () => {
+  it('draws deferred groups farthest first, under the transforms they were queued with', () => {
+    const { ctx, calls } = recorder();
+    const iso = createIso(ctx, 1080, 1920);
+    iso.look(0, 0, 0, 100);
+    const order: string[] = [];
+    // Queued near first, far second: flush must swap them.
+    iso.at(0, 2, 0, () => iso.defer(() => { order.push('near'); iso.box(0, 0, 0, 1, 1, 1, '#FF0000'); }));
+    iso.at(0, -2, 0, () => iso.defer(() => { order.push('far'); iso.box(0, 0, 0, 1, 1, 1, '#00FF00'); }));
+    expect(order).toEqual([]);
+    iso.finish();
+    expect(order).toEqual(['far', 'near']);
+    // The near box was drawn with its own shift: its top face sits lower on screen than the far one.
+    const tops = filledPaths(calls).map((path) => Math.min(...path.map(([, y]) => y)));
+    expect(tops[tops.length - 1]).toBeGreaterThan(tops[0]);
+  });
+
+  it('lets a moving group pass from behind to in front of a fixed one', () => {
+    const { ctx } = recorder();
+    const iso = createIso(ctx, 1080, 1920);
+    const draw = (k: number) => {
+      const order: string[] = [];
+      // A walker from y = -1.8 to 1.8 through a gate at the origin; ahead carries its trip.
+      iso.at(0, -1.8, 0, () => iso.defer(() => order.push('walker'), 3.6 * k));
+      iso.defer(() => order.push('gate'));
+      iso.flush();
+      return order;
+    };
+    expect(draw(0)).toEqual(['walker', 'gate']);
+    expect(draw(1)).toEqual(['gate', 'walker']);
+  });
+});

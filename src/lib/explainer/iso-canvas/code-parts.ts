@@ -47,9 +47,9 @@ export function matchClose(source: string, open: number): number {
   return -1;
 }
 
-/** Start and end (exclusive) of `export function name(...) { ... }` in a file, or null. */
+/** Start and end (exclusive) of `[export] function name(...) { ... }` in a file, or null. */
 export function functionSpan(file: string, name: string): { start: number; end: number } | null {
-  const match = new RegExp(`export\\s+function\\s+${name}\\s*\\(`).exec(file);
+  const match = new RegExp(`(?:\\bexport\\s+)?\\bfunction\\s+${name}\\s*\\(`).exec(file);
   if (!match) return null;
   const paramsOpen = match.index + match[0].length - 1;
   const paramsEnd = matchClose(file, paramsOpen);
@@ -68,6 +68,47 @@ export function readFunction(file: string, name: string): string | null {
 export function replaceFunction(file: string, name: string, code: string): string | null {
   const span = functionSpan(file, name);
   return span ? file.slice(0, span.start) + code.trim() + file.slice(span.end) : null;
+}
+
+export const MOTION_MARKER = '// Motion added by revisions: the engine moves these objects and draws every object in depth order.';
+
+export interface MotionObject {
+  /** Exported function name, e.g. drawOrangKunci. */
+  name: string;
+  at: [number, number, number];
+  path?: { key: string; to: [number, number, number] };
+}
+
+/** The model-written drawing of an object once motion wraps it. */
+export const shapeName = (name: string) => `${name}Shape`;
+
+/**
+ * Wraps object functions so the engine can move them along their path and draw them in depth
+ * order (a person walking through a gate passes in front of it, then behind it, correctly).
+ * The model's function is renamed to `<name>Shape`; `<name>` keeps its signature, so the world
+ * and close-ups call it unchanged. Idempotent: the block is rebuilt from the plan every time.
+ */
+export function applyMotion(objectsFile: string, objects: MotionObject[]): string {
+  const marker = objectsFile.indexOf(MOTION_MARKER);
+  let file = marker < 0 ? objectsFile : objectsFile.slice(0, marker).trimEnd() + '\n';
+  if (!objects.some((object) => object.path)) {
+    // No motion left: give the model's functions their exported names back.
+    for (const object of objects) file = file.replace(new RegExp(`(^|\\n)function\\s+${shapeName(object.name)}\\s*\\(`), `$1export function ${object.name}(`);
+    return file;
+  }
+  const wrappers = objects.map((object) => {
+    file = file.replace(new RegExp(`\\bexport\\s+function\\s+${object.name}\\s*\\(`), `function ${shapeName(object.name)}(`);
+    const shape = `${shapeName(object.name)}(iso, state, t)`;
+    if (!object.path) {
+      return `export function ${object.name}(iso: Iso, state: Record<string, number>, t: number) {\n  iso.defer(() => ${shape});\n}`;
+    }
+    const [dx, dy, dz] = object.path.to.map((value, axis) => Math.round((value - object.at[axis]) * 1000) / 1000);
+    return `export function ${object.name}(iso: Iso, state: Record<string, number>, t: number) {
+  const k = state['${object.path.key}'] ?? 0;
+  iso.defer(() => iso.at(${dx} * k, ${dy} * k, ${dz} * k, () => ${shape}), ${dx + dy} * k);
+}`;
+  });
+  return `${file.trimEnd()}\n\n${MOTION_MARKER}\n${wrappers.join('\n\n')}\n`;
 }
 
 const DETAIL_DRAW = 'draw: (iso: Iso, t: number) => {';

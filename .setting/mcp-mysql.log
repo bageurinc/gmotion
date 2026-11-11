@@ -496,3 +496,243 @@
 2026-11-09T13:12:42.816Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
 2026-11-09T13:12:42.818Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
 2026-11-09T13:12:42.818Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.839Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T07:17:50.839Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T07:17:50.841Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:50.841Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:50.841Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:50.841Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:50.842Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.842Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.842Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T07:17:50.842Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T07:17:50.862Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"db_bablast","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T07:17:50.862Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"go_wa","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T07:17:50.865Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.866Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.867Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:50.867Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:53.126Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T07:17:53.128Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:53.128Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T07:17:53.129Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:53.129Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T07:17:53.150Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:53.150Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T07:17:53.151Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"go_wa","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T07:22:50.982Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:22:51.052Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:22:51.070Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:22:53.240Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:22:53.273Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:22:53.291Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:27:51.021Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:27:51.070Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:27:51.088Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:27:53.240Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:27:53.276Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:27:53.277Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:32:50.926Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:32:50.931Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:32:50.931Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:32:53.174Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:32:53.179Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:32:53.179Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:37:51.009Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:37:51.056Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:37:51.057Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:37:53.368Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:37:54.930Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:37:55.433Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:42:51.698Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:42:51.758Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:42:51.759Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:42:53.452Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:42:53.711Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:42:53.723Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:47:50.962Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:47:50.969Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:47:50.971Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:47:53.428Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:47:53.433Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:47:53.434Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T07:52:50.982Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:52:51.012Z | uncaughtException | {"error":"EPIPE: broken pipe, write","stack":"Error: EPIPE: broken pipe, write\n    at Socket._write (node:internal/net:75:18)\n    at writeOrBuffer (node:internal/streams/writable:570:12)\n    at _write (node:internal/streams/writable:499:10)\n    at Writable.write (node:internal/streams/writable:508:10)\n    at console.value (node:internal/console/constructor:313:16)\n    at console.error (node:internal/console/constructor:444:26)\n    at FinalMCPServer.checkConnectionPoolHealth (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:443:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async FinalMCPServer.ensureConnectionPool (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:454:35)\n    at async Timeout._onTimeout (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:959:13)"} | EPIPE: broken pipe, write | RESPONSE: null
+2026-11-11T07:52:53.451Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T07:52:53.458Z | uncaughtException | {"error":"EPIPE: broken pipe, write","stack":"Error: EPIPE: broken pipe, write\n    at Socket._write (node:internal/net:75:18)\n    at writeOrBuffer (node:internal/streams/writable:570:12)\n    at _write (node:internal/streams/writable:499:10)\n    at Writable.write (node:internal/streams/writable:508:10)\n    at console.value (node:internal/console/constructor:313:16)\n    at console.error (node:internal/console/constructor:444:26)\n    at FinalMCPServer.checkConnectionPoolHealth (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:443:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async FinalMCPServer.ensureConnectionPool (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:454:35)\n    at async Timeout._onTimeout (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:959:13)"} | EPIPE: broken pipe, write | RESPONSE: null
+2026-11-11T08:12:34.302Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T08:12:34.304Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:34.305Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:34.306Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:34.306Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T08:12:34.323Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"db_bablast","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T08:12:34.327Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:34.327Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:34.362Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T08:12:34.364Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:34.364Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:34.365Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:34.365Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T08:12:34.381Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"go_wa","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T08:12:34.384Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:34.384Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.147Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T08:12:37.149Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:37.149Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:37.150Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.151Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T08:12:37.167Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"db_bablast","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T08:12:37.170Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.171Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.237Z | server_start | {"name":"mysql-mcp-server","version":"3.2.0","logDir":"./.setting","logFile":".setting\\mcp-mysql.log"} | SUCCESS | RESPONSE: {"status":"started"}
+2026-11-11T08:12:37.239Z | server/discover | {"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:37.239Z | error | {"error":"Unknown method: server/discover","stack":"Error: Unknown method: server/discover\n    at FinalMCPServer.handleRequest (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:808:17)\n    at Socket.<anonymous> (C:\\Users\\GIT\\AppData\\Local\\npm-cache\\_npx\\080bc9f59514dad9\\node_modules\\@liangshanli\\mcp-server-mysql\\src\\server-final.js:884:43)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:559:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)\n    at Readable.push (node:internal/streams/readable:390:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)"} | Unknown method: server/discover | RESPONSE: null
+2026-11-11T08:12:37.240Z | initialize | {"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"antigravity-client","version":"v1.0.0"}} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.240Z | initialize | {"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}}}} | SUCCESS | RESPONSE: {"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}
+2026-11-11T08:12:37.258Z | tools/list | {} | SUCCESS | RESPONSE: {"tools":[{"name":"sql_query","description":"Execute SQL query, supports DDL and DML operations","inputSchema":{"type":"object","properties":{"sql":{"type":"string","description":"SQL statement to execute"}},"required":["sql"]}},{"name":"get_database_info","description":"Get database information, including database list, table list and configuration information","inputSchema":{"type":"object","properties":{}}},{"name":"get_operation_logs","description":"Get operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50"},"offset":{"type":"number","description":"Offset, default 0"}}}},{"name":"check_permissions","description":"Check database permissions for DDL, DROP, DELETE and other operations. Returns detailed permission status including readonly mode restrictions (only SELECT and SHOW allowed when readonly is enabled)","inputSchema":{"type":"object","properties":{}}},{"name":"get_ddl_sql_logs","description":"Get DDL SQL operation logs","inputSchema":{"type":"object","properties":{"limit":{"type":"number","description":"Limit count, default 50, max 500"},"offset":{"type":"number","description":"Offset, default 0"}}}}],"environment":{"READONLY":true,"ALLOW_DDL":false,"ALLOW_DROP":false,"ALLOW_DELETE":false,"MYSQL_HOST":"localhost","MYSQL_PORT":"3306","MYSQL_USER":"root","MYSQL_DATABASE":"go_wa","TOOL_PREFIX":"","PROJECT_NAME":"","serverInfo":{"name":"mysql-mcp-server","version":"3.2.0"}}}
+2026-11-11T08:12:37.265Z | connection_pool_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:12:37.266Z | notifications/initialized | {} | SUCCESS | RESPONSE: null
+2026-11-11T08:17:37.170Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:17:37.177Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:17:37.177Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:17:37.260Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:17:37.263Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:17:37.263Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:22:37.182Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:22:37.186Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:22:37.186Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:22:37.262Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:22:37.272Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:22:37.273Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:27:37.181Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:27:37.186Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:27:37.187Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:27:37.264Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:27:37.270Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:27:37.273Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:32:37.189Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:32:37.192Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:32:37.192Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:32:37.265Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:32:37.269Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:32:37.270Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:37:37.202Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:37:37.211Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:37:37.212Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:37:37.271Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:37:37.275Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:37:37.276Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:42:37.190Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:42:37.192Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:42:37.192Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:42:37.282Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:42:37.285Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:42:37.286Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:47:37.268Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:47:37.304Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:47:37.327Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:47:37.361Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:47:37.393Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:47:37.395Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:52:37.231Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:52:37.233Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:52:37.234Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:52:37.328Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:52:37.333Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:52:37.333Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:57:37.228Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:57:37.231Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:57:37.231Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:57:37.384Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T08:57:37.390Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T08:57:37.391Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:02:37.243Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:02:37.246Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:02:37.246Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:02:37.350Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:02:37.355Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:02:37.356Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:07:37.239Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:07:37.241Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:07:37.242Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:07:37.346Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:07:37.349Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:07:37.351Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:12:37.269Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:12:37.281Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:12:37.282Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:12:37.353Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:12:37.357Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:12:37.358Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:17:37.249Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:17:37.251Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:17:37.252Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:17:37.414Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:17:37.421Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:17:37.421Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:22:37.274Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:22:37.277Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:22:37.277Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:22:37.368Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:22:37.380Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:22:37.381Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:27:37.263Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:27:37.265Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:27:37.266Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:27:37.376Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:27:37.379Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:27:37.379Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:32:37.293Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:32:37.302Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:32:37.303Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:32:37.382Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:32:37.385Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:32:37.386Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:37:37.287Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:37:37.292Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:37:37.293Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:37:37.397Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:37:37.402Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:37:37.403Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:42:37.299Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:42:37.304Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:42:37.304Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:42:37.411Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:42:37.415Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:42:37.416Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:47:37.312Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:47:37.316Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:47:37.317Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:47:37.422Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:47:37.425Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:47:37.426Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:52:37.330Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:52:37.333Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:52:37.334Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:52:37.433Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:52:37.441Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:52:37.442Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:57:37.357Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:57:37.367Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:57:37.369Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:57:37.441Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T09:57:37.445Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T09:57:37.449Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:02:37.328Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:02:37.332Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:02:37.333Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:02:37.503Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:02:37.507Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:02:37.508Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:07:37.334Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:07:37.340Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:07:37.341Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:07:37.456Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:07:37.459Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:07:37.463Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:12:37.344Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:12:37.346Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:12:37.347Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:12:37.471Z | connection_pool_closed | {} | SUCCESS | RESPONSE: {"status":"closed"}
+2026-11-11T10:12:37.475Z | connection_pool_recreate_error | {"error":""} | SUCCESS | RESPONSE: null
+2026-11-11T10:12:37.476Z | health_check_error | {"error":""} | SUCCESS | RESPONSE: null

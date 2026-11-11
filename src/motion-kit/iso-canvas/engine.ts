@@ -211,6 +211,9 @@ export function createIso(ctx: CanvasRenderingContext2D, width: number, height: 
   let scale = 40;
   const stack: Transform[] = [];
   const labels: PendingLabel[] = [];
+  // Groups drawn later in depth order, for objects that move through each other (a person
+  // walking through a gate): a fixed call order would draw them on the wrong side.
+  const deferred: { depth: number; order: number; transforms: Transform[]; draw: () => void }[] = [];
   const safe = setup.safe ?? { top: 0.12, right: 0.16, bottom: 0.22, left: 0.08 };
   const safeBounds: IsoBounds = {
     left: width * safe.left,
@@ -374,8 +377,32 @@ export function createIso(ctx: CanvasRenderingContext2D, width: number, height: 
       ctx.restore();
     },
 
-    /** Draws every label queued by label(), laid out inside the safe area. Called once per frame. */
+    /**
+     * Queues a group to be drawn by flush() (or finish()) in depth order with the other deferred
+     * groups, under the transforms active now. Depth is where the group's origin lands (x + y),
+     * shifted by `ahead` world units for a group whose footprint reaches toward the viewer.
+     */
+    defer(draw: () => void, ahead = 0) {
+      const origin = world([0, 0, 0]);
+      deferred.push({ depth: origin[0] + origin[1] + ahead, order: deferred.length, transforms: [...stack], draw });
+    },
+
+    /** Draws the deferred groups, farthest first. */
+    flush() {
+      const groups = deferred.splice(0).sort((a, b) => a.depth - b.depth || a.order - b.order);
+      for (const group of groups) {
+        const saved = stack.splice(0, stack.length, ...group.transforms);
+        try {
+          group.draw();
+        } finally {
+          stack.splice(0, stack.length, ...saved);
+        }
+      }
+    },
+
+    /** Draws deferred groups, then every label queued by label(), laid out inside the safe area. Called once per frame. */
     finish() {
+      iso.flush();
       const boxes = labels.map((pending) => {
         const size = pending.options.size ?? 34;
         const subSize = Math.round(size * 0.62);

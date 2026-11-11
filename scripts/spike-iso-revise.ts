@@ -12,6 +12,7 @@ import { reviseIsoCanvas } from '@/lib/explainer/iso-canvas/revise';
 import { assetModel } from '@/lib/explainer/scene-generator';
 import { renderProvider } from '@/lib/render/render-service';
 import { getProject, saveProject } from '@/lib/storage/project-store';
+import type { StudioProject } from '@/types/studio';
 
 const values = (name: string) => process.argv.flatMap((arg, index) => (arg === `--${name}` ? [process.argv[index + 1]] : []));
 
@@ -30,7 +31,7 @@ async function main() {
   };
   // MainVideo.tsx embeds each scene's audio URL in its overlay script.
   const files = Object.fromEntries(Object.entries(source.files).map(([name, code]) => [name, code.split(`/api/projects/${source.id}/`).join(`/api/projects/${id}/`)]));
-  let project = { ...source, id, storyboard, files, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now() };
+  let project: StudioProject = { ...source, id, storyboard, files, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now() };
   saveProject(project);
   for (const message of values('message')) {
     const startedAt = Date.now();

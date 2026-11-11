@@ -24,10 +24,22 @@ export const IsoCanvasPlanSchema = z.object({
     size: Vec3,
     at: Vec3,
     states: z.array(z.object({ key: StateKey, meaning: z.string().min(3).max(160) })).max(3),
+    /**
+     * Set only by chat revisions: the object travels from `at` (state 0) to `to` (state 1) as
+     * state `key` changes. The engine moves it, so the object's own code never has to.
+     */
+    path: z.object({ key: StateKey, to: Vec3 }).optional(),
   })).min(1).max(5),
   details: z.array(z.object({ id: Id, label: z.string().min(1).max(24), draw: z.string().min(20).max(900), objects: z.array(Id).max(3) })).max(2),
   beats: z.array(IsoBeatSchema.extend({
-    set: z.array(z.object({ object: Id, key: StateKey, value: z.number().min(0).max(1) })).max(4),
+    set: z.array(z.object({
+      object: Id,
+      key: StateKey,
+      value: z.number().min(0).max(1),
+      /** Set only by chat revisions: scene seconds the change starts and how long it eases. */
+      at: z.number().min(0).max(60).optional(),
+      over: z.number().min(0.1).max(60).optional(),
+    })).max(4),
     /** Set only by chat revisions ("closer", "wider"): multiplies the fitted zoom of the shot. */
     zoomScale: z.number().min(0.4).max(2.5).optional(),
   })).min(1).max(14),

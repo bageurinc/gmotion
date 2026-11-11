@@ -108,7 +108,11 @@ export function buildWorldScenes(plan: IsoCanvasPlan, timings: SceneTiming[], fr
     ];
     const startStates: IsoStates = Object.fromEntries(Object.entries(states).map(([id, values]) => [id, { ...values }]));
     const changeFrom = Math.min(arrive, timing.duration * 0.3);
-    const changes = beat.set.map((change) => ({ object: change.object, key: change.key, to: change.value, from: changeFrom, until: Math.min(timing.duration, changeFrom + 1.2) }));
+    const changes = beat.set.map((change) => {
+      // Revisions may time a change on its own (a walk, then the alarm when the walker arrives).
+      const from = Math.min(Math.max(0, change.at ?? changeFrom), Math.max(0, timing.duration - 0.1));
+      return { object: change.object, key: change.key, to: change.value, from, until: Math.min(timing.duration, from + (change.over ?? 1.2)) };
+    });
     for (const change of beat.set) states[change.object][change.key] = change.value;
     const focus = beat.focus ? objects.get(beat.focus) : undefined;
     const labels = beat.label && focus
