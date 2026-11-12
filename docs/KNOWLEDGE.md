@@ -1083,3 +1083,42 @@ Usulan: satu kunci fal.ai untuk membandingkan Trellis, Rodin, dan Tripo pada ben
   - Pemeriksa bagian diam (`motion-check.ts`: 120 × 80 piksel, setiap 0,5 detik, ambang 6/255) tidak membaca partikel aliran yang kecil. Video yang alirannya jelas bergerak tetap dilaporkan punya 1–4 bagian diam. Alat ukurnya perlu dibuat lebih peka sebelum target "tidak ada bagian diam lebih dari 3 detik" bisa dinilai.
 - Jebakan skrip: di zsh, `$J --prompt ...` dengan `J="npx tsx ..."` tidak dipecah menjadi kata, sehingga job gagal dengan "no such file or directory". Pakai fungsi shell. `spike-iso-job.ts` sekarang punya `--drawing-model` dan tidak mencoba export bila ada adegan gagal.
 - Frame semua uji ada di `storage/spike/story-canvas/accept/{jantung,hujan,hujan2,kulkas,listrik,hp2}/sheet.jpg`.
+
+## Detail dan gambar dasar Story 2D, Tahap 6b (12 November 2026)
+
+Keluhan user setelah Tahap 6: detail kurang dan gambar dasar terlalu basic. Penyebab yang ditemukan:
+- Model meniru tingkat detail contoh rujukan. Contoh jantung lama hanya punya sekitar 15 bentuk polos, jadi hasilnya juga polos. Menulis ulang contoh adalah tuas terbesar.
+- Mesin hanya punya isian satu warna dengan pita bayangan. Tanpa tekstur, gradien, dan detail bertingkat, gambar yang benar pun terlihat seperti clip art.
+- Ambang penilai 6 meloloskan gambar yang benar tapi polos, karena kriteria detail longgar dan tidak ada daftar komponen wajib.
+- Props digambar dengan satu tingkat detail. Saat kamera zoom ke satu bagian, yang muncul hanya bentuk yang sama diperbesar.
+
+Keputusan teknis:
+- Tekstur memakai jarak dalam meter dan digambar di ruang layar setelah clip. Tekstur dilewati saat jaraknya di bawah 3 px dan memudar masuk sampai 9 px, jadi sekaligus berfungsi sebagai tingkat detail tanpa aturan tambahan. Area besar dibatasi sekitar 1.600 tanda dengan memperbesar jarak.
+- `s.detail(size, fn)` memudar masuk saat `size` meter mencapai 6–14 px. Patokannya ukuran benda, bukan angka zoom, karena penulis props tidak tahu zoom kamera.
+- Kabut jarak dihitung dari warna rata-rata `background()` dan berlaku untuk bentuk, pipa, dan cabang di lapisan dengan depth < 1, sampai 60%.
+- `s.branch` membelah dua di setiap tingkat dengan hash berbiji, jadi bentuknya sama di setiap frame. Garis luar digambar dulu untuk semua segmen, baru isinya, supaya sambungan bersih. Fungsi ini mengembalikan titik ujung untuk daun, alveolus, atau tetes.
+- Ambang Story 2D sekarang ambang Isometrik + 1 (bawaan 7), dan hanya berlaku untuk props, tempat, dan close-up. Judul, subtitle, dan panel tetap memakai ambang Isometrik.
+- Bagian tipis (pipa kapiler 0,1 × 0,012 m) membuat bidikan close tinggal garis tanpa konteks. Kotak close dan medium sekarang diperlebar sampai sisi pendeknya minimal 0,6 kali sisi panjang.
+- Pembuluh koroner yang digambar dengan cabang tebal di dinding jantung terlihat seperti goresan. Cabang di permukaan organ dibuat pendek, tipis, tanpa garis luar, dengan alpha 0,8.
+
+Pratinjau contoh baru dirender tanpa model lewat `scripts/spike-story-canvas.ts --code`, dengan hasil di `storage/spike/story-canvas/detail-heart` dan `detail-pump`. Uji ulang dengan model belum dijalankan.
+
+Cahaya adegan (lanjutan Tahap 6b, 12 November 2026):
+- Arah cahaya disimpan sebagai vektor menuju sumber cahaya di ruang layar (y ke bawah). Pita bayangan memakai bentuk dikurangi salinannya yang digeser ke arah cahaya, kilau memakai geseran sebaliknya, dan gradien volume ditarik dari sisi terang ke sisi gelap. Tanpa `s.light`, hasilnya sama persis dengan versi sebelumnya (kiri atas, putih). Ini dijaga test.
+- Warna cahaya selain putih mewarnai setiap permukaan 12% (dikali kekuatan) dan kilau 30%. Lebih kuat dari itu membuat warna asli benda hilang pada uji lava.
+- Cahaya tepi otomatis aktif saat luminans latar di bawah 70 dari 255, dan digambar sebagai pita tipis di sisi bayangan dengan alpha 0,55.
+- `lift` memakai `shadowBlur` kanvas dengan offset menjauhi cahaya, maksimal 40 px. Di latar gelap bayangannya hampir tidak terlihat, dan itu wajar.
+- Bahan: metal memakai gradien pita terang dan gelap selang-seling, glass mengisi dengan alpha 0,55 ditambah dua garis kilau, wet memakai tiga titik kilau kecil, dan glossy satu titik kilau lembut. Props tidak memanggil `s.light`, karena props digambar setelah tempat dan mewarisi cahayanya.
+
+Uji septic tank (12 November 2026, GPT-6.1 Terra, dijalankan user):
+- Satu props bertahap dengan enam state cocok untuk naskah evolusi desain, tetapi skornya 5,7: state yang hanya mengubah detail kecil tidak terbaca di bidikan lebar. Aturan state sekarang meminta perubahan besar (bagian muncul, level naik, retak menjalar, gas memenuhi ruang).
+- Bidikan `follow` memakai kotak persegi seluas `span`. Di portrait, pita pandang hanya 31% tinggi layar, jadi tinggi kotak yang mentok dan props tampil lebih kecil dari bidikan lebar. Kotak sekarang memakai rasio pita (tinggi px / lebar px, maksimal 1).
+- Perencana boleh membuat 0 close-up, dan rencana septic tank memang tidak punya close-up. Sekarang ada pemeriksaan rencana: topik proses wajib punya close-up, dan close-up yang tidak dipakai adegan mana pun ditolak.
+- Model memakai `s.glow` putih sebagai kilau di dalam tangki, dan hasilnya seperti silau lensa. Prompt sekarang membatasi glow untuk sumber cahaya. Kilau datang dari `material`.
+
+Draf narasi Story 2D (12 November 2026):
+- Narasi pendek bukan salah model: `STORY_CANVAS_DIRECTOR_NOTE` menyalin `WORLD_DIRECTOR_NOTE` ("one short spoken sentence of at most 14 words"), dan catatan itu menimpa aturan umum sutradara (1–3 kalimat). Prompt perencana Story 2D juga masih memuat `WORLD_STORY_RULES` (6–7 beats, maksimal 11 kata). Teks beat selalu ditimpa narasi yang disetujui, tetapi aturan itu bertentangan dengan "Write exactly N beats".
+- Kebanyakan user hanya menulis judul. Karena itu sutradara menjalankan langkah riset lebih dulu untuk prompt di bawah 600 karakter: catatan fakta maksimal 250 kata (apa itu, masalahnya, tahap dengan sebab-akibat, istilah dengan penjelasan, perumpamaan, salah paham umum), tanpa angka atau nama yang tidak pasti. Kalau riset gagal, draf tetap ditulis tanpa catatan. Biayanya satu panggilan sutradara tambahan per draf.
+- Prompt panjang (naskah atau cerita lengkap dari user) melewati riset, dan isinya dipertahankan, hanya dibagi ke adegan.
+- Belum diuji dengan model sungguhan. Yang perlu dilihat: apakah narasi 50–100 detik membuat video terlalu panjang untuk pengguna, dan apakah 12 adegan masih nyaman untuk perencana (batas skema 14 beat).
+

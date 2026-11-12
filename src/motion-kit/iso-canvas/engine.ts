@@ -28,7 +28,7 @@ const centroid = (points: Vec3[]): Vec3 => {
   return [sum[0] / points.length, sum[1] / points.length, sum[2] / points.length];
 };
 
-function parseColor(color: string): [number, number, number] {
+export function parseColor(color: string): [number, number, number] {
   const short = /^#([\da-f])([\da-f])([\da-f])$/i.exec(color);
   const hex = short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}` : color;
   const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);

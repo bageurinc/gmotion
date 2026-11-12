@@ -6,9 +6,9 @@
  * model-written code only places and poses them. Everything is a pure function of its inputs.
  */
 
-import { layoutLabels, lit, mixColor, ramp, win, type IsoBounds, type IsoLabelBox, type IsoSafeInsets, type LabelOptions } from '../iso-canvas/engine';
+import { layoutLabels, lit, mixColor, parseColor, ramp, win, type IsoBounds, type IsoLabelBox, type IsoSafeInsets, type LabelOptions } from '../iso-canvas/engine';
 import { rigSolve, rigWalk, type RigOptions, type RigPoint } from './rig';
-import { beatAt, emitParticles, flowParticles, oscAt, samplePath } from './motion';
+import { beatAt, emitParticles, flowParticles, hash, oscAt, samplePath } from './motion';
 
 export type Vec2 = [number, number];
 type Matrix = [number, number, number, number, number, number];
@@ -33,6 +33,65 @@ export interface ShapeStyle {
   r?: number;
   /** For poly: draw a smooth closed curve through the points instead of straight edges. */
   smooth?: boolean;
+  /** Second color: the fill runs from color at the top to fillTo at the bottom (liquids, metal, skin, sky). */
+  fillTo?: string;
+  /** Surface pattern clipped inside the shape: muscle fibers, wood grain, tiles, rock speckle. */
+  texture?: TextureStyle;
+  /** How the surface takes light: matte (default), metal (sharp bands), glass (see-through, bright edge), wet (organs, liquid), glossy (plastic, paint). */
+  material?: Material;
+  /** Meters this shape sits in front of what is behind it: casts a soft shadow away from the light (a pipe on a wall, a valve in a chamber). */
+  lift?: number;
+}
+
+export type Material = 'matte' | 'metal' | 'glass' | 'wet' | 'glossy';
+
+export interface LightOptions {
+  /** Direction toward the light source in radians, world space: Math.PI * 0.75 is upper left (default), Math.PI / 2 straight above, 0 from the right, -Math.PI / 2 from below (lava, a fire, a screen in the lap). */
+  dir?: number;
+  /** Light color; it tints highlights and, a little, every surface (warm sunset, cold night, red lava). Default white. */
+  color?: string;
+  /** 0 flat, 1 normal (default), up to 1.6 for hard sun or a spotlight. */
+  strength?: number;
+  /** Bright edge on the shadow side of every shape; on by default against dark backgrounds. A color or false. */
+  rim?: string | boolean;
+}
+
+export type TextureKind = 'stripes' | 'muscle' | 'grain' | 'dots' | 'speckle' | 'hatch' | 'bricks' | 'tiles' | 'scales' | 'cells' | 'waves';
+
+export interface TextureStyle {
+  kind: TextureKind;
+  /** Spacing of the pattern in meters (a muscle fiber every 0.004 m, a tile every 0.2 m). */
+  size: number;
+  /** Pattern color; defaults to a darker tone of the fill. */
+  color?: string;
+  alpha?: number;
+  /** Direction of stripes, fibers, and grain in radians (0 runs left to right). */
+  angle?: number;
+  seed?: number;
+}
+
+export interface BranchOptions {
+  /** Direction of the trunk in radians; default straight up (Math.PI / 2). */
+  angle?: number;
+  /** Length of the trunk in meters; each level is shorter by ratio. */
+  length: number;
+  /** Width of the trunk in meters; each level is thinner by taper. */
+  width: number;
+  color: string;
+  /** Levels of splitting, 1 to 7 (default 4). */
+  depth?: number;
+  /** Angle between the two children in radians (default 0.7). */
+  spread?: number;
+  ratio?: number;
+  taper?: number;
+  seed?: number;
+  /** Seconds, with sway: branches move gently (trees in wind, seaweed). */
+  t?: number;
+  /** Sway amplitude in radians (default 0). */
+  sway?: number;
+  /** Outline color; false hides it. */
+  line?: string | false;
+  alpha?: number;
 }
 
 export type FlowKind = 'cells' | 'drops' | 'bubbles' | 'dashes' | 'sparks' | 'packets' | 'dots';
@@ -47,6 +106,8 @@ export interface FlowOptions {
   /** Particle size in meters. */
   size?: number;
   color?: string;
+  /** Color at the end of the path: particles change color along the way (blue blood turning red in the lungs, hot gas cooling). */
+  colorTo?: string;
   t: number;
   /** Spread across the path in meters (the inside width of a vessel or pipe). */
   width?: number;
@@ -146,6 +207,10 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
   // Set while person() draws the upright figure inside a lying turn, so it does not turn again.
   let uprightOnly = false;
   let groupAlpha = 1;
+  // Background tone that far layers fade toward (aerial perspective), set by background().
+  let haze: string | null = null;
+  // Scene light: toward-light vector in screen space (y down), color, strength, rim edge.
+  let light = { x: -Math.SQRT1_2, y: -Math.SQRT1_2, color: '#FFFFFF', tint: 0, strength: 1, rim: null as string | boolean | null };
   const stack: Matrix[] = [];
   const labels: PendingLabel[] = [];
   const safe = setup.safe ?? { top: 0.12, right: 0.16, bottom: 0.22, left: 0.08 };
@@ -187,45 +252,321 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
     ctx.closePath();
   };
 
-  /** Fills one screen-space path in the house look: base, lower-right shade, upper-left highlight, outline. */
-  const paint = (path: Path, color: string, style: ShapeStyle = {}) => {
+  /** Rim color for this fill, or null: explicit, or automatic when the background is dark. */
+  const rimFor = (base: string): string | null => {
+    if (light.rim === false) return null;
+    if (typeof light.rim === 'string') return light.rim;
+    const [r, g, b] = haze ? parseColor(haze) : [255, 255, 255];
+    const dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 70;
+    return light.rim === true || dark ? mixColor(mixColor(base, '#FFFFFF', 0.5), light.color, 0.4) : null;
+  };
+
+  /**
+   * Fills one screen-space path in the house look, lit by the scene light: an optional lift
+   * shadow, base (or a top-to-bottom gradient), texture, a volume sweep from the lit side, the
+   * shade band on the far side, a highlight on the lit side, a rim edge on dark backgrounds,
+   * the material's specular, and the outline. Far parallax layers fade toward the background.
+   */
+  const paint = (path: Path, color: string, style: ShapeStyle = {}, u = 1) => {
     const xs = path.points.map(([x]) => x);
     const ys = path.points.map(([, y]) => y);
-    const size = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-    const offset = Math.max(0, Math.min(size * 0.16, 36)) * (style.shade ?? 1);
+    const box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    const size = Math.min(box.x1 - box.x0, box.y1 - box.y0);
+    const big = Math.max(box.x1 - box.x0, box.y1 - box.y0);
+    const material = style.material ?? 'matte';
+    const shade = (style.shade ?? 1) * light.strength;
+    const offset = Math.max(0, Math.min(size * 0.16, 36)) * Math.min(1.4, shade);
+    const far = parallax < 0.999 && haze ? Math.min(0.6, (1 - parallax) * 0.55) : 0;
+    const tone = (value: string) => {
+      const tinted = light.tint > 0 ? mixColor(value, light.color, light.tint) : value;
+      return far > 0 && haze ? mixColor(tinted, haze, far) : tinted;
+    };
+    const base = tone(color);
+    const alpha = groupAlpha * (style.alpha ?? 1) * (material === 'glass' ? 0.55 : 1);
+    const lx = light.x;
+    const ly = light.y;
+    const cx = (box.x0 + box.x1) / 2;
+    const cy = (box.y0 + box.y1) / 2;
     ctx.save();
-    ctx.globalAlpha = groupAlpha * (style.alpha ?? 1);
+    ctx.globalAlpha = alpha;
+    if (style.lift && style.lift > 0) {
+      // A soft shadow cast away from the light onto whatever is behind.
+      const px = Math.min(40, style.lift * u);
+      if (px > 0.5) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(20,16,40,0.35)';
+        ctx.shadowBlur = px * 1.6;
+        ctx.shadowOffsetX = -lx * px;
+        ctx.shadowOffsetY = -ly * px;
+        ctx.beginPath();
+        trace(path);
+        ctx.fillStyle = base;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
     ctx.beginPath();
     trace(path);
-    ctx.fillStyle = color;
+    if (style.fillTo) {
+      const gradient = ctx.createLinearGradient(0, box.y0, 0, box.y1);
+      gradient.addColorStop(0, base);
+      gradient.addColorStop(1, tone(style.fillTo));
+      ctx.fillStyle = gradient;
+    } else {
+      ctx.fillStyle = base;
+    }
     ctx.fill();
-    if (offset > 0.6) {
+    const rim = big > 12 ? rimFor(base) : null;
+    if (style.texture || (shade > 0 && big > 24) || offset > 0.6 || rim || material !== 'matte') {
       ctx.save();
       ctx.beginPath();
       trace(path);
       ctx.clip();
-      // The path minus itself shifted up-left is the band along the lower-right edge.
-      ctx.beginPath();
-      trace(path);
-      trace(path, -offset, -offset);
-      ctx.fillStyle = lit(color, 0.84);
-      ctx.fill('evenodd');
-      const glint = Math.max(1, offset * 0.4);
-      ctx.beginPath();
-      trace(path);
-      trace(path, glint, glint);
-      ctx.fillStyle = lit(color, 1.16);
-      ctx.fill('evenodd');
+      ctx.globalAlpha = groupAlpha * (style.alpha ?? 1);
+      if (style.texture) drawTexture(box, style.texture, base, u);
+      const reach = Math.hypot(box.x1 - box.x0, box.y1 - box.y0) / 2;
+      const litX = cx + lx * reach;
+      const litY = cy + ly * reach;
+      const darkX = cx - lx * reach;
+      const darkY = cy - ly * reach;
+      const [lr, lg, lb] = parseColor(light.color);
+      if (shade > 0 && big > 24) {
+        // A soft sweep from the lit side to the far side gives each shape volume.
+        const sweep = ctx.createLinearGradient(litX, litY, darkX, darkY);
+        const contrast = material === 'metal' ? 1.8 : material === 'glossy' || material === 'wet' ? 1.3 : 1;
+        sweep.addColorStop(0, `rgba(${lr},${lg},${lb},${Math.min(0.5, 0.14 * shade * contrast)})`);
+        sweep.addColorStop(0.5, 'rgba(255,255,255,0)');
+        sweep.addColorStop(1, `rgba(20,16,40,${Math.min(0.5, 0.16 * shade * contrast)})`);
+        ctx.fillStyle = sweep;
+        ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      }
+      if (material === 'metal' && big > 16) {
+        // Brushed metal: alternating bright and dark bands across the light direction.
+        const bands = ctx.createLinearGradient(litX, litY, darkX, darkY);
+        [[0, 0.0], [0.18, 0.35], [0.32, 0], [0.55, 0.22], [0.7, 0], [1, 0]].forEach(([at, a]) => bands.addColorStop(at, `rgba(${lr},${lg},${lb},${a * Math.min(1.2, shade)})`));
+        ctx.fillStyle = bands;
+        ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      }
+      if (offset > 0.6) {
+        const k = offset * Math.SQRT2;
+        // The path minus itself shifted toward the light is the band on the far side.
+        ctx.beginPath();
+        trace(path);
+        trace(path, lx * k, ly * k);
+        ctx.fillStyle = lit(base, 1 - 0.16 * Math.min(1.4, shade));
+        ctx.fill('evenodd');
+        const glint = Math.max(1, offset * 0.4) * Math.SQRT2;
+        ctx.beginPath();
+        trace(path);
+        trace(path, -lx * glint, -ly * glint);
+        ctx.fillStyle = mixColor(mixColor(base, '#FFFFFF', 0.16 * Math.min(1.4, shade)), light.color, 0.3);
+        ctx.fill('evenodd');
+      }
+      if (rim) {
+        // A thin bright edge on the shadow side separates shapes from a dark background.
+        const k = Math.max(1.5, Math.min(5, big * 0.03)) * Math.SQRT2;
+        ctx.beginPath();
+        trace(path);
+        trace(path, lx * k, ly * k);
+        ctx.globalAlpha = groupAlpha * (style.alpha ?? 1) * 0.55;
+        ctx.fillStyle = rim;
+        ctx.fill('evenodd');
+        ctx.globalAlpha = groupAlpha * (style.alpha ?? 1);
+      }
+      if ((material === 'glossy' || material === 'wet' || material === 'glass') && big > 16) {
+        // Specular: a soft bright spot (glossy), a few small wet glints, or a glass streak, on the lit side.
+        const spot = (x: number, y: number, r: number, a: number) => {
+          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, `rgba(255,255,255,${a})`);
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        };
+        const sx = cx + lx * reach * 0.45;
+        const sy = cy + ly * reach * 0.45;
+        if (material === 'glossy') spot(sx, sy, size * 0.3 + 2, 0.55);
+        if (material === 'wet') {
+          spot(sx, sy, size * 0.12 + 2, 0.7);
+          spot(sx - ly * size * 0.25, sy + lx * size * 0.25, size * 0.07 + 1.5, 0.55);
+          spot(cx + lx * reach * 0.2 + ly * size * 0.2, cy + ly * reach * 0.2 - lx * size * 0.2, size * 0.05 + 1.5, 0.45);
+        }
+        if (material === 'glass') {
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(Math.atan2(ly, lx) + Math.PI / 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.fillRect(-size * 0.06, -big, size * 0.12 + 1, big * 2);
+          ctx.fillRect(size * 0.12, -big, size * 0.04 + 1, big * 2);
+          ctx.restore();
+        }
+      }
       ctx.restore();
     }
     if (style.line !== false) {
+      ctx.globalAlpha = groupAlpha * (style.alpha ?? 1);
       ctx.beginPath();
       trace(path);
-      ctx.strokeStyle = style.line ?? lit(color, 0.55);
+      ctx.strokeStyle = style.line ? tone(style.line) : material === 'glass' ? mixColor(base, '#FFFFFF', 0.5) : lit(base, 0.55);
       ctx.lineWidth = style.lineWidth ?? 3;
       ctx.lineJoin = 'round';
       ctx.stroke();
     }
+    ctx.restore();
+  };
+
+  /**
+   * A surface pattern over a screen box, inside the current clip. Spacing comes from meters, so
+   * the pattern grows with the zoom; it fades in once its spacing is a few pixels and is skipped
+   * when it would be denser than that, which makes it a natural level of detail.
+   */
+  const drawTexture = (box: { x0: number; y0: number; x1: number; y1: number }, texture: TextureStyle, base: string, u: number) => {
+    let gap = texture.size * u;
+    if (!(gap > 3)) return;
+    const strength = Math.min(1, (gap - 3) / 6) * (texture.alpha ?? 0.35);
+    if (strength <= 0.01) return;
+    const w = box.x1 - box.x0;
+    const h = box.y1 - box.y0;
+    // Huge areas get a coarser pattern instead of thousands of marks.
+    const marks = (w * h) / (gap * gap);
+    if (marks > 1600) gap *= Math.sqrt(marks / 1600);
+    const seed = texture.seed ?? 1;
+    const color = texture.color ?? lit(base, 0.72);
+    const cx = (box.x0 + box.x1) / 2;
+    const cy = (box.y0 + box.y1) / 2;
+    const half = Math.hypot(w, h) / 2 + gap;
+    const rows = Math.ceil((half * 2) / gap);
+    ctx.save();
+    ctx.globalAlpha = groupAlpha * strength;
+    ctx.translate(cx, cy);
+    ctx.rotate(-(texture.angle ?? 0));
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    switch (texture.kind) {
+      case 'stripes':
+      case 'hatch':
+        ctx.lineWidth = Math.max(1, gap * 0.22);
+        for (let i = 0; i <= rows; i += 1) {
+          const y = -half + i * gap;
+          ctx.moveTo(-half, y);
+          ctx.lineTo(half, y);
+          if (texture.kind === 'hatch') {
+            ctx.moveTo(y, -half);
+            ctx.lineTo(y, half);
+          }
+        }
+        ctx.stroke();
+        break;
+      case 'muscle':
+      case 'grain':
+      case 'waves': {
+        // Long wavy lines: muscle fibers run in parallel, wood grain wanders, water ripples in short arcs.
+        const wobble = texture.kind === 'grain' ? 0.35 : texture.kind === 'waves' ? 0.3 : 0.18;
+        ctx.lineWidth = Math.max(1, gap * (texture.kind === 'muscle' ? 0.16 : 0.12));
+        for (let i = 0; i <= rows; i += 1) {
+          const y0 = -half + (i + (texture.kind === 'grain' ? (hash(i, seed) - 0.5) * 0.6 : 0)) * gap;
+          const phase = hash(i, seed + 3) * Math.PI * 2;
+          const period = gap * (texture.kind === 'waves' ? 2.2 : 5 + 4 * hash(i, seed + 5));
+          if (texture.kind === 'waves') {
+            for (let x = -half + (i % 2) * period * 0.5; x < half; x += period) {
+              ctx.moveTo(x, y0);
+              ctx.quadraticCurveTo(x + period * 0.25, y0 - gap * wobble, x + period * 0.5, y0);
+            }
+            continue;
+          }
+          for (let x = -half; x <= half; x += gap * 0.8) {
+            const y = y0 + Math.sin(x / period * Math.PI * 2 + phase) * gap * wobble;
+            if (x === -half) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+        break;
+      }
+      case 'dots':
+      case 'cells':
+        ctx.lineWidth = Math.max(1, gap * 0.08);
+        for (let i = 0; i <= rows; i += 1) {
+          for (let j = 0; j <= rows; j += 1) {
+            const x = -half + (j + (i % 2) * 0.5 + (hash(i * 131 + j, seed) - 0.5) * 0.3) * gap;
+            const y = -half + (i + (hash(i * 131 + j, seed + 1) - 0.5) * 0.3) * gap;
+            const r = gap * (texture.kind === 'cells' ? 0.4 : 0.14 + 0.08 * hash(i * 131 + j, seed + 2));
+            ctx.moveTo(x + r, y);
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+          }
+        }
+        if (texture.kind === 'cells') ctx.stroke();
+        else ctx.fill();
+        break;
+      case 'speckle': {
+        const count = Math.min(2400, Math.round(rows * rows));
+        const light = lit(base, 1.18);
+        for (let pass = 0; pass < 2; pass += 1) {
+          ctx.beginPath();
+          ctx.fillStyle = pass ? light : color;
+          for (let k = pass; k < count; k += 2) {
+            const x = -half + hash(k, seed) * half * 2;
+            const y = -half + hash(k, seed + 7) * half * 2;
+            const r = gap * (0.06 + 0.14 * hash(k, seed + 9));
+            ctx.moveTo(x + r, y);
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
+        break;
+      }
+      case 'bricks':
+      case 'tiles':
+        ctx.lineWidth = Math.max(1, gap * 0.08);
+        for (let i = 0; i <= rows; i += 1) {
+          const y = -half + i * gap;
+          ctx.moveTo(-half, y);
+          ctx.lineTo(half, y);
+          const step = texture.kind === 'bricks' ? gap * 2 : gap;
+          for (let x = -half + (texture.kind === 'bricks' && i % 2 ? gap : 0); x <= half; x += step) {
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y + gap);
+          }
+        }
+        ctx.stroke();
+        break;
+      case 'scales':
+        ctx.lineWidth = Math.max(1, gap * 0.1);
+        for (let i = 0; i <= rows; i += 1) {
+          for (let j = 0; j <= rows; j += 1) {
+            const x = -half + (j + (i % 2) * 0.5) * gap;
+            const y = -half + i * gap * 0.6;
+            ctx.moveTo(x - gap / 2, y);
+            ctx.arc(x, y, gap / 2, Math.PI, 0, true);
+          }
+        }
+        ctx.stroke();
+        break;
+    }
+    ctx.restore();
+  };
+
+  /** Strokes a screen path as a pipe: darker wall, body, and a thin highlight. */
+  const strokeTube = (screenPoints: Vec2[], px: number, color: string, wall: string | false | undefined, alpha: number) => {
+    const body = parallax < 0.999 && haze ? mixColor(color, haze, Math.min(0.6, (1 - parallax) * 0.55)) : color;
+    const stroke = (style: string, lineWidth: number, k = 1) => {
+      ctx.beginPath();
+      screenPoints.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = style;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = groupAlpha * alpha * k;
+      ctx.stroke();
+    };
+    ctx.save();
+    if (wall !== false) stroke(wall ?? lit(body, 0.55), px + Math.max(3, px * 0.18));
+    stroke(body, px);
+    stroke(lit(body, 0.82), Math.max(1, px * 0.3), 0.5);
+    stroke(lit(body, 1.3), Math.max(1, px * 0.18), 0.6);
     ctx.restore();
   };
 
@@ -320,8 +661,27 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
       refY = sorted[0].look[1];
     },
 
+    /**
+     * Sets the scene light for everything drawn after it: where it comes from, its color, and
+     * how hard it is. Call it once at the start of a place or close-up, and drive it with states
+     * (night falls, a volcano glows red from below).
+     */
+    light(options: LightOptions = {}) {
+      const dir = options.dir ?? Math.PI * 0.75;
+      // World y is up, screen y is down.
+      light = {
+        x: Math.cos(dir),
+        y: -Math.sin(dir),
+        color: options.color ?? '#FFFFFF',
+        tint: options.color && options.color.toUpperCase() !== '#FFFFFF' ? 0.12 * (options.strength ?? 1) : 0,
+        strength: Math.max(0, Math.min(1.6, options.strength ?? 1)),
+        rim: options.rim ?? null,
+      };
+    },
+
     /** Fills the whole frame with a vertical gradient (sky, wall). Call first. */
     background(top: string, bottom = top) {
+      haze = mixColor(top, bottom, 0.5);
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
       gradient.addColorStop(0, top);
       gradient.addColorStop(1, bottom);
@@ -380,25 +740,25 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
 
     /** Rectangle from its lower-left corner (x, y), w wide and h tall. style.r rounds the corners. */
     rect(x: number, y: number, w: number, h: number, color: string, style: ShapeStyle = {}) {
-      paint({ points: project(roundRectPoints(x, y, w, h, style.r ?? 0)), smooth: false }, color, style);
+      paint({ points: project(roundRectPoints(x, y, w, h, style.r ?? 0)), smooth: false }, color, style, unit());
     },
 
     circle(x: number, y: number, r: number, color: string, style: ShapeStyle = {}) {
-      paint({ points: project(ellipsePoints(x, y, r, r)), smooth: false }, color, style);
+      paint({ points: project(ellipsePoints(x, y, r, r)), smooth: false }, color, style, unit());
     },
 
     ellipse(x: number, y: number, rx: number, ry: number, color: string, style: ShapeStyle = {}) {
-      paint({ points: project(ellipsePoints(x, y, rx, ry)), smooth: false }, color, style);
+      paint({ points: project(ellipsePoints(x, y, rx, ry)), smooth: false }, color, style, unit());
     },
 
     /** Closed polygon through [[x, y], ...]; style.smooth turns it into a soft curved blob. */
     poly(points: Vec2[], color: string, style: ShapeStyle = {}) {
-      paint({ points: project(points), smooth: !!style.smooth }, color, style);
+      paint({ points: project(points), smooth: !!style.smooth }, color, style, unit());
     },
 
     /** Thick segment with round ends from (x1, y1) to (x2, y2), w meters thick: handles, pipes, branches, limbs. */
     capsule(x1: number, y1: number, x2: number, y2: number, w: number, color: string, style: ShapeStyle = {}) {
-      paint({ points: project(capsulePoints(x1, y1, x2, y2, w)), smooth: false }, color, style);
+      paint({ points: project(capsulePoints(x1, y1, x2, y2, w)), smooth: false }, color, style, unit());
     },
 
     /** Open stroke through points, w meters wide, no shading: wires, steam, motion lines, cracks. */
@@ -469,23 +829,7 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
      */
     tube(points: Vec2[], w: number, color: string, options: { wall?: string | false; alpha?: number; smooth?: boolean } = {}) {
       const path = samplePath(points, options.smooth ?? true);
-      const screenPoints = project(path.points);
-      const px = Math.max(1.5, w * unit());
-      const stroke = (style: string, lineWidth: number, alpha = 1) => {
-        ctx.beginPath();
-        screenPoints.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.strokeStyle = style;
-        ctx.lineWidth = lineWidth;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.globalAlpha = groupAlpha * (options.alpha ?? 1) * alpha;
-        ctx.stroke();
-      };
-      ctx.save();
-      if (options.wall !== false) stroke(options.wall ?? lit(color, 0.55), px + Math.max(3, px * 0.18));
-      stroke(color, px);
-      stroke(lit(color, 1.3), Math.max(1, px * 0.22), 0.55);
-      ctx.restore();
+      strokeTube(project(path.points), Math.max(1.5, w * unit()), color, options.wall, options.alpha ?? 1);
     },
 
     /**
@@ -505,7 +849,7 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
         const [tx, ty] = P(particle.x + Math.cos(particle.angle) * 0.01, particle.y + Math.sin(particle.angle) * 0.01);
         const angle = Math.atan2(ty - sy, tx - sx);
         ctx.globalAlpha = groupAlpha * (options.alpha ?? 1) * particle.alpha;
-        drawParticle(kind, sx, sy, px, angle, color);
+        drawParticle(kind, sx, sy, px, angle, options.colorTo ? mixColor(color, options.colorTo, particle.progress) : color);
       }
       ctx.restore();
     },
@@ -574,6 +918,86 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
     /** A smooth wave -1..1 with period seconds: swaying leaves, bobbing boats, idle machines. */
     osc(t: number, period = 2, phase = 0) {
       return oscAt(t, period, phase);
+    },
+
+    /**
+     * Fine detail that appears as the camera comes close: fn fades in once something size
+     * meters big covers about 6 to 14 pixels. Screws, fibers, small vessels, leaf veins, labels
+     * on a chip: draw them inside s.detail so the wide shot stays clean and the close shot rich.
+     */
+    detail(size: number, fn: () => void) {
+      const k = Math.max(0, Math.min(1, (size * unit() - 6) / 8));
+      if (k > 0) s.fade(k, fn);
+    },
+
+    /**
+     * A branching structure from (x, y): blood vessels, bronchi, roots, a tree, a river delta,
+     * lightning, nerves. Each level splits in two, shorter and thinner. Returns the tip points
+     * (for leaves, alveoli, or drops). Pure: the same seed draws the same shape.
+     */
+    branch(x: number, y: number, options: BranchOptions): Vec2[] {
+      const depth = Math.max(1, Math.min(7, Math.round(options.depth ?? 4)));
+      const spread = options.spread ?? 0.7;
+      const ratio = options.ratio ?? 0.72;
+      const taper = options.taper ?? 0.65;
+      const seed = options.seed ?? 1;
+      const segments: { a: Vec2; b: Vec2; w: number }[] = [];
+      const tips: Vec2[] = [];
+      const grow = (from: Vec2, angle: number, length: number, w: number, level: number, id: number) => {
+        const sway = (options.sway ?? 0) * Math.sin((options.t ?? 0) * 1.3 + level * 0.9 + id * 0.37) * (level + 1) / depth;
+        const bend = angle + sway + (hash(id, seed) - 0.5) * spread * 0.4;
+        const to: Vec2 = [from[0] + Math.cos(bend) * length, from[1] + Math.sin(bend) * length];
+        segments.push({ a: from, b: to, w });
+        if (level + 1 >= depth) {
+          tips.push(to);
+          return;
+        }
+        const jitter = (hash(id, seed + 11) - 0.5) * 0.3;
+        grow(to, bend + spread / 2 + jitter, length * ratio * (0.85 + 0.3 * hash(id * 2, seed)), w * taper, level + 1, id * 2);
+        grow(to, bend - spread / 2 + jitter, length * ratio * (0.85 + 0.3 * hash(id * 2 + 1, seed)), w * taper, level + 1, id * 2 + 1);
+      };
+      grow([x, y], options.angle ?? Math.PI / 2, options.length, options.width, 0, 1);
+      const color = parallax < 0.999 && haze ? mixColor(options.color, haze, Math.min(0.6, (1 - parallax) * 0.55)) : options.color;
+      const u = unit();
+      ctx.save();
+      ctx.globalAlpha = groupAlpha * (options.alpha ?? 1);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const pass = (style: string, extra: number) => {
+        ctx.strokeStyle = style;
+        for (const segment of segments) {
+          const [ax, ay] = P(segment.a[0], segment.a[1]);
+          const [bx, by] = P(segment.b[0], segment.b[1]);
+          ctx.lineWidth = Math.max(1, segment.w * u) + extra;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+        }
+      };
+      if (options.line !== false) pass(options.line ?? lit(color, 0.55), Math.max(2, options.width * u * 0.12));
+      pass(color, 0);
+      ctx.restore();
+      return tips;
+    },
+
+    /**
+     * A serpentine coil between two points, w meters thick: condenser and evaporator coils,
+     * heating elements, springs, a radiator pipe, intestines. turns full waves, amplitude meters to each side.
+     */
+    coil(x1: number, y1: number, x2: number, y2: number, options: { turns?: number; amplitude: number; w: number; color: string; wall?: string | false; alpha?: number }) {
+      const turns = Math.max(1, Math.min(40, options.turns ?? 6));
+      const length = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const nx = -(y2 - y1) / length;
+      const ny = (x2 - x1) / length;
+      const steps = Math.ceil(turns * 24);
+      const points: Vec2[] = [];
+      for (let i = 0; i <= steps; i += 1) {
+        const k = i / steps;
+        const wave = Math.sin(k * turns * Math.PI * 2) * options.amplitude;
+        points.push([x1 + (x2 - x1) * k + nx * wave, y1 + (y2 - y1) * k + ny * wave]);
+      }
+      strokeTube(project(points), Math.max(1.5, options.w * unit()), options.color, options.wall, options.alpha ?? 1);
     },
 
     /** Runs fn shifted by (x, y). */
@@ -811,6 +1235,14 @@ export function createStory(ctx: CanvasRenderingContext2D, width: number, height
 
     /** Draws queued labels, laid out inside the safe area. Called once per frame after draw. */
     finish() {
+      // A faint vignette pulls the eye to the middle of the frame, like a finished illustration.
+      const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.45, width / 2, height / 2, Math.hypot(width, height) * 0.6);
+      vignette.addColorStop(0, 'rgba(20,16,40,0)');
+      vignette.addColorStop(1, 'rgba(20,16,40,0.18)');
+      ctx.save();
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
       const boxes: IsoLabelBox[] = labels.map((pending) => {
         const size = pending.options.size ?? 34;
         const subSize = Math.round(size * 0.62);

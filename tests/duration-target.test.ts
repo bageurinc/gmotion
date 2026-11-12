@@ -86,3 +86,32 @@ describe('director keeps the requested length', () => {
     expect(generateText.mock.calls[0][0].prompt).not.toContain('TARGET DURATION');
   });
 });
+
+describe('Story 2D drafts', () => {
+  beforeEach(() => generateText.mockReset());
+
+  it('researches a short prompt first and writes the narration from the notes', async () => {
+    generateText
+      .mockResolvedValueOnce({ text: '- Air merembes ke celah aspal sehingga lapisan bawah melemah.' })
+      .mockResolvedValueOnce({ text: draftJson([20, 20, 20, 20, 20, 20, 20]) });
+    await generateStoryboard('Evolusi jalan aspal anti-rusak', 'story-canvas', '9:16', { strict: true });
+    expect(generateText).toHaveBeenCalledTimes(2);
+    const draft = generateText.mock.calls[1][0].prompt as string;
+    expect(draft).toContain('RESEARCH NOTES');
+    expect(draft).toContain('Air merembes ke celah aspal');
+    expect(draft).toContain('cause and effect');
+    expect(draft).not.toContain('at most 14 words');
+  });
+
+  it('skips research for a full script and still drafts when research fails', async () => {
+    generateText.mockResolvedValue({ text: draftJson([20, 20, 20]) });
+    await generateStoryboard(words(200), 'story-canvas', '9:16', { strict: true });
+    expect(generateText).toHaveBeenCalledTimes(1);
+    generateText.mockReset();
+    generateText.mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce({ text: draftJson([20, 20, 20]) });
+    const storyboard = await generateStoryboard('Kenapa langit biru?', 'story-canvas', '9:16', { strict: true });
+    expect(storyboard.scenes).toHaveLength(3);
+    expect(generateText.mock.calls[1][0].prompt).not.toContain('RESEARCH NOTES');
+  });
+});
+

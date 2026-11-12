@@ -172,6 +172,12 @@ export interface StoryTaskContext {
 
 type ImproveOptions = Parameters<typeof improve>[0];
 
+/**
+ * Props, places, and close-ups must clear a higher bar than the isometric default: at 6 the
+ * critic passed correct but plain drawings, and the user found them too basic.
+ */
+export const storyQualityThreshold = () => Math.min(10, isoQualityThreshold() + 1);
+
 export function propTask(ctx: StoryTaskContext, prop: StoryCanvasProp, request = propRequest(ctx.plan, prop)): ImproveOptions {
   return {
     model: ctx.model,
@@ -180,11 +186,12 @@ export function propTask(ctx: StoryTaskContext, prop: StoryCanvasProp, request =
     label: prop.label,
     system: PROP_SYSTEM,
     criticSystem: storyCriticSystem('prop'),
+    threshold: storyQualityThreshold(),
     request,
     check: (code) => propProblems(ctx.plan, prop, code, ctx.frame),
     // Frames 3 and 4 are 0.2 s apart in the same state, so the critic can see whether the prop moves.
     render: (code) => renderIsoSheet(ctx.browser, { 'StoryProps.ts': assembleStoryProps([code]), 'Preview.tsx': propPreview(prop, ctx.frame) }, [0.2, 1.2, 2.2, 2.4, 3.2], ctx.frame),
-    criticContext: `${ctx.topic}\nProp: ${prop.label}. ${prop.look}\nFrames go from state 0 to every state at 1: ${prop.states.map((state) => state.meaning).join('; ') || 'no states'}.${prop.moves || prop.flows?.length ? `\nThis prop moves on its own${prop.flows?.length ? ` and carries flows (${prop.flows.map((flow) => flow.label).join(', ')})` : ''}.` : '\nThis prop is a still object.'}`,
+    criticContext: `${ctx.topic}\nProp: ${prop.label}. ${prop.look}\nFrames go from state 0 to every state at 1: ${prop.states.map((state) => state.meaning).join('; ') || 'no states'}.${prop.must?.length ? `\nMust show: ${prop.must.join('; ')}.` : ''}${prop.moves || prop.flows?.length ? `\nThis prop moves on its own${prop.flows?.length ? ` and carries flows (${prop.flows.map((flow) => flow.label).join(', ')})` : ''}.` : '\nThis prop is a still object.'}`,
   };
 }
 
@@ -247,6 +254,7 @@ export function placeTask(ctx: StoryTaskContext, place: StoryCanvasPlace, propsF
     label: place.label,
     system: PLACE_SYSTEM,
     criticSystem: storyCriticSystem('place'),
+    threshold: storyQualityThreshold(),
     request,
     check: (code) => placeProblems(plan, place, propsFile, sampled, code),
     render: (code) => renderIsoSheet(ctx.browser, { 'StoryProps.ts': propsFile, 'StoryPlaces.ts': assembleStoryPlaces([code]), 'Preview.tsx': placePreview(plan, sampled, [place.id]) }, sampled.map((_, index) => index + 0.5), ctx.frame),
@@ -303,6 +311,7 @@ export function detailTask(ctx: StoryTaskContext, propsFile: string, detail: Sto
     label: detail.label,
     system: DETAIL_SYSTEM,
     criticSystem: storyCriticSystem('detail'),
+    threshold: storyQualityThreshold(),
     request: detailRequest(plan, detail, beat.text, timing.duration),
     check: (body) => detailProblems(plan, propsFile, detail, timing.duration, body),
     render: (body) => renderIsoSheet(ctx.browser, { 'StoryProps.ts': propsFile, 'Preview.tsx': detailPreview(body, detail.props.map(propFunctionName)) }, [0.3, timing.duration / 2, Math.max(0.4, timing.duration - 0.3)], ctx.frame),
@@ -623,7 +632,7 @@ export async function buildStoryCanvasFiles(model: string, project: StudioProjec
       },
       plan,
       maps,
-      report: { threshold: isoQualityThreshold(), items },
+      report: { threshold: storyQualityThreshold(), items },
     };
   });
 }

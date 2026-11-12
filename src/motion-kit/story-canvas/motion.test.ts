@@ -86,4 +86,56 @@ describe('story canvas motion primitives', () => {
     expect(frame(1.25)).toBe(frame(1.25));
     expect(frame(1.5)).not.toBe(frame(1.25));
   });
+
+  it('reports progress along the path for color changes', () => {
+    const particles = flowParticles(LINE, { t: 0.4, speed: 0.5, spacing: 0.2 });
+    expect(particles.every((p) => p.progress >= 0 && p.progress <= 1)).toBe(true);
+    particles.forEach((p) => expect(p.progress).toBeCloseTo(p.x / 2, 6));
+  });
+
+  const count = (draw: (s: ReturnType<typeof createStory>) => void, zoom: number) => {
+    const { ctx, calls } = recorder();
+    const s = createStory(ctx, 1080, 1920);
+    s.look(0, 0, zoom);
+    draw(s);
+    return calls.length;
+  };
+
+  it('adds texture and fine detail only when the camera is close enough to see them', () => {
+    const textured = (s: ReturnType<typeof createStory>) => s.rect(0, 0, 0.1, 0.1, '#C8463F', { texture: { kind: 'muscle', size: 0.002 } });
+    const plain = (s: ReturnType<typeof createStory>) => s.rect(0, 0, 0.1, 0.1, '#C8463F');
+    // At 500 px/m the fibers would be 1 px apart: skipped. At 5000 px/m they are 10 px apart: drawn.
+    expect(count(textured, 500)).toBe(count(plain, 500));
+    expect(count(textured, 5000)).toBeGreaterThan(count(plain, 5000) + 20);
+    const screws = (s: ReturnType<typeof createStory>) => s.detail(0.005, () => s.circle(0, 0, 0.0025, '#999999'));
+    expect(count(screws, 500)).toBe(0);
+    expect(count(screws, 5000)).toBeGreaterThan(0);
+  });
+
+  it('branches into 2^(depth-1) tips the same way every time', () => {
+    const { ctx } = recorder();
+    const s = createStory(ctx, 1080, 1920);
+    const tips = s.branch(0, 0, { length: 0.1, width: 0.01, color: '#EBC2BE', depth: 4, seed: 2 });
+    expect(tips).toHaveLength(8);
+    expect(s.branch(0, 0, { length: 0.1, width: 0.01, color: '#EBC2BE', depth: 4, seed: 2 })).toEqual(tips);
+    expect(tips.every(([, y]) => y > 0)).toBe(true);
+  });
+
+  it('shades shapes from the scene light and adds material and lift passes', () => {
+    const lit = (setup: (s: ReturnType<typeof createStory>) => void, style = {}) => {
+      const { ctx, calls } = recorder();
+      const s = createStory(ctx, 1080, 1920);
+      setup(s);
+      s.look(0, 0, 1000);
+      s.circle(0, 0, 0.2, '#C8463F', style);
+      return calls;
+    };
+    const left = lit(() => undefined);
+    const right = lit((s) => s.light({ dir: 0 }));
+    expect(right.join('|')).not.toBe(left.join('|'));
+    // Same light set explicitly to the default draws the same picture.
+    expect(lit((s) => s.light()).join('|')).toBe(left.join('|'));
+    expect(lit(() => undefined, { material: 'wet' }).filter((call) => call.startsWith('arc(')).length).toBeGreaterThan(0);
+    expect(lit(() => undefined, { lift: 0.02 }).length).toBeGreaterThan(left.length);
+  });
 });

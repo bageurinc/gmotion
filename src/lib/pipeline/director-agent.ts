@@ -304,9 +304,53 @@ const WORLD_DIRECTOR_NOTE = `
 This video happens inside ONE continuous 3D world while a camera travels across it. Every scene is one camera stop. A story that moves between places treats them as neighboring areas of that world.
 Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
 
+/**
+ * Story 2D narration. It used to copy the 3D world note (5 to 8 scenes, one sentence of at most
+ * 14 words), which turned a one-line prompt into a string of bare technical terms; most users
+ * type only a title, so the director has to research and explain.
+ */
 const STORY_CANVAS_DIRECTOR_NOTE = `
 This video is drawn as flat 2D illustrations of what the topic is really about, in one to three settings at their real scale: a heart topic shows the heart, a volcano topic the volcano erupting, a battery topic the battery. Every scene shows one clear change that explains its line. Add people only when the user asks for them or a human action is the point (cooking, farming, a daily habit); many topics have none. Keep the same things and settings across scenes.
-Write 5 to 8 scenes. Each voiceoverText is one short spoken sentence of at most 14 words. Use role "narrative" for every scene.`;
+NARRATION (most users type only a title, so you are the researcher and the writer):
+- Build a complete explanation that a curious viewer with no background can follow from start to end.
+- For an explanation or process: (1) open with a question or a familiar everyday moment that belongs to the topic; (2) show the problem or why it matters; (3) give every real stage or mechanism its own scene, explained as cause and effect ("karena...", "sehingga...", "akibatnya..."), so the viewer understands why each step happens, not only its name; (4) close by tying it together in plain words.
+- For a story, history, or a person: follow the real sequence of events, and let each scene say what happens and why it matters.
+- Describe a thing in everyday words first, then give its technical term. Never put two unexplained technical terms in one sentence. One concrete comparison from daily life is welcome where it makes a mechanism click.
+- Every line must describe something that can be drawn and visibly changes, because each scene's picture explains its line.
+- Write 7 to 12 scenes. Each voiceoverText is 1 to 2 natural spoken sentences, about 15 to 30 words; all scenes together about 110 to 220 words (roughly 50 to 100 seconds). If the user gives a full script or story, keep its content and order and only split it into scenes.
+- Use role "narrative" for every scene.`;
+
+/** Prompts long enough to carry their own content (a script, a story) skip the research step. */
+const RESEARCH_PROMPT_LIMIT = 600;
+
+/**
+ * Research notes for a short Story 2D prompt, written before the storyboard so the narration
+ * explains causes instead of listing terms. Returns null when it fails; the draft goes on without.
+ */
+export async function researchTopicNotes(userPrompt: string): Promise<string | null> {
+  try {
+    const response = await generateText({
+      model: getDirectorModel(),
+      system: 'You are a careful subject researcher preparing notes for an Indonesian explainer video. You only state well-established facts.',
+      prompt: `Topic or request: "${userPrompt}"
+
+Write research notes that a scriptwriter will turn into narration. Plain text, short bullet points, in Bahasa Indonesia:
+- What it is, in one everyday sentence.
+- The problem it solves or why it matters to an ordinary person.
+- The real stages, parts, or mechanism in order, each with its cause and its effect.
+- The correct technical terms, each with a plain explanation.
+- One or two everyday comparisons that fit.
+- Common misconceptions to avoid.
+If the request is a story or history, list its events in order and what each one means instead.
+Only well-established facts. No statistics, prices, dates, or names unless they are in the request or are textbook facts you are sure of. At most 250 words.`,
+    });
+    const notes = response.text.trim();
+    return notes ? notes.slice(0, 3_000) : null;
+  } catch (error) {
+    console.warn('[DirectorAgent] Research notes failed, writing the draft without them:', error);
+    return null;
+  }
+}
 
 export function durationInstruction(budget: DurationBudget): string {
   return `
@@ -331,12 +375,13 @@ export async function generateStoryboard(
     try {
       const targetSeconds = parseTargetDurationSeconds(userPrompt);
       const budget = targetSeconds ? durationBudget(targetSeconds) : null;
+      const notes = preset === 'story-canvas' && userPrompt.length < RESEARCH_PROMPT_LIMIT ? await researchTopicNotes(userPrompt) : null;
       const basePrompt = `Buat storyboard video motion graphic untuk:
 Prompt: "${userPrompt}"
 Style Preset: "${preset}"
 Aspect Ratio: "${aspectRatio}"
 CTA allowed: ${wantsCallToAction(userPrompt)}. If false, finish with a narrative conclusion and do not include commercial copy or a CTA scene.
-FPS: 30${preset === 'story-canvas' ? STORY_CANVAS_DIRECTOR_NOTE : usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action. When scenes explain parts of one object, such as the frame, dampers, and foundation of one building, write each visualPrompt as the camera moving into that part of the same object, not as a new separate drawing, cutaway card, or blueprint. Camera directions go only in visualPrompt: voiceoverText is what the narrator says and never mentions the camera, shots, or scenes.' : ''}${budget ? durationInstruction(budget) : ''}${options.libraryNote ? `\n${options.libraryNote}` : ''}`;
+FPS: 30${preset === 'story-canvas' ? STORY_CANVAS_DIRECTOR_NOTE : usesWorldEngine(preset) ? WORLD_DIRECTOR_NOTE : ''}${preset === 'story-svg' ? '\nFULL SVG: Every scene uses animated vector objects only, no raster images or image generation. Describe concrete object actions and state changes synchronized to the narration, with consistent objects across scenes. Camera movement and idle motion alone are not the action. When scenes explain parts of one object, such as the frame, dampers, and foundation of one building, write each visualPrompt as the camera moving into that part of the same object, not as a new separate drawing, cutaway card, or blueprint. Camera directions go only in visualPrompt: voiceoverText is what the narrator says and never mentions the camera, shots, or scenes.' : ''}${budget ? durationInstruction(budget) : ''}${options.libraryNote ? `\n${options.libraryNote}` : ''}${notes ? `\n\nRESEARCH NOTES (build the narration from these; add no claims beyond them and common knowledge):\n${notes}` : ''}`;
       const ask = async (extra = '') => {
         const response = await generateText({ model: getDirectorModel(), system: DIRECTOR_SYSTEM_PROMPT, prompt: basePrompt + extra });
         return parseStoryboardFromLLMResponse(response.text, userPrompt, preset, aspectRatio);

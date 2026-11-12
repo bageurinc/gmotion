@@ -84,8 +84,10 @@ export async function improve(options: {
   check: (code: string) => string[];
   render: (code: string) => Promise<{ sheet: Buffer; still: Buffer }>;
   criticContext: string;
+  /** Average score a round must reach to stop revising; defaults to isoQualityThreshold(). */
+  threshold?: number;
 }): Promise<{ code: string | null; item: IsoQualityItem }> {
-  const threshold = isoQualityThreshold();
+  const threshold = options.threshold ?? isoQualityThreshold();
   const item: IsoQualityItem = { kind: options.kind, id: options.id, label: options.label, score: null, rounds: 0, passed: false, fallback: false, issues: [], history: [] };
   const write = (content: (feedback: string) => string | Array<{ type: 'text'; text: string } | Image>) => writeUntilValid({
     ask: async (feedback) => (await callChat({ model: options.model, system: options.system, content: content(feedback), maxTokens: 24_000 })).text,

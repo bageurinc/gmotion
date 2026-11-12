@@ -3,7 +3,6 @@ import { COPY_ANTI_SLOP_RULES, contrastRatio, ensureContrast } from '@/lib/pipel
 import { callChat, type LlmUsage } from '../asset-generator';
 import { keepStatedNumbers } from '../iso-plan';
 import type { IsoPlan } from '../iso-world';
-import { WORLD_STORY_RULES } from '../world-plan';
 import { writeUntilValid } from '../iso-canvas/writer';
 
 const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -71,8 +70,10 @@ export const StoryCanvasPlanSchema = z.object({
     parts: capped(z.object({ id: Id, label: z.string().min(1).max(24) }), 8).optional(),
     /** Named flows inside the prop (blood to the lungs, water to the tap); the writer exports their paths. */
     flows: capped(z.object({ id: Id, label: z.string().min(1).max(32), meaning: z.string().min(3).max(200) }), 6).optional(),
+    /** Components a correct drawing of the real thing must show (English); the writer draws and the critic checks each. */
+    must: capped(clipped(80), 12).optional(),
   })).min(1).max(8),
-  details: capped(z.object({ id: Id, label: z.string().min(1).max(24), draw: z.string().min(20).max(900), props: capped(Id, 3) }), 2),
+  details: capped(z.object({ id: Id, label: z.string().min(1).max(24), draw: z.string().min(20).max(900), props: capped(Id, 3) }), 4),
   beats: z.array(z.object({
     text: z.string(),
     headline: clipped(80),
@@ -130,7 +131,7 @@ Output only JSON:
  "palette": {"ground":"#hex","hud":"#hex","hudText":"#hex","accent":"#hex","ink":"#hex"},
  "cast": [],
  "places": [{"id":"kebab-id","label":"Nama tempat","look":"English: the setting, its background, far scenery, the ground or base line, and fixed parts with x positions","width":5,"states":[{"key":"camelCase","meaning":"English: what 0 and 1 look like"}]}],
- "props": [{"id":"kebab-id","label":"Nama pendek","look":"English: real shape, proportions, characteristic parts, colors","size":[w,h],"place":"place-id","at":[x,y],"surface":null,"front":false,"moves":true,"states":[{"key":"camelCase","meaning":"English: what 0 and 1 look like"}],"parts":[{"id":"kebab-id","label":"Nama bagian"}],"flows":[{"id":"kebab-id","label":"Nama aliran","meaning":"English: what flows, from where to where"}]}],
+ "props": [{"id":"kebab-id","label":"Nama pendek","look":"English: real shape, proportions, characteristic parts, colors","size":[w,h],"place":"place-id","at":[x,y],"surface":null,"front":false,"moves":true,"states":[{"key":"camelCase","meaning":"English: what 0 and 1 look like"}],"parts":[{"id":"kebab-id","label":"Nama bagian"}],"flows":[{"id":"kebab-id","label":"Nama aliran","meaning":"English: what flows, from where to where, and how it changes on the way"}],"must":["English: a component the real thing has"]}],
  "details": [{"id":"kebab-id","label":"Nama pendek","draw":"English: what this close-up or cutaway shows","props":["prop-id"]}],
  "beats": [{"text":"one short spoken sentence","headline":"short heading for the top panel","accent":"word from the headline to highlight","value":null,"status":"short state word","clock":null,"sticker":null,"place":"place-id","focus":"prop, cast, or detail id, or null","part":"part id of the focused prop or null","flow":"flow id or null","shot":"wide","move":"push","label":"short label or null","actors":[],"set":[{"prop":"prop-or-place-id","key":"stateKey","value":1,"word":"word from the line"}],"cue":"word from the line or null"}]
 }
@@ -144,13 +145,15 @@ SCENE RULES
 - Place states (0 to 1) change the whole setting per beat: the sky turns dark with ash, night falls, the water rises, the background glows red. Use them for anything too big to be a prop.
 - props are the things the story points at: 1 to 8, each at its real size. size is [width, height] in meters; at is where its base centre stands, [x, y]. surface is the height of a seat or bed top a person sits or lies on, otherwise null. front: true only for a prop drawn in front of people.
 - parts name the regions of a prop the narration talks about (the right atrium, a valve, the compressor, a root tip), and flows name what moves through it (blood from the body to the right atrium, refrigerant through the coils, water up the stem). The programmer draws them and exports where they are, so the camera can visit them. A prop the story explains in steps needs parts for each step.
+- must lists 6 to 12 components a correct, expert drawing of the real thing shows, in English, as a textbook illustration would: a heart has the four chambers, the septum, the tricuspid and mitral valves, the aortic and pulmonary valves, the aorta arch with its branches, the pulmonary trunk, the venae cavae, the pulmonary veins, coronary vessels; a fridge has the cabinet and door seal, shelves, the compressor, the condenser coil on the back, the capillary tube, the evaporator inside, the refrigerant line. The programmer draws every one, and a reviewer checks them.
+- When what flows changes on the way (blood turns from blue to red in the lungs, hot gas cools into liquid in the condenser, water turns to vapour), say so in the flow meaning, so the drawing shows the change.
 - moves is true for a prop that is alive or working and so moves on its own all the time (a beating heart, lungs, a spinning fan, flowing water, fire, a running engine, swaying plants). Its drawing never freezes; states only make the motion stronger or weaker.
 - Prop states (0 to 1) change what a prop shows (valves open, a chamber squeezes, a screen lights up, dough rises). Use states for every change the narration describes, so each beat visibly changes something.
 - cast: 0 to 3 people, only when needed (see above). Each has a fixed look that fits the role (an apron for a cook, a caping and long sleeves for a farmer, a coat for a doctor, hijab when it fits). Heights: adults 1.55 to 1.8, children 1.0 to 1.3. hairStyle 'cap' is a baseball cap and 'caping' a conical farmer's hat; never add another hat. People are 1.7 m tall, so they only share a shot with things of a similar scale.
-- details are close-ups for things too small or hidden to see in the place, such as blood cells or germs on a hand. 0 to 2. They show props or diagrams, never people.
+- details are close-ups for things too small or hidden to see in the place: blood cells, germs on a hand, the valve leaflets opening, the refrigerant turning from gas to liquid inside the coil, the layers inside a battery. 1 to 4 when the topic explains a process or a machine (0 only for a story without hidden insides), each the focus of the beat it explains. Each one shows what is inside or how it works, not just a bigger view of the outside. They show props or diagrams, never people.
 
 STORY RULES
-${WORLD_STORY_RULES}
+- The narration lines are given and fixed: write one beat per line, in order, and copy each line into text.
 - Each beat happens in one place. Keep the same place for neighbouring beats unless the story moves to another scale or location.
 - focus is the prop, person, or detail the line is about. Use null (the whole place) only for the opening or the ending; every other beat points the camera at something. The camera frames the focus together with the beat's people.
 - Camera, so the video never sits still: part frames one part of the focused prop. shot is 'wide' (the whole prop or group), 'medium' (the part with its surroundings), or 'close' (the part alone). move is 'push' (travel from the previous shot, then a slow push in), 'follow' (ride along flow from its start to its end, for a line about something moving from one place to another), 'pull' (start close on the part and pull back to reveal the whole), or 'cut' (jump straight to the new shot). Open wide, then visit the parts the lines talk about in order, follow the flows they describe, and end with a pull or a wide shot. Two beats in a row never use the same focus, part, and shot.
@@ -186,6 +189,13 @@ export function storyPlanProblems(plan: StoryCanvasPlan, sceneCount: number): st
   plan.details.forEach((detail) => detail.props.forEach((id) => {
     if (!props.has(id)) problems.push(`details "${detail.id}" uses unknown prop "${id}".`);
   }));
+  // A process with hidden insides (flows, moving parts, named parts) needs at least one close-up, and
+  // every close-up must be shown by a beat; the septic tank plan had none and stayed on one diagram.
+  const explains = plan.props.some((prop) => prop.moves || prop.flows?.length || (prop.parts?.length ?? 0) >= 2);
+  if (explains && !plan.details.length && sceneCount >= 4) problems.push('Add at least one close-up in details that shows what is inside or how it works, and point one beat at it.');
+  plan.details.forEach((detail) => {
+    if (!plan.beats.some((beat) => beat.focus === detail.id)) problems.push(`details "${detail.id}" is never shown: set it as the focus of the beat whose line it explains.`);
+  });
   plan.beats.forEach((beat, index) => {
     const place = places.get(beat.place);
     if (!place) problems.push(`beats[${index}].place "${beat.place}" is not a place id.`);

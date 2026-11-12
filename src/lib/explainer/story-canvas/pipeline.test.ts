@@ -238,6 +238,14 @@ describe('story canvas parts, flows, and camera moves', () => {
     const repeated: StoryCanvasPlan = { ...PLAN2, beats: [PLAN2.beats[1], { ...PLAN2.beats[1], text: 'Lagi.' }, ...PLAN2.beats.slice(2)] };
     expect(storyPlanProblems(repeated, 5).join(' ')).toContain('repeats the shot');
   });
+
+  it('asks for a close-up a process topic shows, and rejects close-ups no beat shows', () => {
+    expect(storyPlanProblems(PLAN2, 5)).toEqual([]);
+    const without: StoryCanvasPlan = { ...PLAN2, details: [], beats: PLAN2.beats.map((item) => (PLAN2.details.some((detail) => detail.id === item.focus) ? { ...item, focus: 'jantung' } : item)) };
+    expect(storyPlanProblems(without, 5).join(' ')).toContain('at least one close-up');
+    const unused: StoryCanvasPlan = { ...PLAN2, beats: without.beats };
+    expect(storyPlanProblems(unused, 5).join(' ')).toContain('is never shown');
+  });
 });
 
 describe('story canvas shot sizes', () => {

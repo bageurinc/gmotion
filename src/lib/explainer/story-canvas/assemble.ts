@@ -106,6 +106,16 @@ const scaleBox = (box: Box, k: number): Box => {
   const h = ((box.y1 - box.y0) / 2) * k;
   return { x0: cx - w, x1: cx + w, y0: cy - h, y1: cy + h };
 };
+/** Grows the short side of a box to at least k times its long side, so a thin part keeps context around it. */
+const squarish = (box: Box, k = 0.6): Box => {
+  const [cx, cy] = centerOf(box);
+  const w = box.x1 - box.x0;
+  const h = box.y1 - box.y0;
+  const long = Math.max(w, h);
+  const halfW = Math.max(w, long * k) / 2;
+  const halfH = Math.max(h, long * k) / 2;
+  return { x0: cx - halfW, x1: cx + halfW, y0: cy - halfH, y1: cy + halfH };
+};
 const propBox = (prop: StoryCanvasProp): Box => ({ x0: prop.at[0] - prop.size[0] / 2, x1: prop.at[0] + prop.size[0] / 2, y0: prop.at[1], y1: prop.at[1] + prop.size[1] });
 
 /**
@@ -196,12 +206,12 @@ export function buildStoryScenes(plan: StoryCanvasPlan, timings: SceneTiming[], 
       // A part shot frames the part (close) or the part with its surroundings (medium); people stay in when they are close by.
       const core = partBox ?? propBox(focusProp);
       // Close keeps a ring of context so the part reads in place; medium shows its neighbours.
-      if (shot === 'close') box = partBox ? scaleBox(partBox, 1.7) : scaleBox(propBox(focusProp), 0.75);
+      if (shot === 'close') box = partBox ? squarish(scaleBox(partBox, 1.7)) : scaleBox(propBox(focusProp), 0.75);
       else if (shot === 'medium') {
         // Medium sits between close and wide: never wider than most of the prop itself.
         const whole = propBox(focusProp);
         const limit = Math.max(whole.x1 - whole.x0, whole.y1 - whole.y0) * 0.8;
-        let near = scaleBox(core, partBox ? 2.2 : 1);
+        let near = partBox ? squarish(scaleBox(core, 2.2)) : core;
         const size = Math.max(near.x1 - near.x0, near.y1 - near.y0);
         if (partBox && size > limit) near = scaleBox(near, limit / size);
         box = box ? grow(near, box) : near;
@@ -235,8 +245,13 @@ export function buildStoryScenes(plan: StoryCanvasPlan, timings: SceneTiming[], 
       const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
       const propSize = focusProp ? Math.max(focusProp.size[0], focusProp.size[1]) : 0;
       const partSize = partBox ? Math.max(partBox.x1 - partBox.x0, partBox.y1 - partBox.y0) : 0;
-      const span = Math.max(extent * 0.75, propSize * 0.55, partSize * 2.2, 1e-4);
-      const zoom = fitStoryZoom({ x0: 0, x1: span, y0: 0, y1: span }, frame);
+      // With a part to frame, the ride stays nearer the part; without one it keeps more of the prop.
+      const span = Math.max(extent * 0.75, propSize * (partBox ? 0.4 : 0.55), partSize * 2.2, 1e-4);
+      // The ride's window has the view band's shape: a square box was limited by the short band
+      // height in portrait and framed the prop smaller than the wide shot.
+      const band = viewBand(frame);
+      const aspect = Math.min(1, (frame.height * band.height) / (frame.width * 0.92));
+      const zoom = fitStoryZoom({ x0: 0, x1: span, y0: 0, y1: span * aspect }, frame);
       const start = pointAt(flowPath, 0);
       const begin = Math.min(arrive, d * 0.25);
       // The ride finishes before the push into a following close-up starts.

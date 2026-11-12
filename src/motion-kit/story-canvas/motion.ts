@@ -91,6 +91,8 @@ export interface FlowParticle {
   /** 0..1: fades near the path ends so particles never pop in or out. */
   alpha: number;
   index: number;
+  /** 0 at the start of the path, 1 at its end: drives a color change along the way. */
+  progress: number;
 }
 
 /**
@@ -119,6 +121,7 @@ export function flowParticles(path: SampledPath, options: { t: number; speed: nu
       angle: at.angle,
       alpha: fade > 0 ? Math.max(0, Math.min(1, edge / fade)) : 1,
       index: i,
+      progress: d / total,
     });
   }
   return out;
